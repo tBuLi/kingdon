@@ -26,7 +26,7 @@ Pythonic Geometric Algebra Package
 Features
 --------
 
-Kingdon is an algebra for Geometric Algebra which aims to have a pythonic
+Kingdon is a Geometric Algebra (GA) library which aims to have a pythonic
 and high-performance API for GA computation.
 It was designed to work with numba to achieve high-performance and
 broadcasts across numpy arrays so transformations can be applied easily to
@@ -38,26 +38,39 @@ e.g. point-clouds and meshes.
 
 Code Example
 ------------
-In order to demonstrate the power of Kingdon, let us first consider the common usecase of the
+In order to demonstrate the power of Kingdon, let us first consider the common use-case of the
 commutator product between a bivector and vector.
 
+In order to create an algebra, use `Algebra`. When calling `Algebra` we must provide the signature of the
+algebra, in this case we shall go for 3DPGA, which is the algebra :math:`\mathbb{R}_{3,0,1}`.
+In order to make elements of the algebra, `kingdon` provides the functions `Algebra.multivector`, `Algebra.vector`, `Algebra.bivector`, etc.
+These accept a sequence of values as their primary argument.
+For example:
 
-Symbolic usage:
 .. code-block:: python
-    >>> alg = Algebra(3, 0, 1)
-    >>> b = alg.bivector('b')
-    >>> v = alg.vector('v')
-    >>> b.cp(v)
-    (-b12*v1 + b23*v3) * e2 + (b12*v2 + b13*v3) * e1 + (-b13*v1 - b23*v2) * e3 + (-b14*v1 - b24*v2 - b34*v3) * e4
 
-
-Numerical:
-.. code-block:: python
+    >>> from kingdon import Algebra
     >>> alg = Algebra(3, 0, 1)
     >>> b = alg.bivector({'e12': 2})
     >>> v = alg.vector({'e1': 3})
     >>> b.cp(v)
     (-6) * e2
+
+This example shows that only the `e2`coefficient is calculated, despite the fact that there are
+6 bivector and 4 vector coefficients in 3DPGA. But because `kingdon` performs symbolic optimization before
+performing the computation, it knows that in this case only `e2`can be non-zero.
+
+Symbolic usage:
+
+.. code-block:: python
+
+    >>> from kingdon import Algebra
+    >>> alg = Algebra(3, 0, 1)
+    >>> b = alg.bivector(name='b')
+    >>> v = alg.vector(name='v')
+    >>> b.cp(v)
+    (-b12*v1 + b23*v3) * e2 + (b12*v2 + b13*v3) * e1 + (-b13*v1 - b23*v2) * e3 + (-b14*v1 - b24*v2 - b34*v3) * e4
+
 
 
 Operators
