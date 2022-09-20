@@ -7,8 +7,6 @@ from dataclasses import dataclass, field, replace
 
 import numpy as np
 from sympy import Dummy, Symbol, symbols, Expr, simplify
-from sympy.utilities.lambdify import lambdastr, lambdify
-from numba import njit
 
 from kingdon.codegen import codegen_gp, codegen_sp, codegen_cp, codegen_ip, codegen_op, codegen_rp
 
@@ -183,7 +181,6 @@ class MultiVector:
             return replace(self, vals={k: v / other for k, v in self.vals.items()})
         elif 0 in other.vals and len(other.vals) == 1:
             # other is essentially a scalar.
-            from sympy import expand, collect, cancel
             return replace(self, vals={k: v / other[0] for k, v in self.vals.items()})
         raise NotImplementedError
 
@@ -220,15 +217,16 @@ class MultiVector:
         if key not in func_dictionary:
             x = replace(self, vals={ek: Symbol(f'a{ek}') for ek in self.vals})
             y = replace(other, vals={ek: Symbol(f'b{ek}') for ek in other.vals})
-            func_dictionary[key] = codegen(x, y)
+            keys, func = func_dictionary[key] = codegen(x, y)
+        else:
+            keys, func = func_dictionary[key]
 
         args = chain(self.vals.values(), other.vals.values())
-        keys, func = func_dictionary[key]
-        # res_vals = defaultdict(int, dict(zip(keys, map(lambda v: v if v.__class__ != Expr else simplify(v), func(*args)))))
-        res_vals = defaultdict(int, {k: v for k, v in zip(keys, [func(*args)])
-                                     if (True if v.__class__ != Expr else simplify(v))})
+        # TODO: investigate the use of np.any, because this might break ducktyping.
+        res_vals = defaultdict(int, {k: v for k, v in zip(keys, func(*args))
+                                     if (np.any(v) if isinstance(v, Expr) else simplify(v))})
 
-        return MultiVector(vals=res_vals, algebra=self.algebra)
+        return self.algebra.multivector(vals=res_vals)
 
     def gp(self, other):
         if not hasattr(other, 'algebra'):
