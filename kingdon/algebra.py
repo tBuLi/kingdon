@@ -305,32 +305,4 @@ class PureVector(MultiVector):
     def __len__(self):
         return math.comb(self.algebra.d, self.grade)
 
-# def create_grade(n, r, algebra, start_index=0):
-#     """ Create an r-vector class in n-dimensions. """
-#     size = math.comb(n, r)
-#     @dataclass(init=False)
-#     class rVector:
-#         name: str = field(init=False)
-#         vals: field(init=False)
-#         algebra: Algebra = field(init=False)
-#         def __init__(self, name=None, vals=None):
-#             self.algebra = algebra
-#             self.name = name
-#             if name is not None:
-#                 if vals is None:
-#                     self.vals = np.array([f'{name}_{"".join(str(x) for x in comb)}'
-#                                           for comb in combinations(range(start_index, size+start_index), r)])
-#                 elif len(vals) == size:
-#                     self.vals = vals
-#                 else:
-#                     raise ValueError(f'Input should have lenght {size}.')
-#             elif vals in None:
-#                 raise ValueError(f"Provide at least a `name` or an array of `values`.")
-#
-#         def gp(self, other):
-#             if self.algebra != other.algebra:
-#                 raise AlgebraError()
-#
-#
-#
-#     return rVector
+class Versor: pass
