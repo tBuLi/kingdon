@@ -224,7 +224,7 @@ class MultiVector:
         args = chain(self.vals.values(), other.vals.values())
         # TODO: investigate the use of np.any, because this might break ducktyping.
         res_vals = defaultdict(int, {k: v for k, v in zip(keys, func(*args))
-                                     if (np.any(v) if isinstance(v, Expr) else simplify(v))})
+                                     if (np.any(v) if not isinstance(v, Expr) else simplify(v))})
 
         return self.algebra.multivector(vals=res_vals)
 
