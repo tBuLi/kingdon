@@ -33,14 +33,20 @@ class Algebra:
     _op: dict = field(default_factory=dict, init=False, repr=False)  # exterior product dict
     _rp: dict = field(default_factory=dict, init=False, repr=False)  # regressive product dict
 
-    # Mappings from binary to canonical reps. e.g. 0b01 -> 'e1', 0b11 -> 'e12'.
+    # Mappings from binary to canonical reps. e.g. 0b01 <-> 'e1', 0b11 <-> 'e12'.
     canon2bin: dict = field(init=False, repr=False)
     bin2canon: dict = field(init=False, repr=False)
 
     # Options for the algebra
     cse: bool = field(default=True)  # Common Subexpression Elimination (CSE)
-    precompute: bool = field(default=True)  # Precompute common products
-    numba: bool = field(default=False)  # Precompute common products
+    precompute: str = field(default='none')  # Precompute (common) products. Options: 'none' (default), 'all', 'common'.
+    numba: bool = field(default=False)  # Enable numba just-in-time compilation
+    graded: bool = field(default=False)  # If true, precompute products per grade.
+
+    signs: dict = field(init=False, repr=False)
+    cayley: dict = field(init=False, repr=False)
+    blades: dict = field(init=False, repr=False)
+    pss: object = field(init=False, repr=False)
 
     def __post_init__(self):
         self.d = self.p + self.q + self.r
