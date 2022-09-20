@@ -120,11 +120,11 @@ class Algebra:
 
 @dataclass
 class MultiVector:
-    # size: int = field(init=False)
     algebra: Algebra = field(kw_only=True)
     vals: dict[int] = field(default_factory=lambda: defaultdict(int))
     name: str = field(default_factory=str)
-    # _symbols: list[Dummy] = field(default_factory=list, init=False, compare=False, repr=False)
+
+    grades: list[int] = field(init=False, repr=False)
 
     def __post_init__(self):
         if isinstance(self.vals, Mapping):
