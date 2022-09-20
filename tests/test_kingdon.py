@@ -191,3 +191,10 @@ def test_cp_symbolic(R6):
     v = R6.vector(name='v')
     # Pure vector
     assert b.cp(v) == (b.cp(v))(1)
+
+def test_blades(vga2d):
+    assert vga2d.blades['1'] == vga2d.multivector({'1': 1})
+    assert vga2d.blades['e1'] == vga2d.multivector({'e1': 1})
+    assert vga2d.blades['e2'] == vga2d.multivector({'e2': 1})
+    assert vga2d.blades['e12'] == vga2d.multivector({'e12': 1})
+    assert vga2d.blades['e12'] == vga2d.pss

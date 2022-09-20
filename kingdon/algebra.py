@@ -59,10 +59,13 @@ class Algebra:
             setattr(self, name, partial(self.purevector, grade=grade))
             setattr(self, 'pseudo' + name, partial(self.purevector, grade=self.d - grade))
 
+        self.blades = {k: self.multivector({v: 1}) for k, v in self.canon2bin.items()}
+        self.pss = self.blades[self.bin2canon[2 ** self.d - 1]]
+
     def _prepare_signs_and_cayley(self):
         """
         Prepares two dicts whose keys are two basis-blades in (binary rep) and the result is either
-        just the sign of the corresponding multiplication, or the full result.
+        just the sign (1, -1, 0) of the corresponding multiplication, or the full result.
         The full result is essentially the Cayley table, if printed as a table.
 
         E.g. in :math:`\mathbb{R}_2`, sings[(0b11, 0b11)] = -1.
