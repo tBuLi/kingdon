@@ -158,6 +158,13 @@ class MultiVector:
     def __invert__(self):
         return replace(self, vals={k: (-1)**(bin(k).count("1") // 2) * v for k, v in self.vals.items()})
 
+    def normsq(self):
+        return self * ~self
+
+    def inv(self):
+        """ Inverse of this multivector. """
+        return self / self.normsq()
+
     def __add__(self, other):
         vals = self.vals.copy()
         for k, v in other.vals.items():
@@ -174,6 +181,10 @@ class MultiVector:
         if not hasattr(other, 'algebra'):
             # Assume scalar multiplication
             return replace(self, vals={k: v / other for k, v in self.vals.items()})
+        elif 0 in other.vals and len(other.vals) == 1:
+            # other is essentially a scalar.
+            from sympy import expand, collect, cancel
+            return replace(self, vals={k: v / other[0] for k, v in self.vals.items()})
         raise NotImplementedError
 
     __rtruediv__ = __truediv__
@@ -189,9 +200,8 @@ class MultiVector:
     def __setitem__(self, item, value):
         self.vals[item if item in self.algebra.bin2canon else self.algebra.canon2bin[item]] = value
 
-    def __call__(self, grade):
-        # TODO: if `self` is symbolic, a call will evaluate it numerically.
-        return replace(self, vals={k: v for k, v in self.vals.items() if self._bin_grade(k) == grade})
+    def __call__(self):
+        raise NotImplementedError
 
     @staticmethod
     def _bin_grade(value):
