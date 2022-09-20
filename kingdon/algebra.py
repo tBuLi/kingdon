@@ -128,11 +128,11 @@ class MultiVector:
 
     def __post_init__(self):
         if isinstance(self.vals, Mapping):
-            if invalid_keys := [key for key in self.vals
-                                if key not in self.algebra.canon2bin and key not in self.algebra.bin2canon]:
-                raise KeyError(f"Invalid key(s) in `vals`: {invalid_keys}")
-            self.vals = {key if key in self.algebra.bin2canon else self.algebra.canon2bin[key]: val
-                         for key, val in self.vals.items()}
+            try:
+                self.vals = {key if key in self.algebra.bin2canon else self.algebra.canon2bin[key]: val
+                             for key, val in self.vals.items()}
+            except KeyError:
+                raise KeyError(f"Invalid key(s) in `vals`: keys should be `int` or canonical strings (e.g. `e12`)")
         elif len(self.vals) == len(self):
             self.vals = {i: val for i, val in enumerate(self.vals)}
         else:
@@ -142,8 +142,15 @@ class MultiVector:
             # self.vals was in fact empy, but we do have a name. So we are in symbolic mode.
             self.vals = dict(zip(range(len(self)), symbols(' '.join(f'{self.name}{i}' for i in range(len(self))))))
 
+        #TODO: extract grades present in self.vals
+        self.grades = []
+
     def __len__(self):
         return 2 ** self.algebra.d
+
+    def grade(self, grade):
+        # TODO: support multiple grade selection.
+        return replace(self, vals={k: v for k, v in self.vals.items() if self._bin_grade(k) == grade})
 
     def __neg__(self):
         return replace(self, vals={k: -v for k, v in self.vals.items()})
