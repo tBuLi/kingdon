@@ -263,6 +263,21 @@ class MultiVector:
 
     __and__ = rp
 
+    def dual(self, dual='auto'):
+        """
+        Compute the dual of `self`. There are three different kinds of duality in common usage.
+        The first is polarity, which is simply multiplying by the inverse PSS. This is the only game in town for
+        non-degenerate metrics (Algebra.r = 0). However, for degenerate spaces this no longer works, and we have
+        two popular options: Poincaré and Hodge duality.
+
+        By default, `kingdon` will use polarity in non-degenerate spaces, and Hodge duality for spaces with
+        `Algebra.r = 1`. For spaces with `r > 2`, little to no literature exists, and you are on your own.
+        """
+        if dual == 'polarity' or dual == 'auto' and self.algebra.r == 0:
+            return self * (1 / self.algebra.pss)
+        else:
+            raise NotImplementedError
+
 @dataclass
 class PureVector(MultiVector):
     """ A PureVector is a MultiVector of a single grade. """
