@@ -20,20 +20,20 @@ class Algebra:
     p: int = 0
     q: int = 0
     r: int = 0
-    d: int = field(init=False, repr=False)  # Total number of dimensions
-    signature: list[int] = field(init=False, repr=False)
+    d: int = field(init=False, repr=False, compare=False)  # Total number of dimensions
+    signature: list[int] = field(init=False, repr=False, compare=False)
 
     # Dictionaries that cache previously symbolically optimized lambda functions between elements.
-    _gp: dict = field(default_factory=dict, init=False, repr=False)  # geometric product dict
-    _sp: dict = field(default_factory=dict, init=False, repr=False)  # conjugation dict
-    _cp: dict = field(default_factory=dict, init=False, repr=False)  # commutator product dict
-    _ip: dict = field(default_factory=dict, init=False, repr=False)  # inner product dict
-    _op: dict = field(default_factory=dict, init=False, repr=False)  # exterior product dict
-    _rp: dict = field(default_factory=dict, init=False, repr=False)  # regressive product dict
+    _gp: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # geometric product dict
+    _sp: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # conjugation dict
+    _cp: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # commutator product dict
+    _ip: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # inner product dict
+    _op: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # exterior product dict
+    _rp: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # regressive product dict
 
     # Mappings from binary to canonical reps. e.g. 0b01 <-> 'e1', 0b11 <-> 'e12'.
-    canon2bin: dict = field(init=False, repr=False)
-    bin2canon: dict = field(init=False, repr=False)
+    canon2bin: dict = field(init=False, repr=False, compare=False)
+    bin2canon: dict = field(init=False, repr=False, compare=False)
 
     # Options for the algebra
     cse: bool = field(default=True)  # Common Subexpression Elimination (CSE)
@@ -41,10 +41,10 @@ class Algebra:
     numba: bool = field(default=False)  # Enable numba just-in-time compilation
     graded: bool = field(default=False)  # If true, precompute products per grade.
 
-    signs: dict = field(init=False, repr=False)
-    cayley: dict = field(init=False, repr=False)
-    blades: dict = field(init=False, repr=False)
-    pss: object = field(init=False, repr=False)
+    signs: dict = field(init=False, repr=False, compare=False)
+    cayley: dict = field(init=False, repr=False, compare=False)
+    blades: dict = field(init=False, repr=False, compare=False)
+    pss: object = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
         self.d = self.p + self.q + self.r
@@ -118,37 +118,34 @@ class Algebra:
 
 @dataclass
 class MultiVector:
+    """
+    MultiVector is the most fundamental and barebones object in the whole Kingdon.
+
+    Performs no sanity checking on the input, and is therefore used internally.
+    """
     algebra: Algebra = field(kw_only=True)
     vals: dict[int] = field(default_factory=lambda: defaultdict(int))
     name: str = field(default_factory=str)
 
-    grades: list[int] = field(init=False, repr=False)
-
-    def __post_init__(self):
-        if isinstance(self.vals, Mapping):
-            try:
-                self.vals = {key if key in self.algebra.bin2canon else self.algebra.canon2bin[key]: val
-                             for key, val in self.vals.items()}
-            except KeyError:
-                raise KeyError(f"Invalid key(s) in `vals`: keys should be `int` or canonical strings (e.g. `e12`)")
-        elif len(self.vals) == len(self):
-            self.vals = {i: val for i, val in enumerate(self.vals)}
-        else:
-            raise TypeError(f'`vals` should have length {len(self)}.')
-
-        if self.name and not self.vals:
-            # self.vals was in fact empy, but we do have a name. So we are in symbolic mode.
-            self.vals = dict(zip(range(len(self)), symbols(' '.join(f'{self.name}{i}' for i in range(len(self))))))
-
-        #TODO: extract grades present in self.vals
-        self.grades = []
+    # grades: list[int] = field(init=False, repr=False, compare=False)
 
     def __len__(self):
         return 2 ** self.algebra.d
 
-    def grade(self, grade):
-        # TODO: support multiple grade selection.
-        return replace(self, vals={k: v for k, v in self.vals.items() if self._bin_grade(k) == grade})
+    @property
+    def grades(self):
+        """ Determines the grades present in `self`. """
+        # TODO: Should probably be a cached property
+        return sorted({self._bin_grade(ind) for ind in self.vals})
+
+    @staticmethod
+    def _bin_grade(value):
+        """ Retrieves the grade of a binary index. """
+        return bin(value).count('1')
+
+    # def grade(self, grade):
+    #     # TODO: support multiple grade selection.
+    #     return replace(self, vals={k: v for k, v in self.vals.items() if self._bin_grade(k) == grade})
 
     def __neg__(self):
         return replace(self, vals={k: -v for k, v in self.vals.items()})
@@ -170,6 +167,7 @@ class MultiVector:
                 vals[k] += v
             else:
                 vals[k] = v
+        # TODO: check grades and produce the corresponding type. MV is usually to general.
         return MultiVector(vals=vals, algebra=self.algebra)
 
     def __sub__(self, other):
@@ -200,11 +198,6 @@ class MultiVector:
     def __call__(self):
         raise NotImplementedError
 
-    @staticmethod
-    def _bin_grade(value):
-        """ Retrieves the grade of a binary index. """
-        return bin(value).count('1')
-
     def asmatrix(self):
         raise NotImplementedError
 
@@ -215,8 +208,8 @@ class MultiVector:
 
         key = (tuple(self.vals), tuple(other.vals))
         if key not in func_dictionary:
-            x = replace(self, vals={ek: Symbol(f'a{ek}') for ek in self.vals})
-            y = replace(other, vals={ek: Symbol(f'b{ek}') for ek in other.vals})
+            x = MultiVector(vals={ek: Symbol(f'a{ek}') for ek in self.vals}, algebra=self.algebra)
+            y = MultiVector(vals={ek: Symbol(f'b{ek}') for ek in other.vals}, algebra=self.algebra)
             keys, func = func_dictionary[key] = codegen(x, y)
         else:
             keys, func = func_dictionary[key]
@@ -224,7 +217,7 @@ class MultiVector:
         args = chain(self.vals.values(), other.vals.values())
         # TODO: investigate the use of np.any, because this might break ducktyping.
         res_vals = defaultdict(int, {k: v for k, v in zip(keys, func(*args))
-                                     if (np.any(v) if not isinstance(v, Expr) else simplify(v))})
+                                     if (True if v.__class__ is not Expr else simplify(v))})
 
         return self.algebra.multivector(vals=res_vals)
 
@@ -246,7 +239,6 @@ class MultiVector:
     def cp(self, other):
         """ Calculate the commutator product of `x := self` and `y := other`: `x.cp(y) = 0.5*(x*y-y*x)`. """
         return self._multiplication(other, func_dictionary=self.algebra._cp, codegen=codegen_cp)
-    # __rshift__ = sp
 
     def ip(self, other):
         return self._multiplication(other, func_dictionary=self.algebra._ip, codegen=codegen_ip)
@@ -279,6 +271,28 @@ class MultiVector:
             raise NotImplementedError
 
 @dataclass
+class Element(MultiVector):
+    def __post_init__(self):
+        if isinstance(self.vals, Mapping):
+            try:
+                self.vals = {key if key in self.algebra.bin2canon else self.algebra.canon2bin[key]: val
+                             for key, val in self.vals.items()}
+            except KeyError:
+                raise KeyError(f"Invalid key(s) in `vals`: keys should be `int` or canonical strings (e.g. `e12`)")
+        elif len(self.vals) == len(self):
+            self.vals = {i: val for i, val in enumerate(self.vals)}
+        else:
+            raise TypeError(f'`vals` should have length {len(self)}.')
+
+        if self.name and not self.vals:
+            # self.vals was in fact empy, but we do have a name. So we are in symbolic mode.
+            self.vals = dict(zip(range(len(self)), symbols(' '.join(f'{self.name}{i}' for i in range(len(self))))))
+
+        #TODO: extract grades present in self.vals
+        self.grades = []
+
+
+@dataclass
 class PureVector(MultiVector):
     """ A PureVector is a MultiVector of a single grade. """
     grade: int = -1
@@ -298,7 +312,7 @@ class PureVector(MultiVector):
                             Symbol(self.name + ''.join(str(i) for i in comb))
                          for comb in combinations(range(1, self.algebra.d + 1), r=self.grade)}
 
-        super().__post_init__()
+        # super().__post_init__()
         if not all(self.grade == bin(i).count("1") for i in self.vals):
             raise ValueError(f"All keys in `vals` should be of grade r={self.grade}.")
 

@@ -198,3 +198,9 @@ def test_blades(vga2d):
     assert vga2d.blades['e2'] == vga2d.multivector({'e2': 1})
     assert vga2d.blades['e12'] == vga2d.multivector({'e12': 1})
     assert vga2d.blades['e12'] == vga2d.pss
+
+def test_outer(sta):
+    B = sta.bivector(name='B')
+    BwB = B ^ B
+    assert BwB.grades == [4]
+    assert BwB[15] == 2*(B['e12']*B['e34'] + B['e13']*B['e24'] + B['e14']*B['e23'])

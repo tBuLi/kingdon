@@ -1,4 +1,4 @@
-from itertools import product
+from itertools import product, chain
 from collections import defaultdict
 from dataclasses import replace
 import inspect
@@ -70,12 +70,21 @@ def codegen_ip(x, y):
 
 def codegen_op(x, y):
     """
-    Generate the commutator product of `x := self` and `y := other`: `x.cp(y) = 0.5*(x*y-y*x)`.
+    Generate the outer product of `x := self` and `y := other`: `x.op(y) = x ^ y`.
 
-    :return: tuple of keys in binary representation and a lambda function.
+    :x: MultiVector
+    :y: MultiVector
+    :return: dictionary with integer keys indicating the corresponding basis blade in binary convention,
+        and values which are a 3-tuple of indices in `x`, indices in `y`, and a lambda function.
     """
-    comm = (x * y - y * x) / 2
-    return _lambdify(x, y, comm.vals)
+    res_vals = defaultdict(int)
+    for (ei, vi), (ej, vj) in product(x.vals.items(), y.vals.items(), repeat=1):
+        if ei ^ ej == ei + ej:
+            res_vals[ei ^ ej] += vi * vj
+    # Remove expressions which are identical to zero
+    res_vals = {k: simp_expr for k, expr in res_vals.items() if (simp_expr := simplify(expr))}
+
+    return _lambdify(x, y, res_vals)
 
 def codegen_rp(x, y):
     """
@@ -83,11 +92,11 @@ def codegen_rp(x, y):
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    comm = (x * y - y * x) / 2
-    return _lambdify(x, y, comm.vals)
+    raise NotImplementedError
 
 def _lambdify(x, y, vals):
-    xy_symbols = list(x.vals.values()) + list(y.vals.values())
-    # func = lambdify(xy_symbols, tuple(vals.values()), cse=partial(cse, order='none'))
-    func = lambdify(xy_symbols, tuple(vals.values()), cse=x.algebra.cse)
+    xy_symbols = list(chain(x.vals.values(), y.vals.values()))
+    # TODO: Numba wants a tuple in the line below, but simpy only produces a
+    #  list as output if this is a list, not a tuple. See if we can solve this.
+    func = lambdify(xy_symbols, list(vals.values()), cse=x.algebra.cse)
     return vals.keys(), njit(func) if x.algebra.numba else func
