@@ -203,4 +203,7 @@ def test_outer(sta):
     B = sta.bivector(name='B')
     BwB = B ^ B
     assert BwB.grades == [4]
-    assert BwB[15] == 2*(B['e12']*B['e34'] + B['e13']*B['e24'] + B['e14']*B['e23'])
+    assert BwB[15] == 2*(B['e12']*B['e34'] - B['e13']*B['e24'] + B['e14']*B['e23'])
+
+    e1, e2 = sta.blades['e1'], sta.blades['e2']
+    assert e1^e2 == -e2^e1
