@@ -56,7 +56,7 @@ class Algebra:
         self.bin2canon[0] = '1'
         self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
 
-        self.signs, self.cayley = self._prepare_signs_and_cayley()
+        self.swaps, self.signs, self.cayley = self._prepare_signs_and_cayley()
 
         # Make convenient shorthand constructors for commonly used vector types.
         for grade, name in enumerate(['scalar', 'vector', 'bivector', 'trivector', 'quadvector'][:min(self.d+1, 5)]):
@@ -75,7 +75,8 @@ class Algebra:
         E.g. in :math:`\mathbb{R}_2`, sings[(0b11, 0b11)] = -1.
         """
         cayley = {}
-        signs = {}
+        sign_dict = {}
+        swap_dict = {}
         for eI, eJ in product(self.canon2bin, repeat=2):
             prod = eI[1:] + eJ[1:]
             # Compute the number of swaps of orthogonal vectors needed to order the basis vectors.
@@ -91,6 +92,8 @@ class Algebra:
                         break
                     else:
                         prev_swap = swaps
+            swap_dict[self.canon2bin[eI], self.canon2bin[eJ]] = swaps
+
             # Remove even powers of basis-vectors.
             sign = -1 if swaps % 2 else 1
             count = Counter(prod)
@@ -98,7 +101,7 @@ class Algebra:
                 if value // 2:
                     sign *= self.signature[int(key) - 1]
                 count[key] = value % 2
-            signs[self.canon2bin[eI], self.canon2bin[eJ]] = sign
+            sign_dict[self.canon2bin[eI], self.canon2bin[eJ]] = sign
 
             # Make the Cayley table.
             if sign:
@@ -107,7 +110,7 @@ class Algebra:
                 cayley[eI, eJ] = f'{sign}{"e" if prod != "" else "1"}{prod}'
             else:
                 cayley[eI, eJ] = f'0'
-        return signs, cayley
+        return swap_dict, sign_dict, cayley
 
     def multivector(self, *args, **kwargs):
         return MultiVector(*args, algebra=self, **kwargs)

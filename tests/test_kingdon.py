@@ -200,10 +200,18 @@ def test_blades(vga2d):
     assert vga2d.blades['e12'] == vga2d.pss
 
 def test_outer(sta):
+    # Anticommutation of basis vectors.
+    e1, e2 = sta.blades['e1'], sta.blades['e2']
+    assert e1^e2 == -e2^e1
+
+    # Test basis bivectors.
+    e12, e23 = sta.blades['e12'], sta.blades['e23']
+    assert (e12 ^ e23).vals == {}  # TODO: support == 0?
+    e12, e34 = sta.blades['e12'], sta.blades['e34']
+    assert (e12 ^ e34) == (e34 ^ e12)
+
+    # Non-simple bivector.
     B = sta.bivector(name='B')
     BwB = B ^ B
     assert BwB.grades == [4]
     assert BwB[15] == 2*(B['e12']*B['e34'] - B['e13']*B['e24'] + B['e14']*B['e23'])
-
-    e1, e2 = sta.blades['e1'], sta.blades['e2']
-    assert e1^e2 == -e2^e1

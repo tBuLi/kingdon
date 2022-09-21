@@ -80,7 +80,7 @@ def codegen_op(x, y):
     res_vals = defaultdict(int)
     for (ei, vi), (ej, vj) in product(x.vals.items(), y.vals.items(), repeat=1):
         if ei ^ ej == ei + ej:
-            res_vals[ei ^ ej] += vi * vj
+            res_vals[ei ^ ej] += (-1)**x.algebra.swaps[ei, ej] * vi * vj
     # Remove expressions which are identical to zero
     res_vals = {k: simp_expr for k, expr in res_vals.items() if (simp_expr := simplify(expr))}
 
