@@ -1,12 +1,12 @@
-from itertools import product, chain
+from itertools import product, repeat, combinations, chain
 from collections import defaultdict
-from dataclasses import replace
 import inspect
-from collections import Counter
-from functools import partial
+import os
+import pickle
+from concurrent.futures import ProcessPoolExecutor
 
-from sympy import Symbol, simplify, expand, cse, numbered_symbols
-from sympy.utilities.lambdify import lambdify, lambdastr
+from sympy import simplify, Symbol
+from sympy.utilities.lambdify import lambdify
 from numba import njit
 
 def codegen_gp(x, y, symbolic=False):
@@ -65,8 +65,7 @@ def codegen_ip(x, y):
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    comm = (x * y - y * x) / 2
-    return _lambdify(x, y, comm.vals)
+    return NotImplementedError
 
 def codegen_op(x, y):
     """

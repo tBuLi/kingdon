@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 
 """Tests for `kingdon` package."""
+from dataclasses import replace
+
 import pytest
 import numpy as np
 
 from sympy import Symbol, simplify, factor, expand, collect
-from kingdon import Algebra, PureVector, MultiVector
+from kingdon import Algebra, MultiVector
 
 import timeit
 
@@ -48,7 +50,7 @@ def test_algebra_constructors(pga1d):
 
     x = pga1d.vector([1, 2])
     assert len(x) == 2
-    assert isinstance(x, PureVector)
+    assert isinstance(x, MultiVector)
 
 def test_algebra_symbolic():
     alg = Algebra(3, 0, 1)
@@ -58,9 +60,9 @@ def test_MultiVector(pga1d):
     X = MultiVector(algebra=pga1d)
     assert isinstance(X.vals, dict)
     assert X.name == ''
-    assert len(X) == 2**2
-    with pytest.raises(ValueError):
-        # If starting from a sequence, it must be of length X.size
+    assert len(X) == len(X.vals)
+    with pytest.raises(TypeError):
+        # If starting from a sequence, it must be of length len(algebra)
         X = MultiVector(algebra=pga1d, vals=[1, 2])
     with pytest.raises(TypeError):
         # vals must be iterable (sequence)
@@ -87,12 +89,6 @@ def test_gp(pga1d):
     Z = X.gp(Y)
     assert Z.vals == {0: 2*7, 3: 2*5 + 3*7}
 
-def test_basis_squares(vga11):
-    assert np.all(vga11.bin_basis_squares == np.array([1, 1, -1, 1]))
-
-    alg = Algebra(1, 1, 1)
-    assert np.all(alg.bin_basis_squares == np.array([1, 1, -1, 1, 0, 0, 0, 0]))
-
 def test_cayley(pga1d, vga2d, vga11):
     assert pga1d.cayley == {('1', '1'): '1', ('1', 'e1'): 'e1', ('1', 'e12'): 'e12', ('1', 'e2'): 'e2',
                           ('e1', '1'): 'e1', ('e1', 'e1'): '1', ('e1', 'e12'): 'e2', ('e1', 'e2'): 'e12',
@@ -107,7 +103,7 @@ def test_cayley(pga1d, vga2d, vga11):
                           ('e2', '1'): 'e2', ('e2', 'e1'): '-e12', ('e2', 'e2'): '-1', ('e2', 'e12'): 'e1',
                           ('e12', '1'): 'e12', ('e12', 'e1'): '-e2', ('e12', 'e2'): '-e1', ('e12', 'e12'): '1'}
 
-def test_PureVector(pga1d):
+def test_purevector(pga1d):
     with pytest.raises(TypeError):
         # Grade needs to be specified.
         pga1d.purevector({1: 1, 2: 1})
@@ -118,7 +114,8 @@ def test_PureVector(pga1d):
         # vals must be of the specified grade.
         pga1d.purevector({0: 1, 2: 1}, grade=1)
     x = pga1d.purevector({1: 1, 2: 1}, grade=1)
-    assert isinstance(x, PureVector)
+    assert isinstance(x, MultiVector)
+    assert x.grades == (1,)
 
 def test_broadcasting(vga2d):
     valsX = np.random.random((2, 5))
@@ -138,19 +135,17 @@ def test_broadcasting(vga2d):
     assert np.all(Z[1] == Z2[1]) and np.all(Z[2] == Z2[2])
 
     # Test broadcasting a rotor across a tensor-valued element
-    R = vga2d.multivector({0: np.cos(np.pi/3), 3: np.sin(np.pi/3)})
+    R = vga2d.multivector({0: np.cos(np.pi / 3), 3: np.sin(np.pi / 3)})
     Z3 = R >> X
     for i, xrow in enumerate(valsX.T):
         Rx = R >> vga2d.vector(xrow)
         assert Rx[1] == Z3[1][i]
 
 def test_reverse(R6):
-    X = R6.multivector(np.arange(0, 2**6))
+    X = R6.multivector(np.arange(0, 2 ** 6))
     Xrev = ~X
-    for grade in [0, 1, 4, 5]:
-        assert X(grade) == Xrev(grade)
-    for grade in [2, 3, 6]:
-        assert X(grade) == - Xrev(grade)
+    assert X.grade((0, 1, 4, 5)) == Xrev.grade((0, 1, 4, 5))
+    assert X.grade((2, 3, 6)) == - Xrev.grade((2, 3, 6))
 
 def test_indexing(pga1d):
     # Test indexing of a mv with canonical and binary indices.
@@ -164,6 +159,7 @@ def test_gp_symbolic(vga2d):
     usq = u*u
     # Square of a vector should be purely scalar.
     assert usq[0] == u1**2 + u2**2
+    assert len(usq) == 1
     with pytest.raises(KeyError):
         usq['e12']
 
@@ -184,13 +180,16 @@ def test_sp_symbolic(vga2d):
     u = vga2d.vector(name='u')
     v = vga2d.vector(name='v')
     # Pure vector
-    assert (u >> v) == (u >> v)(1)
+    assert (u >> v) == (u >> v).grade(1)
 
 def test_cp_symbolic(R6):
     b = R6.bivector(name='B')
     v = R6.vector(name='v')
+    assert b.grades == (2,)
+    assert v.grades == (1,)
     # Pure vector
-    assert b.cp(v) == (b.cp(v))(1)
+    w = b.cp(v)
+    assert w.grades == (1,)
 
 def test_blades(vga2d):
     assert vga2d.blades['1'] == vga2d.multivector({'1': 1})
@@ -213,5 +212,16 @@ def test_outer(sta):
     # Non-simple bivector.
     B = sta.bivector(name='B')
     BwB = B ^ B
-    assert BwB.grades == [4]
+    assert BwB.grades == (4,)
     assert BwB[15] == 2*(B['e12']*B['e34'] - B['e13']*B['e24'] + B['e14']*B['e23'])
+
+def test_alg_graded(vga2d):
+    vga2d_graded = replace(vga2d, graded=True)
+    assert vga2d != vga2d_graded
+    u = vga2d_graded.multivector({'e1': 1})
+    v = vga2d_graded.multivector({'e2': 3})
+    print(u*v)
+
+def test_fromtrusted(vga2d):
+    x = vga2d.mvfromtrusted(vals={1: 1.1})
+    print(x)
