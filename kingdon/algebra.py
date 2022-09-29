@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, replace
 import numpy as np
 from sympy import Symbol, Expr, simplify
 
-from kingdon.codegen import codegen_gp, codegen_sp, codegen_cp, codegen_ip, codegen_op, codegen_rp
+from .codegen import codegen_gp, codegen_sp, codegen_cp, codegen_ip, codegen_op, codegen_rp
 
 
 class AlgebraError(Exception):
@@ -285,6 +285,9 @@ class MultiVector:
     def asmatrix(self):
         raise NotImplementedError
 
+    def frommatrix(self, matrix):
+        raise NotImplementedError
+
     def _multiplication(self, other, func_dictionary, codegen):
         """ Helper function for all multiplication types such as gp, sp, cp etc. """
         if self.algebra != other.algebra:
@@ -292,9 +295,10 @@ class MultiVector:
 
         keys_in = (tuple(self.vals), tuple(other.vals))
         if keys_in not in func_dictionary:
-            # TODO: fix names
-            x = self.algebra.multivector(vals={ek: Symbol(f'a{ek}') for ek in keys_in[0]})
-            y = self.algebra.multivector(vals={ek: Symbol(f'b{ek}') for ek in keys_in[1]})
+            x = self.algebra.multivector(vals={ek: Symbol(f'a{self.algebra.bin2canon[ek][1:]}')
+                                               for ek in keys_in[0]})
+            y = self.algebra.multivector(vals={ek: Symbol(f'b{self.algebra.bin2canon[ek][1:]}')
+                                               for ek in keys_in[1]})
             keys_out, func = func_dictionary[keys_in] = codegen(x, y)
         else:
             keys_out, func = func_dictionary[keys_in]
@@ -306,7 +310,7 @@ class MultiVector:
         return self.algebra.mvfromtrusted(vals=res_vals)
 
     def gp(self, other):
-        if not hasattr(other, 'algebra'):
+        if not isinstance(other, MultiVector):
             # Assume scalar multiplication, turn into a mv.
             other = self.algebra.scalar(vals={0: other})
 
@@ -364,8 +368,10 @@ class GradedMultiplication:
         keys_in = (self.algebra.indices_for_grades[self.grades],
                    self.algebra.indices_for_grades[other.grades])
         if keys_in not in func_dictionary:
-            x = self.algebra.multivector(vals={ek: Symbol(f'a{ek}') for ek in keys_in[0]})
-            y = self.algebra.multivector(vals={ek: Symbol(f'b{ek}') for ek in keys_in[1]})
+            x = self.algebra.multivector(vals={ek: Symbol(f'a{self.algebra.bin2canon[ek][1:]}')
+                                               for ek in keys_in[0]})
+            y = self.algebra.multivector(vals={ek: Symbol(f'b{self.algebra.bin2canon[ek][1:]}')
+                                               for ek in keys_in[1]})
             keys_out, func = func_dictionary[keys_in] = codegen(x, y)
         else:
             keys_out, func = func_dictionary[keys_in]
