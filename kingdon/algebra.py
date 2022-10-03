@@ -4,7 +4,6 @@ from collections.abc import Mapping
 from collections import defaultdict, Counter
 from dataclasses import dataclass, field, replace, fields
 from contextlib import contextmanager
-import inspect
 
 import numpy as np
 from sympy import Symbol, Expr, simplify
@@ -314,13 +313,6 @@ class MultiVector:
         return reduce(lambda tot, x: tot | x, (v.free_symbols for v in self.vals.values()))
 
     @cached_property
-    def _signature(self):
-        """Create a signature for this MV when the MV is called. """
-        parameters = [inspect.Parameter(name=s.name, kind=inspect.Parameter.POSITIONAL_OR_KEYWORD)
-                      for s in sorted(self.free_symbols, key=lambda x: x.name)]
-        return inspect.Signature(parameters=parameters)
-
-    @cached_property
     def _callable(self):
         """ Return the callable function for this MV. """
         return _lambdify_mv(sorted(self.free_symbols, key=lambda x: x.name), self)
@@ -328,11 +320,8 @@ class MultiVector:
     def __call__(self, *args, **kwargs):
         if not self.free_symbols:
             return self
-        sig = self._signature
-        bound_arguments = sig.bind(*args, **kwargs)
-
         keys_out, func = self._callable
-        res_vals = {k: v for k, v in zip(keys_out, func(*bound_arguments.args, **bound_arguments.kwargs))}
+        res_vals = {k: v for k, v in zip(keys_out, func(*args, **kwargs))}
         return self.algebra.mvfromtrusted(vals=res_vals)
 
     def asmatrix(self):
