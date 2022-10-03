@@ -176,7 +176,7 @@ def test_gp_symbolic(vga2d):
     with pytest.raises(KeyError):
         Rnormsq['e12']
 
-def test_sp_symbolic(vga2d):
+def test_conj_symbolic(vga2d):
     u = vga2d.vector(name='u')
     v = vga2d.vector(name='v')
     # Pure vector
@@ -225,3 +225,29 @@ def test_alg_graded(vga2d):
 def test_fromtrusted(vga2d):
     x = vga2d.mvfromtrusted(vals={1: 1.1})
     print(x)
+
+def test_inner_products(vga2d):
+    a = vga2d.multivector(name='a')
+    b = vga2d.multivector(name='b')
+
+    bipa = b.ip(a)
+    bspa = b.sp(a)
+    blca = b.lc(a)
+    brca = b.rc(a)
+
+    # Inner product relation 2.11 from "The Inner Products of Geometric Algebra"
+    assert bipa + bspa == blca + brca
+
+    # Compare to output of GAmphetamine.js
+    assert all([str(bipa[0]).replace(' ', '') == 'a*b+a1*b1-a12*b12+a2*b2',
+                str(bipa[1]).replace(' ', '') == 'a*b1+a1*b-a12*b2+a2*b12',
+                str(bipa[2]).replace(' ', '') == 'a*b2-a1*b12+a12*b1+a2*b',
+                str(bipa[3]).replace(' ', '') == 'a*b12+a12*b'])
+    assert all([str(blca[0]).replace(' ', '') == 'a*b+a1*b1-a12*b12+a2*b2',
+                str(blca[1]).replace(' ', '') == 'a1*b-a12*b2',
+                str(blca[2]).replace(' ', '') == 'a12*b1+a2*b',
+                str(blca[3]).replace(' ', '') == 'a12*b'])
+    assert all([str(brca[0]).replace(' ', '') == 'a*b+a1*b1-a12*b12+a2*b2',
+                str(brca[1]).replace(' ', '') == 'a*b1+a2*b12',
+                str(brca[2]).replace(' ', '') == 'a*b2-a1*b12',
+                str(brca[3]).replace(' ', '') == 'a*b12'])
