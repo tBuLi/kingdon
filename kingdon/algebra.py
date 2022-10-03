@@ -12,7 +12,7 @@ from kingdon.codegen import (
     codegen_gp, codegen_conj, codegen_cp, codegen_ip, codegen_op,
     codegen_rp, codegen_acp, codegen_proj, codegen_sp, codegen_lc, codegen_rc, _lambdify_mv
 )
-from kingdon.module_builder import predefined_modules
+# from kingdon.module_builder import predefined_modules
 
 binary_op_field = partial(field, default_factory=dict, init=False, repr=False, compare=False)
 
@@ -27,7 +27,7 @@ class Algebra:
     q: int = 0
     r: int = 0
     d: int = field(init=False, repr=False, compare=False)  # Total number of dimensions
-    signature: list[int] = field(init=False, repr=False, compare=False)
+    signature: list = field(init=False, repr=False, compare=False)
 
     # Dictionaries that cache previously symbolically optimized lambda functions between elements.
     _gp: dict = binary_op_field(metadata={'codegen': codegen_gp, 'syntax': '__mul__'})  # geometric product dict
@@ -163,8 +163,8 @@ class Algebra:
 
 @dataclass
 class MultiVector:
-    algebra: Algebra = field(kw_only=True)
-    vals: dict[int] = field(default_factory=lambda: defaultdict(int))
+    algebra: Algebra = field()
+    vals: dict = field(default_factory=lambda: defaultdict(int))
     name: str = field(default_factory=str)
 
     def __post_init__(self):
@@ -291,16 +291,16 @@ class MultiVector:
         elif 0 in other.vals and len(other.vals) == 1:
             # other is essentially a scalar.
             return replace(self, vals={k: v / other[0] for k, v in self.vals.items()})
+        elif not other.vals:
+            raise ZeroDivisionError
         raise NotImplementedError
 
-    __rtruediv__ = __truediv__
-
     def __str__(self):
-        if not self.vals:
+        if isinstance(self.vals, Mapping) and self.vals:
+            canon_sorted_vals = sorted(self.vals.items(), key=lambda x: (len(self.algebra.bin2canon[x[0]]), self.algebra.bin2canon[x[0]]))
+            return ' + '.join([f'({val}) * {self.algebra.bin2canon[key]}' for key, val in canon_sorted_vals])
+        else:
             return '0'
-        if isinstance(self.vals, Mapping):
-            return ' + '.join([f'({val}) * {self.algebra.bin2canon[key]}' for key, val in self.vals.items()])
-        return ' + '.join([f'({val}) * {self.algebra.bin2canon[i]}' for i, val in enumerate(self.vals)])
 
     def __getitem__(self, item):
         return self.vals[item if item in self.algebra.bin2canon else self.algebra.canon2bin[item]]
@@ -398,7 +398,7 @@ class MultiVector:
 
     __and__ = rp
 
-    def dual(self, dual='auto'):
+    def dual(self, kind='auto'):
         """
         Compute the dual of `self`. There are three different kinds of duality in common usage.
         The first is polarity, which is simply multiplying by the inverse PSS. This is the only game in town for
@@ -408,10 +408,17 @@ class MultiVector:
         By default, `kingdon` will use polarity in non-degenerate spaces, and Hodge duality for spaces with
         `Algebra.r = 1`. For spaces with `r > 2`, little to no literature exists, and you are on your own.
         """
-        if dual == 'polarity' or dual == 'auto' and self.algebra.r == 0:
-            return self * (1 / self.algebra.pss)
+        if kind == 'polarity' or kind == 'auto' and self.algebra.r == 0:
+            return self * self.algebra.pss.inv()
+        elif kind == 'hodge' or kind == 'auto' and self.algebra.r == 1:
+            return self.algebra.multivector(
+                vals={2**self.algebra.d - 1 - eI: self.algebra.signs[eI, 2**self.algebra.d - 1 - eI] * val
+                      for eI, val in self.vals.items()}
+            )
+        elif kind == 'auto':
+            raise Exception('Cannot select a suitable dual in auto mode for this algebra.')
         else:
-            raise NotImplementedError
+            raise ValueError(f'No dual found for kind={kind}.')
 
 
 class GradedMultiplication:

@@ -17,6 +17,16 @@ def pga1d():
 
 
 @pytest.fixture
+def pga2d():
+    return Algebra(2, 0, 1)
+
+
+@pytest.fixture
+def pga3d():
+    return Algebra(3, 0, 1)
+
+
+@pytest.fixture
 def vga2d():
     return Algebra(2)
 
@@ -201,7 +211,7 @@ def test_blades(vga2d):
 def test_outer(sta):
     # Anticommutation of basis vectors.
     e1, e2 = sta.blades['e1'], sta.blades['e2']
-    assert e1^e2 == -e2^e1
+    assert e1 ^ e2 == - e2 ^ e1
 
     # Test basis bivectors.
     e12, e23 = sta.blades['e12'], sta.blades['e23']
@@ -251,3 +261,22 @@ def test_inner_products(vga2d):
                 str(brca[1]).replace(' ', '') == 'a*b1+a2*b12',
                 str(brca[2]).replace(' ', '') == 'a*b2-a1*b12',
                 str(brca[3]).replace(' ', '') == 'a*b12'])
+
+def test_hodge_dual(pga2d, pga3d):
+    x = pga2d.multivector(name='x')
+    with pytest.raises(ZeroDivisionError):
+        x.dual(kind='polarity')
+    y = x.dual()
+    assert y.vals == {0: x[7], 1: x[6], 2: -x[5], 4: x[3], 3: x[4], 5: -x[2], 6: x[1], 7: x[0]}
+    assert x.vals == y.dual().vals
+    with pytest.raises(ValueError):
+        x.dual('poincare')
+
+    # Test hodge dual in 3DPGA
+    x = pga3d.multivector(name='x')
+    with pytest.raises(ZeroDivisionError):
+        x.dual(kind='polarity')
+    y = x.dual()
+    z = y.dual()
+    # assert y.vals == {0: x[7], 1: x[6], 2: -x[5], 4: x[3], 3: x[4], 5: -x[2], 6: x[1], 7: x[0]}
+    assert z.vals() == x.vals()
