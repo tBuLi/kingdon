@@ -33,17 +33,19 @@ broadcasts across numpy arrays so transformations can be applied easily to
 e.g. point-clouds and meshes.
 
 - Symbolically optimized.
-- Numba enabled.
+- Leverage sparseness of input.
 - Automatic broadcasting.
+- Numba enabled.
 
 Code Example
 ------------
 In order to demonstrate the power of Kingdon, let us first consider the common use-case of the
 commutator product between a bivector and vector.
 
-In order to create an algebra, use `Algebra`. When calling `Algebra` we must provide the signature of the
+In order to create an algebra, use :code:`Algebra`. When calling :code:`Algebra` we must provide the signature of the
 algebra, in this case we shall go for 3DPGA, which is the algebra :math:`\mathbb{R}_{3,0,1}`.
-In order to make elements of the algebra, `kingdon` provides the functions `Algebra.multivector`, `Algebra.vector`, `Algebra.bivector`, etc.
+In order to make elements of the algebra, :code:`kingdon` provides the functions :code:`Algebra.multivector`,
+:code:`Algebra.vector`, :code:`Algebra.bivector`, etc.
 These accept a sequence of values as their primary argument.
 For example:
 
@@ -56,26 +58,57 @@ For example:
     >>> b.cp(v)
     (-6) * e2
 
-This example shows that only the `e2`coefficient is calculated, despite the fact that there are
-6 bivector and 4 vector coefficients in 3DPGA. But because `kingdon` performs symbolic optimization before
-performing the computation, it knows that in this case only `e2`can be non-zero.
+This example shows that only the :code:`e2` coefficient is calculated, despite the fact that there are
+6 bivector and 4 vector coefficients in 3DPGA. But because :code:`kingdon` performs symbolic optimization before
+performing the computation, it knows that in this case only :code:`e2` can be non-zero.
 
-Symbolic usage:
+Symbolic usage
+--------------
+If only a name is provided for a multivector, :code:`kingdon` will automatically populate all
+relevant fields with symbols. This allows us to easily perform symbolic computations.
 
 .. code-block:: python
 
     >>> from kingdon import Algebra
     >>> alg = Algebra(3, 0, 1)
     >>> b = alg.bivector(name='b')
+    >>> b
+    (b12) * e12 + (b13) * e13 + (b23) * e23 + (b14) * e14 + (b24) * e24 + (b34) * e34
     >>> v = alg.vector(name='v')
+    >>> v
+    (v1) * e1 + (v2) * e2 + (v3) * e3 + (v4) * e4
     >>> b.cp(v)
     (-b12*v1 + b23*v3) * e2 + (b12*v2 + b13*v3) * e1 + (-b13*v1 - b23*v2) * e3 + (-b14*v1 - b24*v2 - b34*v3) * e4
 
+Notice that the indices of the symbols are identical to the basis blades, e.g. :math:`b_{12} \mathbf{e}_{12}`.
+It is also possible to manually specify symbols only for specific coefficients, while others can be numeric::
+
+    >>> from kingdon import Algebra, symbols
+    >>> alg = Algebra(3, 0, 1)
+    >>> b12 = symbols('b12')
+    >>> b = alg.bivector({'e12': b12, 'e34': 3})
+    >>> b
+    (b12) * e12 + (3) * e34
+    >>> v = alg.vector({0b0001: 1, 0b0100: 1})
+    >>> v
+    (1) * e1 + (1) * e3
+    >>> w = b.cp(v)
+    >>> w
+    (-b12) * e2 + (-3) * e4
+
+This also demonstrates the two possible types of keys for basis blades if the input to a multivector is a dict:
+they can be integers or strings corresponding to the basis blades.
+
+A :code:`kingdon` MultiVector with symbols is callable. So in order to evaluate :code:`w` from the previous example,
+for a specific value of :code:`b12`, simply call :code:`w`::
+
+    >>> w(b12=10)
+    >>> (-10) * e2 + (-3) * e4
 
 
 Operators
 =========
-.. list-table:: Title
+.. list-table:: Operators
    :widths: 50 25 25 25
    :header-rows: 1
 
@@ -103,15 +136,20 @@ Operators
      - :math:`a b \widetilde{a}`
      - :code:`a >> b`
      - :code:`a.sp(b)`
-   * - Commutator :code:`a` by :code:`b`
+   * - Project :code:`a` onto :code:`b`
+     - :math:`(a \cdot b) b^{-1}`
+     - :code:`a @ b`
+     - :code:`a.proj(b)`
+   * - Commutator of :code:`a` and :code:`b`
      - :math:`a \times b = \tfrac{1}{2} [a, b]`
      -
      - :code:`a.cp(b)`
+   * - Anti-commutator of :code:`a` and :code:`b`
+     - :math:`\tfrac{1}{2} \{a, b\}`
+     -
+     - :code:`a.acp(b)`
 
 Credits
 -------
 
-This package was created with Cookiecutter_ and the `audreyr/cookiecutter-pypackage`_ project template.
-
-.. _Cookiecutter: https://github.com/audreyr/cookiecutter
-.. _`audreyr/cookiecutter-pypackage`: https://github.com/audreyr/cookiecutter-pypackage
+This package was inspired by GAmphetamine.js.

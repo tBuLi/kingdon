@@ -8,6 +8,7 @@ Welcome to Kingdon's documentation!
    readme
    installation
    usage
+   workings
    modules
    contributing
    authors
