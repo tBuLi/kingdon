@@ -267,8 +267,10 @@ def test_hodge_dual(pga2d, pga3d):
     with pytest.raises(ZeroDivisionError):
         x.dual(kind='polarity')
     y = x.dual()
+    # GAmphetamine.js output
     assert y.vals == {0: x[7], 1: x[6], 2: -x[5], 4: x[3], 3: x[4], 5: -x[2], 6: x[1], 7: x[0]}
-    assert x.vals == y.dual().vals
+    z = y.undual()
+    assert x.vals == z.vals
     with pytest.raises(ValueError):
         x.dual('poincare')
 
@@ -277,6 +279,15 @@ def test_hodge_dual(pga2d, pga3d):
     with pytest.raises(ZeroDivisionError):
         x.dual(kind='polarity')
     y = x.dual()
-    z = y.dual()
-    # assert y.vals == {0: x[7], 1: x[6], 2: -x[5], 4: x[3], 3: x[4], 5: -x[2], 6: x[1], 7: x[0]}
-    assert z.vals() == x.vals()
+    # GAmphetamine.js output
+    "x1234 - x234 e₁ + x134 e₂ - x124 e₃ + x123 e₄ + x34 e₁₂ - x24 e₁₃ + x23 e₁₄ + x14 e₂₃ - x13 e₂₄ + x12 e₃₄ " \
+    "- x4 e₁₂₃ + x3 e₁₂₄ - x2 e₁₃₄ + x1 e₂₃₄ + x e₁₂₃₄"
+    assert y.vals == {
+        0b0000: x[0b1111],
+        0b0001: -x[0b1110], 0b0010: x[0b1101], 0b0100: -x[0b1011], 0b1000: x[0b0111],
+        0b0011: x[0b1100], 0b0101: -x[0b1010], 0b1001: x[0b0110], 0b0110: x[0b1001], 0b1010: -x[0b0101], 0b1100: x[0b0011],
+        0b0111: -x[0b1000], 0b1011: x[0b0100], 0b1101: -x[0b0010], 0b1110: x[0b0001],
+        0b1111: x[0]
+    }
+    z = y.undual()
+    assert z.vals == x.vals

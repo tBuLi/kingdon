@@ -155,7 +155,7 @@ class Algebra:
         return MultiVector.fromtrusted(*args, algebra=self, **kwargs)
 
     def multivector(self, *args, **kwargs):
-        return MultiVector(*args, algebra=self, **kwargs)
+        return MultiVector(self, *args, **kwargs)
 
     def purevector(self, *args, grade, **kwargs):
         return MultiVector.withgrades(self, *args, grades=(grade,), **kwargs)
@@ -419,6 +419,28 @@ class MultiVector:
             raise Exception('Cannot select a suitable dual in auto mode for this algebra.')
         else:
             raise ValueError(f'No dual found for kind={kind}.')
+
+    def undual(self, kind='auto'):
+        """
+        Compute the undual of `self`. There are three different kinds of duality in common usage.
+        The first is polarity, which is simply multiplying by the PSS. This is the only game in town for
+        non-degenerate metrics (Algebra.r = 0). However, for degenerate spaces this no longer works, and we have
+        two popular options: Poincaré and Hodge duality.
+
+        By default, `kingdon` will use polarity in non-degenerate spaces, and Hodge duality for spaces with
+        `Algebra.r = 1`. For spaces with `r > 2`, little to no literature exists, and you are on your own.
+        """
+        if kind == 'polarity' or kind == 'auto' and self.algebra.r == 0:
+            return self * self.algebra.pss
+        elif kind == 'hodge' or kind == 'auto' and self.algebra.r == 1:
+            return self.algebra.multivector(
+                vals={2**self.algebra.d - 1 - eI: self.algebra.signs[2**self.algebra.d - 1 - eI, eI] * val
+                      for eI, val in self.vals.items()}
+            )
+        elif kind == 'auto':
+            raise Exception('Cannot select a suitable undual in auto mode for this algebra.')
+        else:
+            raise ValueError(f'No undual found for kind={kind}.')
 
 
 class GradedMultiplication:
