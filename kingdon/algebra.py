@@ -1,13 +1,21 @@
 from itertools import combinations, product, chain, groupby
-from functools import partial, cached_property
+from functools import partial, cached_property, reduce
 from collections.abc import Mapping
 from collections import defaultdict, Counter
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, replace, fields
+from contextlib import contextmanager
+import inspect
 
 import numpy as np
 from sympy import Symbol, Expr, simplify
 
-from .codegen import codegen_gp, codegen_sp, codegen_cp, codegen_ip, codegen_op, codegen_rp
+from kingdon.codegen import (
+    codegen_gp, codegen_conj, codegen_cp, codegen_ip, codegen_op,
+    codegen_rp, codegen_acp, codegen_proj, codegen_sp, codegen_lc, codegen_rc, _lambdify_mv
+)
+from kingdon.module_builder import predefined_modules
+
+binary_op_field = partial(field, default_factory=dict, init=False, repr=False, compare=False)
 
 
 class AlgebraError(Exception):
@@ -23,14 +31,19 @@ class Algebra:
     signature: list[int] = field(init=False, repr=False, compare=False)
 
     # Dictionaries that cache previously symbolically optimized lambda functions between elements.
-    _gp: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # geometric product dict
-    _sp: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # conjugation dict
-    _cp: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # commutator product dict
-    _ip: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # inner product dict
-    _op: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # exterior product dict
-    _rp: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # regressive product dict
+    _gp: dict = binary_op_field(metadata={'codegen': codegen_gp, 'syntax': '__mul__'})  # geometric product dict
+    _conj: dict = binary_op_field(metadata={'codegen': codegen_conj})  # conjugation dict
+    _cp: dict = binary_op_field(metadata={'codegen': codegen_cp})  # commutator product dict
+    _acp: dict = binary_op_field(metadata={'codegen': codegen_acp})  # anti-commutator product dict
+    _ip: dict = binary_op_field(metadata={'codegen': codegen_ip})  # inner product dict
+    _sp: dict = binary_op_field(metadata={'codegen': codegen_sp})  # Scalar product dict
+    _lc: dict = binary_op_field(metadata={'codegen': codegen_lc})  # left-contraction
+    _rc: dict = binary_op_field(metadata={'codegen': codegen_rc})  # right-contraction
+    _op: dict = binary_op_field(metadata={'codegen': codegen_op})  # exterior product dict
+    _rp: dict = binary_op_field(metadata={'codegen': codegen_rp})  # regressive product dict
+    _proj: dict = binary_op_field(metadata={'codegen': codegen_proj})  # projection dict
 
-    # Mappings from binary to canonical reps. e.g. 0b01 <-> 'e1', 0b11 <-> 'e12'.
+    # Mappings from binary to canonical reps. e.g. 0b01 = 1 <-> 'e1', 0b11 = 3 <-> 'e12'.
     canon2bin: dict = field(init=False, repr=False, compare=False)
     bin2canon: dict = field(init=False, repr=False, compare=False)
 
@@ -88,6 +101,10 @@ class Algebra:
         all_grade_combs = chain(*(combinations(range(0, self.d + 1), r=j) for j in range(1, len(self) + 1)))
         return {comb: sum((self.indices_for_grade[grade] for grade in comb), ())
                 for comb in all_grade_combs}
+
+    @cached_property
+    def _binary_operations(self):
+        return {f.name: dict(f.metadata) for f in fields(self) if f.metadata}
 
     def _prepare_signs_and_cayley(self):
         """
@@ -175,7 +192,7 @@ class MultiVector:
         Example usage:
         ..code:
             >>> alg = Algebra(2)
-            >>> u = MultiVector.withgrades(alg, [1.2, 3.4], grades=(1,))
+            >>> u = MultiVector.withgrades(alg, [1.2, 3.4], grades=1)
             >>> u
             1.2e1 + 3.4e2
         """
@@ -195,8 +212,14 @@ class MultiVector:
                 vals = {k: v for k, v in zip(indices, vals)}
             else:
                 raise TypeError(f'`vals` should be a mapping, or be a sequence of length {len(algebra)}.')
-        elif not set(vals.keys()) <= set(algebra.indices_for_grades[grades]):
-            raise ValueError(f"All keys in `vals` should be of grades {grades}.")
+        elif isinstance(vals, Mapping):
+            try:
+                vals = {key if key in algebra.bin2canon else algebra.canon2bin[key]: val
+                             for key, val in vals.items()}
+            except KeyError:
+                raise KeyError(f"Invalid key(s) in `vals`: keys should be `int` or canonical strings (e.g. `e12`)")
+            if not set(vals.keys()) <= set(algebra.indices_for_grades[grades]):
+                raise ValueError(f"All keys in `vals` should be of grades {grades}.")
 
         return cls(algebra=algebra, vals=vals, **kwargs)
 
@@ -206,7 +229,7 @@ class MultiVector:
         Create a new MultiVector without performing any sanity checking on the input.
         This is meant for internal use only, as the lack off sanity checking increases performance.
         """
-        obj = cls.__new__(cls)
+        obj = cls.__new__(cls, algebra=algebra)
         obj.algebra = algebra
         obj.vals = vals
         obj.name = ''
@@ -230,6 +253,11 @@ class MultiVector:
         vals = {k: self.vals[k]
                 for k in self.algebra.indices_for_grades[grades] if k in self.vals}
         return self.algebra.multivector(vals)
+
+    @cached_property
+    def issymbolic(self):
+        """ True if this mv contains Symbols, False otherwise. """
+        return any(isinstance(v, Expr) for v in self.vals.values())
 
     def __neg__(self):
         return replace(self, vals={k: -v for k, v in self.vals.items()})
@@ -269,6 +297,8 @@ class MultiVector:
     __rtruediv__ = __truediv__
 
     def __str__(self):
+        if not self.vals:
+            return '0'
         if isinstance(self.vals, Mapping):
             return ' + '.join([f'({val}) * {self.algebra.bin2canon[key]}' for key, val in self.vals.items()])
         return ' + '.join([f'({val}) * {self.algebra.bin2canon[i]}' for i, val in enumerate(self.vals)])
@@ -279,8 +309,31 @@ class MultiVector:
     def __setitem__(self, item, value):
         self.vals[item if item in self.algebra.bin2canon else self.algebra.canon2bin[item]] = value
 
-    def __call__(self):
-        raise NotImplementedError
+    @cached_property
+    def free_symbols(self):
+        return reduce(lambda tot, x: tot | x, (v.free_symbols for v in self.vals.values()))
+
+    @cached_property
+    def _signature(self):
+        """Create a signature for this MV when the MV is called. """
+        parameters = [inspect.Parameter(name=s.name, kind=inspect.Parameter.POSITIONAL_OR_KEYWORD)
+                      for s in sorted(self.free_symbols, key=lambda x: x.name)]
+        return inspect.Signature(parameters=parameters)
+
+    @cached_property
+    def _callable(self):
+        """ Return the callable function for this MV. """
+        return _lambdify_mv(sorted(self.free_symbols, key=lambda x: x.name), self)
+
+    def __call__(self, *args, **kwargs):
+        if not self.free_symbols:
+            return self
+        sig = self._signature
+        bound_arguments = sig.bind(*args, **kwargs)
+
+        keys_out, func = self._callable
+        res_vals = {k: v for k, v in zip(keys_out, func(*bound_arguments.args, **bound_arguments.kwargs))}
+        return self.algebra.mvfromtrusted(vals=res_vals)
 
     def asmatrix(self):
         raise NotImplementedError
@@ -288,9 +341,12 @@ class MultiVector:
     def frommatrix(self, matrix):
         raise NotImplementedError
 
-    def _multiplication(self, other, func_dictionary, codegen):
+    def _binary_operation(self, other, func_dictionary, codegen):
         """ Helper function for all multiplication types such as gp, sp, cp etc. """
-        if self.algebra != other.algebra:
+        if not isinstance(other, MultiVector):
+            # Assume scalar multiplication, turn into a mv.
+            other = self.algebra.scalar(vals={0: other})
+        elif self.algebra != other.algebra:
             raise AlgebraError("Cannot multiply elements of different algebra's.")
 
         keys_in = (tuple(self.vals), tuple(other.vals))
@@ -304,42 +360,52 @@ class MultiVector:
             keys_out, func = func_dictionary[keys_in]
 
         args = chain(self.vals.values(), other.vals.values())
-        res_vals = {k: v for k, v in zip(keys_out, func(*args))
-                    if (True if not isinstance(v, Expr) else simplify(v))}
+        if self.issymbolic or other.issymbolic:
+            res_vals = {k: v for k, v in zip(keys_out, func(*args))
+                        if (True if not isinstance(v, Expr) else simplify(v))}
+        else:
+            res_vals = {k: v for k, v in zip(keys_out, func(*args))}
 
         return self.algebra.mvfromtrusted(vals=res_vals)
 
     def gp(self, other):
-        if not isinstance(other, MultiVector):
-            # Assume scalar multiplication, turn into a mv.
-            other = self.algebra.scalar(vals={0: other})
-
-        return self._multiplication(other, func_dictionary=self.algebra._gp, codegen=codegen_gp)
+        return self._binary_operation(other, func_dictionary=self.algebra._gp, codegen=codegen_gp)
 
     __mul__ = __rmul__ = gp
 
-    def sp(self, other):
+    def conj(self, other):
         """ Apply `x := self` to `y := other` under conjugation: `x*y*~x`. """
-        return self._multiplication(other, func_dictionary=self.algebra._sp, codegen=codegen_sp)
-
-    __rshift__ = sp
+        return self._binary_operation(other, func_dictionary=self.algebra._conj, codegen=codegen_conj)
 
     def cp(self, other):
         """ Calculate the commutator product of `x := self` and `y := other`: `x.cp(y) = 0.5*(x*y-y*x)`. """
-        return self._multiplication(other, func_dictionary=self.algebra._cp, codegen=codegen_cp)
+        return self._binary_operation(other, func_dictionary=self.algebra._cp, codegen=codegen_cp)
 
     def ip(self, other):
-        return self._multiplication(other, func_dictionary=self.algebra._ip, codegen=codegen_ip)
+        return self._binary_operation(other, func_dictionary=self.algebra._ip, codegen=codegen_ip)
 
     __or__ = ip
 
     def op(self, other):
-        return self._multiplication(other, func_dictionary=self.algebra._op, codegen=codegen_op)
+        return self._binary_operation(other, func_dictionary=self.algebra._op, codegen=codegen_op)
 
     __xor__ = op
 
+    def lc(self, other):
+        return self._binary_operation(other, func_dictionary=self.algebra._lc, codegen=codegen_lc)
+
+    __lshift__ = lc
+
+    def rc(self, other):
+        return self._binary_operation(other, func_dictionary=self.algebra._rc, codegen=codegen_rc)
+
+    __rshift__ = rc
+
+    def sp(self, other):
+        return self._binary_operation(other, func_dictionary=self.algebra._sp, codegen=codegen_sp)
+
     def rp(self, other):
-        return self._multiplication(other, func_dictionary=self.algebra._rp, codegen=codegen_rp)
+        return self._binary_operation(other, func_dictionary=self.algebra._rp, codegen=codegen_rp)
 
     __and__ = rp
 
@@ -360,7 +426,7 @@ class MultiVector:
 
 
 class GradedMultiplication:
-    def _multiplication(self, other, func_dictionary, codegen):
+    def _binary_operation(self, other, func_dictionary, codegen):
         """ Helper function for all multiplication types such as gp, sp, cp etc. """
         if self.algebra != other.algebra:
             raise AlgebraError("Cannot multiply elements of different algebra's.")

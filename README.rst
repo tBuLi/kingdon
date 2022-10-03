@@ -124,6 +124,18 @@ Operators
      - :math:`a \cdot b`
      - :code:`a|b`
      - :code:`a.ip(b)`
+   * - Scalar product
+     - :math:`\langle a \cdot b \rangle_0`
+     - 
+     - :code:`a.sp(b)`
+   * - Left-contraction
+     - :math:`a \rfloor b`
+     - :code:`a << b`
+     - :code:`a.lc(b)`
+   * - Right-contraction
+     - :math:`a \lfloor b`
+     - :code:`a >> b`
+     - :code:`a.rc(b)`
    * - Outer (Exterior)
      - :math:`a \wedge b`
      - :code:`a ^ b`
@@ -134,8 +146,8 @@ Operators
      - :code:`a.rp(b)`
    * - Conjugate :code:`b` by :code:`a`
      - :math:`a b \widetilde{a}`
-     - :code:`a >> b`
-     - :code:`a.sp(b)`
+     -
+     - :code:`a.conj(b)`
    * - Project :code:`a` onto :code:`b`
      - :math:`(a \cdot b) b^{-1}`
      - :code:`a @ b`

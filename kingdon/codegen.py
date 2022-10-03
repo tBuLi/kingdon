@@ -5,7 +5,7 @@ import os
 import pickle
 from concurrent.futures import ProcessPoolExecutor
 
-from sympy import simplify, Symbol
+from sympy import simplify
 from sympy.utilities.lambdify import lambdify
 from numba import njit
 
@@ -20,7 +20,7 @@ def codegen_gp(x, y, symbolic=False):
         and values which are a 3-tuple of indices in `x`, indices in `y`, and a lambda function.
     """
     res_vals = defaultdict(int)
-    for (ei, vi), (ej, vj) in product(x.vals.items(), y.vals.items(), repeat=1):
+    for (ei, vi), (ej, vj) in product(x.vals.items(), y.vals.items()):
         if x.algebra.signs[ei, ej]:
             res_vals[ei ^ ej] += x.algebra.signs[(ei, ej)] * vi * vj
     # Remove expressions which are identical to zero
@@ -30,7 +30,7 @@ def codegen_gp(x, y, symbolic=False):
 
     return _lambdify(x, y, res_vals)
 
-def codegen_sp(x, y):
+def codegen_conj(x, y):
     """
     Generate the sandwich (conjugation) product between `x` and `y`: `x*y*~x`.
 
@@ -59,9 +59,59 @@ def codegen_cp(x, y):
             xy[k] = - v
     return _lambdify(x, y, xy)
 
-def codegen_ip(x, y):
+def codegen_acp(x, y):
     """
-    Generate the commutator product of `x := self` and `y := other`: `x.cp(y) = 0.5*(x*y-y*x)`.
+    Generate the anti-commutator product of `x := self` and `y := other`: `x.acp(y) = 0.5*(x*y+y*x)`.
+
+    :return: tuple of keys in binary representation and a lambda function.
+    """
+    return NotImplementedError
+
+def codegen_ip(x, y, diff_func=abs):
+    """
+    Generate the inner product of `x := self` and `y := other`.
+
+    :param diff_func: How to treat the difference between the binary reps of the basis blades.
+        if :code:`abs`, compute the symmetric inner product. When :code:`lambda x: -x` this
+        function generates left-contraction, and when :code:`lambda x: x`, right-contraction.
+    :return: tuple of keys in binary representation and a lambda function.
+    """
+    res_vals = defaultdict(int)
+    for (ei, vi), (ej, vj) in product(x.vals.items(), y.vals.items()):
+        if ei ^ ej == diff_func(ei - ej):
+            res_vals[ei ^ ej] += x.algebra.signs[ei, ej] * vi * vj
+    # Remove expressions which are identical to zero
+    res_vals = {k: simp_expr for k, expr in res_vals.items() if (simp_expr := simplify(expr))}
+
+    return _lambdify(x, y, res_vals)
+
+def codegen_lc(x, y):
+    """
+    Generate the left-contraction of `x := self` and `y := other`.
+
+    :return: tuple of keys in binary representation and a lambda function.
+    """
+    return codegen_ip(x, y, diff_func=lambda x: -x)
+
+def codegen_rc(x, y):
+    """
+    Generate the right-contraction of `x := self` and `y := other`.
+
+    :return: tuple of keys in binary representation and a lambda function.
+    """
+    return codegen_ip(x, y, diff_func=lambda x: x)
+
+def codegen_sp(x, y):
+    """
+    Generate the scalar product of `x := self` and `y := other`.
+
+    :return: tuple of keys in binary representation and a lambda function.
+    """
+    return codegen_ip(x, y, diff_func=lambda x: 0)
+
+def codegen_proj(x, y):
+    """
+    Generate the projection of `x := self` onto `y := other`: :math:`(x \cdot y) / y`.
 
     :return: tuple of keys in binary representation and a lambda function.
     """
@@ -77,7 +127,7 @@ def codegen_op(x, y):
         and values which are a 3-tuple of indices in `x`, indices in `y`, and a lambda function.
     """
     res_vals = defaultdict(int)
-    for (ei, vi), (ej, vj) in product(x.vals.items(), y.vals.items(), repeat=1):
+    for (ei, vi), (ej, vj) in product(x.vals.items(), y.vals.items()):
         if ei ^ ej == ei + ej:
             res_vals[ei ^ ej] += (-1)**x.algebra.swaps[ei, ej] * vi * vj
     # Remove expressions which are identical to zero
@@ -98,4 +148,10 @@ def _lambdify(x, y, vals):
     # TODO: Numba wants a tuple in the line below, but simpy only produces a
     #  list as output if this is a list, not a tuple. See if we can solve this.
     func = lambdify(xy_symbols, list(vals.values()), cse=x.algebra.cse)
-    return vals.keys(), njit(func) if x.algebra.numba else func
+    return tuple(vals.keys()), njit(func) if x.algebra.numba else func
+
+def _lambdify_mv(free_symbols, mv):
+    # TODO: Numba wants a tuple in the line below, but simpy only produces a
+    #  list as output if this is a list, not a tuple. See if we can solve this.
+    func = lambdify(free_symbols, list(mv.vals.values()), cse=mv.algebra.cse)
+    return tuple(mv.vals.keys()), njit(func) if mv.algebra.numba else func
