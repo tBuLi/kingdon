@@ -146,9 +146,9 @@ def test_broadcasting(vga2d):
 
     # Test broadcasting a rotor across a tensor-valued element
     R = vga2d.multivector({0: np.cos(np.pi / 3), 3: np.sin(np.pi / 3)})
-    Z3 = R >> X
+    Z3 = R.conj(X)
     for i, xrow in enumerate(valsX.T):
-        Rx = R >> vga2d.vector(xrow)
+        Rx = R.conj(vga2d.vector(xrow))
         assert Rx[1] == Z3[1][i]
 
 def test_reverse(R6):
@@ -190,7 +190,7 @@ def test_conj_symbolic(vga2d):
     u = vga2d.vector(name='u')
     v = vga2d.vector(name='v')
     # Pure vector
-    assert (u >> v) == (u >> v).grade(1)
+    assert u.conj(v).grades == (1,)
 
 def test_cp_symbolic(R6):
     b = R6.bivector(name='B')
