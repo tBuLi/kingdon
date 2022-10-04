@@ -7,7 +7,7 @@ import pytest
 import numpy as np
 
 from sympy import Symbol, simplify, factor, expand, collect
-from kingdon import Algebra, MultiVector
+from kingdon import Algebra, MultiVector, symbols
 
 import timeit
 
@@ -291,3 +291,14 @@ def test_hodge_dual(pga2d, pga3d):
     }
     z = y.undual()
     assert z.vals == x.vals
+
+def test_regressive(pga3d):
+    x1, x2, x3 = symbols('x1, x2, x3')
+    x = pga3d.trivector([x1, x2, x3, 1])
+    y1, y2, y3 = symbols('y1, y2, y3')
+    y = pga3d.trivector([y1, y2, y3, 1])
+    # Compare with known output from  GAmphetamine.js
+    vals = {'e12': x1*y2-x2*y1, 'e13': x1*y3-x3*y1, 'e14': x2*y3-x3*y2,
+            'e23': x1-y1, 'e24': x2-y2, 'e34': x3-y3}
+    known = pga3d.multivector(vals)
+    assert x & y == known

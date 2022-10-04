@@ -117,7 +117,7 @@ def codegen_proj(x, y):
     """
     return NotImplementedError
 
-def codegen_op(x, y):
+def codegen_op(x, y, symbolic=True):
     """
     Generate the outer product of `x := self` and `y := other`: `x.op(y) = x ^ y`.
 
@@ -132,6 +132,8 @@ def codegen_op(x, y):
             res_vals[ei ^ ej] += (-1)**x.algebra.swaps[ei, ej] * vi * vj
     # Remove expressions which are identical to zero
     res_vals = {k: simp_expr for k, expr in res_vals.items() if (simp_expr := simplify(expr))}
+    if symbolic:
+        return res_vals
 
     return _lambdify(x, y, res_vals)
 
@@ -141,7 +143,8 @@ def codegen_rp(x, y):
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    raise NotImplementedError
+    x_regr_y = x.algebra.multivector(codegen_op(x.dual(), y.dual(), symbolic=True)).undual()
+    return _lambdify(x, y, x_regr_y.vals)
 
 def _lambdify(x, y, vals):
     xy_symbols = list(chain(x.vals.values(), y.vals.values()))
