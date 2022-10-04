@@ -308,9 +308,9 @@ def test_projection(pga3d):
     x = pga3d.trivector([x1, x2, x3, 1])
     y1, y2, y3, y4 = symbols('y1, y2, y3, y4')
     y = pga3d.vector([y1, y2, y3, y4])
-    # project the point y onto the plane x
+    # project the plane y onto the point x
     z = y @ x
     assert z.grades == (1,)
-    # project the plane x onto the point y
+    # project the point x onto the plane y
     z = x @ y
     assert z.grades == (3,)
