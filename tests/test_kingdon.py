@@ -302,3 +302,15 @@ def test_regressive(pga3d):
             'e23': x1-y1, 'e24': x2-y2, 'e34': x3-y3}
     known = pga3d.multivector(vals)
     assert x & y == known
+
+def test_projection(pga3d):
+    x1, x2, x3 = symbols('x1, x2, x3')
+    x = pga3d.trivector([x1, x2, x3, 1])
+    y1, y2, y3, y4 = symbols('y1, y2, y3, y4')
+    y = pga3d.vector([y1, y2, y3, y4])
+    # project the point y onto the plane x
+    z = y @ x
+    assert z.grades == (1,)
+    # project the plane x onto the point y
+    z = x @ y
+    assert z.grades == (3,)

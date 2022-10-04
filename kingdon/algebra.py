@@ -366,6 +366,15 @@ class MultiVector:
         """ Apply `x := self` to `y := other` under conjugation: `x*y*~x`. """
         return self._binary_operation(other, func_dictionary=self.algebra._conj, codegen=codegen_conj)
 
+    def proj(self, other):
+        """
+        Project `x := self` onto `y := other`: :math:`(x \cdot y) \widetilde{y}`.
+        For correct behavior, :math:`x` and :math:`y` should be normalized (k-reflections).
+        """
+        return self._binary_operation(other, func_dictionary=self.algebra._proj, codegen=codegen_proj)
+
+    __matmul__ = proj
+
     def cp(self, other):
         """ Calculate the commutator product of `x := self` and `y := other`: `x.cp(y) = 0.5*(x*y-y*x)`. """
         return self._binary_operation(other, func_dictionary=self.algebra._cp, codegen=codegen_cp)

@@ -67,7 +67,7 @@ def codegen_acp(x, y):
     """
     return NotImplementedError
 
-def codegen_ip(x, y, diff_func=abs):
+def codegen_ip(x, y, diff_func=abs, symbolic=False):
     """
     Generate the inner product of `x := self` and `y := other`.
 
@@ -82,6 +82,8 @@ def codegen_ip(x, y, diff_func=abs):
             res_vals[ei ^ ej] += x.algebra.signs[ei, ej] * vi * vj
     # Remove expressions which are identical to zero
     res_vals = {k: simp_expr for k, expr in res_vals.items() if (simp_expr := simplify(expr))}
+    if symbolic:
+        return res_vals
 
     return _lambdify(x, y, res_vals)
 
@@ -115,7 +117,9 @@ def codegen_proj(x, y):
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    return NotImplementedError
+    x_dot_y = x.algebra.multivector(codegen_ip(x, y, symbolic=True))
+    x_proj_y = codegen_gp(x_dot_y, ~y, symbolic=True)
+    return _lambdify(x, y, x_proj_y)
 
 def codegen_op(x, y, symbolic=True):
     """
