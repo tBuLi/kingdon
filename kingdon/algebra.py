@@ -12,6 +12,7 @@ from kingdon.codegen import (
     codegen_gp, codegen_conj, codegen_cp, codegen_ip, codegen_op,
     codegen_rp, codegen_acp, codegen_proj, codegen_sp, codegen_lc, codegen_inv, codegen_rc, _lambdify_mv
 )
+from kingdon.matrixreps import matrix_rep
 # from kingdon.module_builder import predefined_modules
 
 operation_field = partial(field, default_factory=dict, init=False, repr=False, compare=False)
@@ -101,6 +102,10 @@ class Algebra:
         all_grade_combs = chain(*(combinations(range(0, self.d + 1), r=j) for j in range(1, len(self) + 1)))
         return {comb: sum((self.indices_for_grade[grade] for grade in comb), ())
                 for comb in all_grade_combs}
+
+    @cached_property
+    def matrix_basis(self):
+        return matrix_rep(self.p, self.q, self.r)
 
     @cached_property
     def _binary_operations(self):
@@ -230,9 +235,16 @@ class MultiVector:
         This is meant for internal use only, as the lack off sanity checking increases performance.
         """
         obj = cls.__new__(cls, algebra=algebra)
-        obj.algebra = algebra
         obj.vals = vals
         obj.name = ''
+        return obj
+
+    @classmethod
+    def frommatrix(cls, algebra, matrix):
+        """
+        Initiate a multivector from a matrix.
+        """
+        obj = cls(algebra=algebra, vals=matrix[:, 0])
         return obj
 
     def __len__(self):
@@ -328,10 +340,8 @@ class MultiVector:
         return self.algebra.mvfromtrusted(vals=res_vals)
 
     def asmatrix(self):
-        raise NotImplementedError
-
-    def frommatrix(self, matrix):
-        raise NotImplementedError
+        """ Returns a matrix representation of this multivector. """
+        return sum(v * self.algebra.matrix_basis[k] for k, v in self.vals.items())
 
     def _unary_operation(self, func_dictionary, codegen):
         """ Helper function for all unary operations such as inv, dual, pow etc. """
