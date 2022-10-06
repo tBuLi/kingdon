@@ -24,6 +24,20 @@ class AlgebraError(Exception):
 
 @dataclass
 class Algebra:
+    """
+    A Geometric (Clifford) algebra with :code:`p` positive dimensions,
+    :code:`q` negative dimensions, and :code:`r` null dimensions.
+
+    :param p:  number of positive dimensions.
+    :param q:  number of negative dimensions.
+    :param r:  number of null dimensions.
+    :param cse: If :code:`True` (default), attempt Common Subexpression Elimination (CSE)
+        on symbolically optimized expressions.
+    :param numba: If :code:`True` (default), use numba.njit to just-in-time compile expressions.
+    :param graded: If :code:`True` (default), perform binary and unary operations on a graded basis.
+        This will still be more sparse than computing with a full multivector, but not as sparse as possible.
+        It does however, fastly reduce the number of possible expressions that have to be symbolically optimized.
+    """
     p: int = 0
     q: int = 0
     r: int = 0
@@ -161,6 +175,7 @@ class Algebra:
         return MultiVector.fromtrusted(*args, algebra=self, **kwargs)
 
     def multivector(self, *args, **kwargs):
+        """ Create a new :class:`~kingdon.algebra.MultiVector`. """
         return MultiVector(self, *args, **kwargs)
 
     def evenmv(self, *args, **kwargs):
@@ -178,6 +193,11 @@ class Algebra:
         return MultiVector.withgrades(self, *args, grades=grades, **kwargs)
 
     def purevector(self, *args, grade, **kwargs):
+        """
+        Create a new :class:`~kingdon.algebra.MultiVector` of a specific grade.
+
+        :param grade: Grade of the mutivector to create.
+        """
         return MultiVector.withgrades(self, *args, grades=(grade,), **kwargs)
 
 
@@ -266,7 +286,7 @@ class MultiVector:
 
     @cached_property
     def grades(self):
-        """ Determines the grades present in `self`. """
+        """ Tuple of the grades present in `self`. """
         return tuple(sorted({bin(ind).count('1') for ind in self.vals}))
 
     def grade(self, grades):
@@ -477,13 +497,7 @@ class MultiVector:
 
     def undual(self, kind='auto'):
         """
-        Compute the undual of `self`. There are three different kinds of duality in common usage.
-        The first is polarity, which is simply multiplying by the PSS. This is the only game in town for
-        non-degenerate metrics (Algebra.r = 0). However, for degenerate spaces this no longer works, and we have
-        two popular options: Poincaré and Hodge duality.
-
-        By default, `kingdon` will use polarity in non-degenerate spaces, and Hodge duality for spaces with
-        `Algebra.r = 1`. For spaces with `r > 2`, little to no literature exists, and you are on your own.
+        Compute the undual of `self`. See :class:`~kingdon.algebra.MultiVector.dual` for more information.
         """
         if kind == 'polarity' or kind == 'auto' and self.algebra.r == 0:
             return self * self.algebra.pss

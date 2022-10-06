@@ -9,9 +9,9 @@ Welcome to Kingdon's documentation!
    installation
    usage
    workings
-   modules
    contributing
    authors
+   module_docs
    history
 
 Indices and tables
