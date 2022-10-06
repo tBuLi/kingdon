@@ -1,9 +1,5 @@
-from itertools import product, repeat, combinations, chain
+from itertools import product
 from collections import defaultdict
-import inspect
-import os
-import pickle
-from concurrent.futures import ProcessPoolExecutor
 
 from sympy import simplify
 from sympy.utilities.lambdify import lambdify
@@ -11,13 +7,13 @@ from numba import njit
 
 def codegen_gp(x, y, symbolic=False):
     """
-    Generate the geometric product between `x` and `y`.
+    Generate the geometric product between :code:`x` and :code:`y`.
 
-    :x: MultiVector
-    :y: MultiVector
-    :symbolic: If true, return a dict of symbolic expressions instead of lambda functions.
-    :return: dictionary with integer keys indicating the corresponding basis blade in binary convention,
-        and values which are a 3-tuple of indices in `x`, indices in `y`, and a lambda function.
+    :param x: Fully symbolic :class:`~kingdon.algebra.MultiVector`.
+    :param y: Fully symbolic :class:`~kingdon.algebra.MultiVector`.
+    :param symbolic: If true, return a dict of symbolic expressions instead of lambda functions.
+    :return: tuple with integers indicating the basis blades present in the
+        product in binary convention, and a lambda function that perform the product.
     """
     res_vals = defaultdict(int)
     for (ei, vi), (ej, vj) in product(x.vals.items(), y.vals.items()):
@@ -32,7 +28,7 @@ def codegen_gp(x, y, symbolic=False):
 
 def codegen_conj(x, y, symbolic=False):
     """
-    Generate the sandwich (conjugation) product between `x` and `y`: `x*y*~x`.
+    Generate the sandwich (conjugation) product between :code:`x` and :code:`y`: :code:`x*y*~x`.
 
     :return: tuple of keys in binary representation and a lambda function.
     """
