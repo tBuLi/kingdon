@@ -28,7 +28,7 @@ def codegen_gp(x, y, symbolic=False):
     if symbolic:
         return res_vals
 
-    return _lambdify(x, y, res_vals)
+    return _lambdify_binary(x, y, res_vals)
 
 def codegen_conj(x, y, symbolic=False):
     """
@@ -42,7 +42,7 @@ def codegen_conj(x, y, symbolic=False):
     if symbolic:
         return xyx
 
-    return _lambdify(x, y, xyx)
+    return _lambdify_binary(x, y, xyx)
 
 def codegen_cp(x, y):
     """
@@ -60,7 +60,7 @@ def codegen_cp(x, y):
                 del xy[k]
         else:
             xy[k] = - v
-    return _lambdify(x, y, xy)
+    return _lambdify_binary(x, y, xy)
 
 def codegen_acp(x, y):
     """
@@ -88,7 +88,7 @@ def codegen_ip(x, y, diff_func=abs, symbolic=False):
     if symbolic:
         return res_vals
 
-    return _lambdify(x, y, res_vals)
+    return _lambdify_binary(x, y, res_vals)
 
 def codegen_lc(x, y):
     """
@@ -122,7 +122,7 @@ def codegen_proj(x, y):
     """
     x_dot_y = x.algebra.multivector(codegen_ip(x, y, symbolic=True))
     x_proj_y = codegen_gp(x_dot_y, ~y, symbolic=True)
-    return _lambdify(x, y, x_proj_y)
+    return _lambdify_binary(x, y, x_proj_y)
 
 def codegen_op(x, y, symbolic=False):
     """
@@ -142,7 +142,7 @@ def codegen_op(x, y, symbolic=False):
     if symbolic:
         return res_vals
 
-    return _lambdify(x, y, res_vals)
+    return _lambdify_binary(x, y, res_vals)
 
 def codegen_rp(x, y):
     """
@@ -151,7 +151,7 @@ def codegen_rp(x, y):
     :return: tuple of keys in binary representation and a lambda function.
     """
     x_regr_y = x.algebra.multivector(codegen_op(x.dual(), y.dual(), symbolic=True)).undual()
-    return _lambdify(x, y, x_regr_y.vals)
+    return _lambdify_binary(x, y, x_regr_y.vals)
 
 
 def codegen_inv(x):
@@ -173,13 +173,15 @@ def codegen_inv(x):
         i += 1
     xinv = adj_x / x_i[0]
     # xinv = x.algebra.multivector({k: simp_expr for k, v in xinv.vals.items() if (simp_expr := simplify(v))})
-    return _lambdify(x, x.algebra.multivector(), xinv.vals)
+    return _lambdify_unary(x, xinv.vals)
 
-def _lambdify(x, y, vals):
+def _lambdify_binary(x, y, vals):
     xy_symbols = [list(x.vals.values()), list(y.vals.values())]
-    # TODO: Numba wants a tuple in the line below, but simpy only produces a
-    #  list as output if this is a list, not a tuple. See if we can solve this.
     func = lambdify(xy_symbols, list(vals.values()), cse=x.algebra.cse)
+    return tuple(vals.keys()), njit(func) if x.algebra.numba else func
+
+def _lambdify_unary(x, vals):
+    func = lambdify([list(x.vals.values())], list(vals.values()), cse=x.algebra.cse)
     return tuple(vals.keys()), njit(func) if x.algebra.numba else func
 
 def _lambdify_mv(free_symbols, mv):
