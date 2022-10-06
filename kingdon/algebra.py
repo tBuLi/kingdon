@@ -345,10 +345,10 @@ class MultiVector:
 
         args = self.vals.values()
         if self.issymbolic:
-            res_vals = {k: v for k, v in zip(keys_out, func(*args))
+            res_vals = {k: v for k, v in zip(keys_out, func(args))
                         if (True if not isinstance(v, Expr) else simplify(v))}
         else:
-            res_vals = {k: v for k, v in zip(keys_out, func(*args))}
+            res_vals = {k: v for k, v in zip(keys_out, func(args))}
 
         return self.algebra.mvfromtrusted(vals=res_vals)
 
