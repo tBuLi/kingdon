@@ -343,7 +343,7 @@ class MultiVector:
         else:
             keys_out, func = func_dictionary[keys_in]
 
-        args = self.vals.values()
+        args = tuple(self.vals.values())
         if self.issymbolic:
             res_vals = {k: v for k, v in zip(keys_out, func(args))
                         if (True if not isinstance(v, Expr) else simplify(v))}
