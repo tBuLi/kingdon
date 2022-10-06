@@ -163,6 +163,20 @@ class Algebra:
     def multivector(self, *args, **kwargs):
         return MultiVector(self, *args, **kwargs)
 
+    def evenmv(self, *args, **kwargs):
+        """ Create a new :class:`~kingdon.algebra.MultiVector` in the even subalgebra. """
+        grades = tuple(filter(lambda x: x % 2 == 0, range(self.d + 1)))
+        return MultiVector.withgrades(self, *args, grades=grades, **kwargs)
+
+    def oddmv(self, *args, **kwargs):
+        """
+        Create a new :class:`~kingdon.algebra.MultiVector` of odd grades.
+        (There is technically no such thing as an odd subalgebra, but
+        otherwise this is similar to :class:`~kingdon.algebra.Algebra.evenmv`.)
+        """
+        grades = tuple(filter(lambda x: x % 2 == 1, range(self.d + 1)))
+        return MultiVector.withgrades(self, *args, grades=grades, **kwargs)
+
     def purevector(self, *args, grade, **kwargs):
         return MultiVector.withgrades(self, *args, grades=(grade,), **kwargs)
 

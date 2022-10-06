@@ -326,6 +326,16 @@ def test_inverse(pga2d):
     assert res(*u_vals)[0] == pytest.approx(1.0)
 
 
+def test_evenmultivector(R6):
+    x = R6.evenmv(name='x')
+    assert x.grades == (0, 2, 4, 6)
+
+
+def test_oddmultivector(R6):
+    x = R6.oddmv(name='x')
+    assert x.grades == (1, 3, 5)
+
+
 def test_matrixreps(vga2d):
     x = vga2d.multivector(name='x')
     xmat = x.asmatrix()
