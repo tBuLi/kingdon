@@ -30,7 +30,7 @@ def codegen_gp(x, y, symbolic=False):
 
     return _lambdify(x, y, res_vals)
 
-def codegen_conj(x, y):
+def codegen_conj(x, y, symbolic=False):
     """
     Generate the sandwich (conjugation) product between `x` and `y`: `x*y*~x`.
 
@@ -39,6 +39,9 @@ def codegen_conj(x, y):
     # xyx = x*y*~x
     xy = x.algebra.multivector(vals=codegen_gp(x, y, symbolic=True))
     xyx = codegen_gp(xy, ~x, symbolic=True)
+    if symbolic:
+        return xyx
+
     return _lambdify(x, y, xyx)
 
 def codegen_cp(x, y):
@@ -121,7 +124,7 @@ def codegen_proj(x, y):
     x_proj_y = codegen_gp(x_dot_y, ~y, symbolic=True)
     return _lambdify(x, y, x_proj_y)
 
-def codegen_op(x, y, symbolic=True):
+def codegen_op(x, y, symbolic=False):
     """
     Generate the outer product of `x := self` and `y := other`: `x.op(y) = x ^ y`.
 
@@ -150,8 +153,30 @@ def codegen_rp(x, y):
     x_regr_y = x.algebra.multivector(codegen_op(x.dual(), y.dual(), symbolic=True)).undual()
     return _lambdify(x, y, x_regr_y.vals)
 
+
+def codegen_inv(x):
+    """
+    Generate code for the inverse of :code:`x`.
+    Currently, this always uses the Shirokov inverse, which is works in any algebra,
+    but it can be expensive to compute.
+    In the future this should be extended to use dedicated solutions for known cases.
+    """
+    k = 2 ** ((x.algebra.d + 1) // 2)
+    x_i = x
+    i = 1
+    while x_i.grades != (0,) and x_i:
+        c_i = k * x_i[0] / i
+        adj_x = (x_i - c_i)
+        adj_x = x.algebra.multivector({k: simplify(v) for k, v in adj_x.vals.items()})
+        x_i = x * adj_x
+        x_i = x.algebra.multivector({k: simplify(v) for k, v in x_i.vals.items()})
+        i += 1
+    xinv = adj_x / x_i[0]
+    # xinv = x.algebra.multivector({k: simp_expr for k, v in xinv.vals.items() if (simp_expr := simplify(v))})
+    return _lambdify(x, x.algebra.multivector(), xinv.vals)
+
 def _lambdify(x, y, vals):
-    xy_symbols = list(chain(x.vals.values(), y.vals.values()))
+    xy_symbols = [list(x.vals.values()), list(y.vals.values())]
     # TODO: Numba wants a tuple in the line below, but simpy only produces a
     #  list as output if this is a list, not a tuple. See if we can solve this.
     func = lambdify(xy_symbols, list(vals.values()), cse=x.algebra.cse)

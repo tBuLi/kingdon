@@ -10,11 +10,11 @@ from sympy import Symbol, Expr, simplify
 
 from kingdon.codegen import (
     codegen_gp, codegen_conj, codegen_cp, codegen_ip, codegen_op,
-    codegen_rp, codegen_acp, codegen_proj, codegen_sp, codegen_lc, codegen_rc, _lambdify_mv
+    codegen_rp, codegen_acp, codegen_proj, codegen_sp, codegen_lc, codegen_inv, codegen_rc, _lambdify_mv
 )
 # from kingdon.module_builder import predefined_modules
 
-binary_op_field = partial(field, default_factory=dict, init=False, repr=False, compare=False)
+operation_field = partial(field, default_factory=dict, init=False, repr=False, compare=False)
 
 
 class AlgebraError(Exception):
@@ -30,17 +30,18 @@ class Algebra:
     signature: list = field(init=False, repr=False, compare=False)
 
     # Dictionaries that cache previously symbolically optimized lambda functions between elements.
-    _gp: dict = binary_op_field(metadata={'codegen': codegen_gp, 'syntax': '__mul__'})  # geometric product dict
-    _conj: dict = binary_op_field(metadata={'codegen': codegen_conj})  # conjugation dict
-    _cp: dict = binary_op_field(metadata={'codegen': codegen_cp})  # commutator product dict
-    _acp: dict = binary_op_field(metadata={'codegen': codegen_acp})  # anti-commutator product dict
-    _ip: dict = binary_op_field(metadata={'codegen': codegen_ip})  # inner product dict
-    _sp: dict = binary_op_field(metadata={'codegen': codegen_sp})  # Scalar product dict
-    _lc: dict = binary_op_field(metadata={'codegen': codegen_lc})  # left-contraction
-    _rc: dict = binary_op_field(metadata={'codegen': codegen_rc})  # right-contraction
-    _op: dict = binary_op_field(metadata={'codegen': codegen_op})  # exterior product dict
-    _rp: dict = binary_op_field(metadata={'codegen': codegen_rp})  # regressive product dict
-    _proj: dict = binary_op_field(metadata={'codegen': codegen_proj})  # projection dict
+    _gp: dict = operation_field(metadata={'codegen': codegen_gp, 'syntax': '__mul__'})  # geometric product dict
+    _conj: dict = operation_field(metadata={'codegen': codegen_conj})  # conjugation dict
+    _cp: dict = operation_field(metadata={'codegen': codegen_cp})  # commutator product dict
+    _acp: dict = operation_field(metadata={'codegen': codegen_acp})  # anti-commutator product dict
+    _ip: dict = operation_field(metadata={'codegen': codegen_ip})  # inner product dict
+    _sp: dict = operation_field(metadata={'codegen': codegen_sp})  # Scalar product dict
+    _lc: dict = operation_field(metadata={'codegen': codegen_lc})  # left-contraction
+    _rc: dict = operation_field(metadata={'codegen': codegen_rc})  # right-contraction
+    _op: dict = operation_field(metadata={'codegen': codegen_op})  # exterior product dict
+    _rp: dict = operation_field(metadata={'codegen': codegen_rp})  # regressive product dict
+    _proj: dict = operation_field(metadata={'codegen': codegen_proj})  # projection dict
+    _inv: dict = operation_field(metadata={'codegen': codegen_inv})  # projection dict
 
     # Mappings from binary to canonical reps. e.g. 0b01 = 1 <-> 'e1', 0b11 = 3 <-> 'e12'.
     canon2bin: dict = field(init=False, repr=False, compare=False)
@@ -269,9 +270,11 @@ class MultiVector:
 
     def inv(self):
         """ Inverse of this multivector. """
-        return self / self.normsq()
+        return self._unary_operation(func_dictionary=self.algebra._inv, codegen=codegen_inv)
 
     def __add__(self, other):
+        if not isinstance(other, MultiVector):
+            other = self.algebra.multivector({0: other})
         vals = self.vals.copy()
         for k, v in other.vals.items():
             if k in vals:
@@ -303,7 +306,7 @@ class MultiVector:
             return '0'
 
     def __getitem__(self, item):
-        return self.vals[item if item in self.algebra.bin2canon else self.algebra.canon2bin[item]]
+        return self.vals.get(item if item in self.algebra.bin2canon else self.algebra.canon2bin[item], 0)
 
     def __setitem__(self, item, value):
         self.vals[item if item in self.algebra.bin2canon else self.algebra.canon2bin[item]] = value
@@ -330,6 +333,25 @@ class MultiVector:
     def frommatrix(self, matrix):
         raise NotImplementedError
 
+    def _unary_operation(self, func_dictionary, codegen):
+        """ Helper function for all unary operations such as inv, dual, pow etc. """
+        keys_in = tuple(self.vals)
+        if keys_in not in func_dictionary:
+            x = self.algebra.multivector(vals={ek: Symbol(f'a{self.algebra.bin2canon[ek][1:]}')
+                                               for ek in keys_in})
+            keys_out, func = func_dictionary[keys_in] = codegen(x)
+        else:
+            keys_out, func = func_dictionary[keys_in]
+
+        args = self.vals.values()
+        if self.issymbolic:
+            res_vals = {k: v for k, v in zip(keys_out, func(*args))
+                        if (True if not isinstance(v, Expr) else simplify(v))}
+        else:
+            res_vals = {k: v for k, v in zip(keys_out, func(*args))}
+
+        return self.algebra.mvfromtrusted(vals=res_vals)
+
     def _binary_operation(self, other, func_dictionary, codegen):
         """ Helper function for all multiplication types such as gp, sp, cp etc. """
         if not isinstance(other, MultiVector):
@@ -348,7 +370,7 @@ class MultiVector:
         else:
             keys_out, func = func_dictionary[keys_in]
 
-        args = chain(self.vals.values(), other.vals.values())
+        args = tuple(self.vals.values()), tuple(other.vals.values())
         if self.issymbolic or other.issymbolic:
             res_vals = {k: v for k, v in zip(keys_out, func(*args))
                         if (True if not isinstance(v, Expr) else simplify(v))}

@@ -314,3 +314,13 @@ def test_projection(pga3d):
     # project the point x onto the plane y
     z = x @ y
     assert z.grades == (3,)
+
+
+def test_inverse(pga2d):
+    u = pga2d.multivector(name='u')
+    res = u*u.inv()
+    assert res.grades == (0,)
+    # All the null elements will have disappeared from the output,
+    # so only four values left to provide.
+    u_vals = np.random.random(4)
+    assert res(*u_vals)[0] == pytest.approx(1.0)
