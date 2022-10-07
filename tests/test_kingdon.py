@@ -326,6 +326,13 @@ def test_inverse(pga2d):
     assert res(*u_vals)[0] == pytest.approx(1.0)
 
 
+def test_mixed_symbolic(vga2d):
+    x = vga2d.evenmv({0: 2.2, 3: 's'})
+    assert x[3] == Symbol('s')
+    assert x[0] == 2.2
+    assert x.issymbolic
+
+
 def test_evenmultivector(R6):
     x = R6.evenmv(name='x')
     assert x.grades == (0, 2, 4, 6)

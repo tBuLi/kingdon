@@ -210,7 +210,8 @@ class MultiVector:
     def __post_init__(self):
         if isinstance(self.vals, Mapping):
             try:
-                self.vals = {key if key in self.algebra.bin2canon else self.algebra.canon2bin[key]: val
+                self.vals = {key if key in self.algebra.bin2canon else self.algebra.canon2bin[key]:
+                             val if not isinstance(val, str) else Symbol(val)
                              for key, val in self.vals.items()}
             except KeyError:
                 raise KeyError(f"Invalid key(s) in `vals`: keys should be `int` or canonical strings (e.g. `e12`)")
@@ -270,6 +271,7 @@ class MultiVector:
         This is meant for internal use only, as the lack off sanity checking increases performance.
         """
         obj = cls.__new__(cls, algebra=algebra)
+        obj.algebra = algebra
         obj.vals = vals
         obj.name = ''
         return obj

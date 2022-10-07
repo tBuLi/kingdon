@@ -81,12 +81,11 @@ relevant fields with symbols. This allows us to easily perform symbolic computat
     (-b12*v1 + b23*v3) * e2 + (b12*v2 + b13*v3) * e1 + (-b13*v1 - b23*v2) * e3 + (-b14*v1 - b24*v2 - b34*v3) * e4
 
 Notice that the indices of the symbols are identical to the basis blades, e.g. :math:`b_{12} \mathbf{e}_{12}`.
-It is also possible to manually specify symbols only for specific coefficients, while others can be numeric::
+It is also possible to define some coefficients to be symbolic by inputting a string, while others can be numeric::
 
     >>> from kingdon import Algebra, symbols
     >>> alg = Algebra(3, 0, 1)
-    >>> b12 = symbols('b12')
-    >>> b = alg.bivector({'e12': b12, 'e34': 3})
+    >>> b = alg.bivector({'e12': 'b12', 'e34': 3})
     >>> b
     (b12) * e12 + (3) * e34
     >>> v = alg.vector({0b0001: 1, 0b0100: 1})
@@ -126,7 +125,7 @@ Operators
      - :code:`a.ip(b)`
    * - Scalar product
      - :math:`\langle a \cdot b \rangle_0`
-     - 
+     -
      - :code:`a.sp(b)`
    * - Left-contraction
      - :math:`a \rfloor b`
