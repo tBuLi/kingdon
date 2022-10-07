@@ -134,8 +134,9 @@ class Algebra:
         E.g. in :math:`\mathbb{R}_2`, sings[(0b11, 0b11)] = -1.
         """
         cayley = {}
-        sign_dict = {}
-        swap_dict = {}
+        signs = np.zeros((len(self), len(self)), dtype=int)
+        swaps_arr = np.zeros((len(self), len(self)), dtype=int)
+        # swap_dict = {}
         for eI, eJ in product(self.canon2bin, repeat=2):
             prod = eI[1:] + eJ[1:]
             # Compute the number of swaps of orthogonal vectors needed to order the basis vectors.
@@ -151,7 +152,7 @@ class Algebra:
                         break
                     else:
                         prev_swap = swaps
-            swap_dict[self.canon2bin[eI], self.canon2bin[eJ]] = swaps
+            swaps_arr[self.canon2bin[eI], self.canon2bin[eJ]] = swaps
 
             # Remove even powers of basis-vectors.
             sign = -1 if swaps % 2 else 1
@@ -160,7 +161,7 @@ class Algebra:
                 if value // 2:
                     sign *= self.signature[int(key) - 1]
                 count[key] = value % 2
-            sign_dict[self.canon2bin[eI], self.canon2bin[eJ]] = sign
+            signs[self.canon2bin[eI], self.canon2bin[eJ]] = sign
 
             # Make the Cayley table.
             if sign:
@@ -169,7 +170,7 @@ class Algebra:
                 cayley[eI, eJ] = f'{sign}{"e" if prod != "" else "1"}{prod}'
             else:
                 cayley[eI, eJ] = f'0'
-        return swap_dict, sign_dict, cayley
+        return swaps_arr, signs, cayley
 
     def mvfromtrusted(self, *args, **kwargs):
         return MultiVector.fromtrusted(*args, algebra=self, **kwargs)
