@@ -243,7 +243,7 @@ class MultiVector:
         if not all(0 <= grade <= algebra.d for grade in grades):
             raise ValueError(f'Each grade in `grades` needs to be a value between 0 and {algebra.d}.')
 
-        if name and vals is None:
+        if name is None and vals is None:
             # vals was in fact empy, but we do have a name. So we are in symbolic mode.
             vals = {k: Symbol(f'{name}{algebra.bin2canon[k][1:]}') for k in algebra.indices_for_grades[grades]}
 
