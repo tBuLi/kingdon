@@ -43,7 +43,7 @@ In order to demonstrate the power of Kingdon, let us first consider the common u
 commutator product between a bivector and vector.
 
 In order to create an algebra, use :code:`Algebra`. When calling :code:`Algebra` we must provide the signature of the
-algebra, in this case we shall go for 3DPGA, which is the algebra :math:`\mathbb{R}_{3,0,1}`.
+algebra, in this case we shall go for 3DPGA, which is the algebra $\\mathbb{R}_{3,0,1}$.
 In order to make elements of the algebra, :code:`kingdon` provides the functions :code:`Algebra.multivector`,
 :code:`Algebra.vector`, :code:`Algebra.bivector`, etc.
 These accept a sequence of values as their primary argument.
@@ -80,7 +80,7 @@ relevant fields with symbols. This allows us to easily perform symbolic computat
     >>> b.cp(v)
     (-b12*v1 + b23*v3) * e2 + (b12*v2 + b13*v3) * e1 + (-b13*v1 - b23*v2) * e3 + (-b14*v1 - b24*v2 - b34*v3) * e4
 
-Notice that the indices of the symbols are identical to the basis blades, e.g. :math:`b_{12} \mathbf{e}_{12}`.
+Notice that the indices of the symbols are identical to the basis blades, e.g. $b_{12} \\mathbf{e}_{12}$.
 It is also possible to define some coefficients to be symbolic by inputting a string, while others can be numeric::
 
     >>> from kingdon import Algebra, symbols
