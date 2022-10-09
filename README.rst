@@ -116,47 +116,47 @@ Operators
      - Infix
      - Inline
    * - Geometric product
-     - :math:`ab`
+     -  $ab$
      - :code:`a*b`
      - :code:`a.gp(b)`
    * - Inner
-     - :math:`a \cdot b`
+     - $a \\cdot b$
      - :code:`a|b`
      - :code:`a.ip(b)`
    * - Scalar product
-     - :math:`\langle a \cdot b \rangle_0`
+     - $\\langle a \\cdot b \\rangle_0$
      -
      - :code:`a.sp(b)`
    * - Left-contraction
-     - :math:`a \rfloor b`
+     - $a \\rfloor b$
      - :code:`a << b`
      - :code:`a.lc(b)`
    * - Right-contraction
-     - :math:`a \lfloor b`
+     - $a \\lfloor b$
      - :code:`a >> b`
      - :code:`a.rc(b)`
    * - Outer (Exterior)
-     - :math:`a \wedge b`
+     - $a \\wedge b$
      - :code:`a ^ b`
      - :code:`a.op(b)`
    * - Regressive
-     - :math:`a \vee b`
+     - $a \\vee b$
      - :code:`a & b`
      - :code:`a.rp(b)`
    * - Conjugate :code:`b` by :code:`a`
-     - :math:`a b \widetilde{a}`
+     - $a b \\widetilde{a}$
      -
      - :code:`a.conj(b)`
    * - Project :code:`a` onto :code:`b`
-     - :math:`(a \cdot b) b^{-1}`
+     - $(a \\cdot b) b^{-1}$
      - :code:`a @ b`
      - :code:`a.proj(b)`
    * - Commutator of :code:`a` and :code:`b`
-     - :math:`a \times b = \tfrac{1}{2} [a, b]`
+     - $a \\times b = \\tfrac{1}{2} [a, b]$
      -
      - :code:`a.cp(b)`
    * - Anti-commutator of :code:`a` and :code:`b`
-     - :math:`\tfrac{1}{2} \{a, b\}`
+     - $\\tfrac{1}{2} \\{a, b\\}$
      -
      - :code:`a.acp(b)`
 
