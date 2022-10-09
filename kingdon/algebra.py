@@ -361,7 +361,9 @@ class MultiVector:
             return ' + '.join([f'({val}) * {self.algebra.bin2canon[key]}' for key, val in canon_sorted_vals])
         else:
             return '0'
-
+    
+    __repr__ = __str__
+    
     def __getitem__(self, item):
         return self.vals.get(item if item in self.algebra.bin2canon else self.algebra.canon2bin[item], 0)
 
