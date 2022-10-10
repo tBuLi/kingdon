@@ -9,6 +9,7 @@ Welcome to Kingdon's documentation!
    installation
    usage
    workings
+   examples/index
    contributing
    authors
    module_docs
