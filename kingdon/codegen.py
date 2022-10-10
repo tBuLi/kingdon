@@ -16,13 +16,14 @@ def codegen_gp(x, y, symbolic=False):
         product in binary convention, and a lambda function that perform the product.
     """
     res_vals = defaultdict(int)
-    for (ei, vi), (ej, vj) in product(x.vals.items(), y.vals.items()):
+    for (ei, vi), (ej, vj) in product(x.items(), y.items()):
         if x.algebra.signs[ei, ej]:
             res_vals[ei ^ ej] += x.algebra.signs[(ei, ej)] * vi * vj
     # Remove expressions which are identical to zero
-    res_vals = {k: simp_expr for k, expr in res_vals.items() if (simp_expr := simplify(expr))}
+    if x.algebra.simplify:
+        res_vals = {k: simp_expr for k, expr in res_vals.items() if (simp_expr := simplify(expr))}
     if symbolic:
-        return res_vals
+        return x.fromkeysvalues(x.algebra, tuple(res_vals.keys()), tuple(res_vals.values()))
 
     return _lambdify_binary(x, y, res_vals)
 
@@ -32,8 +33,7 @@ def codegen_conj(x, y, symbolic=False):
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    # xyx = x*y*~x
-    xy = x.algebra.multivector(vals=codegen_gp(x, y, symbolic=True))
+    xy = codegen_gp(x, y, symbolic=True)
     xyx = codegen_gp(xy, ~x, symbolic=True)
     if symbolic:
         return xyx
@@ -48,15 +48,8 @@ def codegen_cp(x, y):
     """
     xy = codegen_gp(x, y / 2, symbolic=True)
     yx = codegen_gp(y, x / 2, symbolic=True)
-    for k, v in yx.items():
-        if k in xy:
-            if xy[k] - v:  # Symbolically not equal to zero
-                xy[k] -= v
-            else:
-                del xy[k]
-        else:
-            xy[k] = - v
-    return _lambdify_binary(x, y, xy)
+    xcpy = xy - yx
+    return _lambdify_binary(x, y, xcpy)
 
 def codegen_acp(x, y):
     """
@@ -76,13 +69,14 @@ def codegen_ip(x, y, diff_func=abs, symbolic=False):
     :return: tuple of keys in binary representation and a lambda function.
     """
     res_vals = defaultdict(int)
-    for (ei, vi), (ej, vj) in product(x.vals.items(), y.vals.items()):
+    for (ei, vi), (ej, vj) in product(x.items(), y.items()):
         if ei ^ ej == diff_func(ei - ej):
             res_vals[ei ^ ej] += x.algebra.signs[ei, ej] * vi * vj
-    # Remove expressions which are identical to zero
-    res_vals = {k: simp_expr for k, expr in res_vals.items() if (simp_expr := simplify(expr))}
+    if x.algebra.simplify:
+        # Remove expressions which are identical to zero
+        res_vals = {k: simp_expr for k, expr in res_vals.items() if (simp_expr := simplify(expr))}
     if symbolic:
-        return res_vals
+        return x.fromkeysvalues(x.algebra, tuple(res_vals.keys()), tuple(res_vals.values()))
 
     return _lambdify_binary(x, y, res_vals)
 
@@ -116,7 +110,7 @@ def codegen_proj(x, y):
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    x_dot_y = x.algebra.multivector(codegen_ip(x, y, symbolic=True))
+    x_dot_y = codegen_ip(x, y, symbolic=True)
     x_proj_y = codegen_gp(x_dot_y, ~y, symbolic=True)
     return _lambdify_binary(x, y, x_proj_y)
 
@@ -130,13 +124,14 @@ def codegen_op(x, y, symbolic=False):
         and values which are a 3-tuple of indices in `x`, indices in `y`, and a lambda function.
     """
     res_vals = defaultdict(int)
-    for (ei, vi), (ej, vj) in product(x.vals.items(), y.vals.items()):
+    for (ei, vi), (ej, vj) in product(x.items(), y.items()):
         if ei ^ ej == ei + ej:
             res_vals[ei ^ ej] += (-1)**x.algebra.swaps[ei, ej] * vi * vj
-    # Remove expressions which are identical to zero
-    res_vals = {k: simp_expr for k, expr in res_vals.items() if (simp_expr := simplify(expr))}
+    if x.algebra.simplify:
+        # Remove expressions which are identical to zero
+        res_vals = {k: simp_expr for k, expr in res_vals.items() if (simp_expr := simplify(expr))}
     if symbolic:
-        return res_vals
+        return x.fromkeysvalues(x.algebra, tuple(res_vals.keys()), tuple(res_vals.values()))
 
     return _lambdify_binary(x, y, res_vals)
 
@@ -146,11 +141,11 @@ def codegen_rp(x, y):
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    x_regr_y = x.algebra.multivector(codegen_op(x.dual(), y.dual(), symbolic=True)).undual()
-    return _lambdify_binary(x, y, x_regr_y.vals)
+    x_regr_y = codegen_op(x.dual(), y.dual(), symbolic=True).undual()
+    return _lambdify_binary(x, y, x_regr_y)
 
 
-def codegen_inv(x):
+def codegen_inv(x, symbolic=False):
     """
     Generate code for the inverse of :code:`x`.
     Currently, this always uses the Shirokov inverse, which is works in any algebra,
@@ -163,25 +158,40 @@ def codegen_inv(x):
     while x_i.grades != (0,) and x_i:
         c_i = k * x_i[0] / i
         adj_x = (x_i - c_i)
-        adj_x = x.algebra.multivector({k: simplify(v) for k, v in adj_x.vals.items()})
-        x_i = x * adj_x
-        x_i = x.algebra.multivector({k: simplify(v) for k, v in x_i.vals.items()})
+        x_i = codegen_gp(x, adj_x, symbolic=True)
         i += 1
     xinv = adj_x / x_i[0]
-    # xinv = x.algebra.multivector({k: simp_expr for k, v in xinv.vals.items() if (simp_expr := simplify(v))})
-    return _lambdify_unary(x, xinv.vals)
+    if x.algebra.simplify:
+        xinv = x.algebra.multivector({k: simp_expr for k, v in xinv.vals.items() if (simp_expr := simplify(v))})
 
-def _lambdify_binary(x, y, vals):
-    xy_symbols = [list(x.vals.values()), list(y.vals.values())]
-    func = lambdify(xy_symbols, list(vals.values()), cse=x.algebra.cse)
-    return tuple(vals.keys()), njit(func) if x.algebra.numba else func
+    if symbolic:
+        return xinv
 
-def _lambdify_unary(x, vals):
-    func = lambdify([list(x.vals.values())], list(vals.values()), cse=x.algebra.cse)
-    return tuple(vals.keys()), njit(func) if x.algebra.numba else func
+    return _lambdify_unary(x, xinv)
+
+
+def codegen_div(x, y):
+    """
+    Generate code for :math:`x y^{-1}`.
+    """
+    yinv = codegen_inv(y, symbolic=True)
+    xdivy = codegen_gp(x, yinv, symbolic=True)
+    return _lambdify_binary(x, y, xdivy)
+
+
+def _lambdify_binary(x, y, x_bin_y):
+    xy_symbols = [list(x.values()), list(y.values())]
+    func = lambdify(xy_symbols, list(x_bin_y.values()), cse=x.algebra.cse)
+    return tuple(x_bin_y.keys()), njit(func) if x.algebra.numba else func
+
+
+def _lambdify_unary(x, x_unary):
+    func = lambdify([list(x.values())], list(x_unary.values()), cse=x.algebra.cse)
+    return tuple(x_unary.keys()), njit(func) if x.algebra.numba else func
+
 
 def _lambdify_mv(free_symbols, mv):
     # TODO: Numba wants a tuple in the line below, but simpy only produces a
     #  list as output if this is a list, not a tuple. See if we can solve this.
-    func = lambdify(free_symbols, list(mv.vals.values()), cse=mv.algebra.cse)
-    return tuple(mv.vals.keys()), njit(func) if mv.algebra.numba else func
+    func = lambdify(free_symbols, list(mv.values()), cse=mv.algebra.cse)
+    return tuple(mv.keys()), njit(func) if mv.algebra.numba else func

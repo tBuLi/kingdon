@@ -6,7 +6,7 @@ from dataclasses import replace
 import pytest
 import numpy as np
 
-from sympy import Symbol, simplify, factor, expand, collect
+from sympy import Symbol, simplify, factor, expand, collect, sympify
 from kingdon import Algebra, MultiVector, symbols
 
 import timeit
@@ -67,24 +67,20 @@ def test_algebra_symbolic():
 
 
 def test_MultiVector(pga1d):
-    X = MultiVector(algebra=pga1d)
-    assert isinstance(X.vals, dict)
-    assert X.name == ''
-    assert len(X) == len(X.vals)
     with pytest.raises(TypeError):
         # If starting from a sequence, it must be of length len(algebra)
         X = MultiVector(algebra=pga1d, vals=[1, 2])
     with pytest.raises(TypeError):
         # vals must be iterable (sequence)
-        X = MultiVector(algebra=pga1d, vals=2)
+        X = MultiVector(algebra=pga1d, values=2)
     with pytest.raises(TypeError):
         # No algebra provided
         X = MultiVector(name='X')
     with pytest.raises(KeyError):
         # Dict keys must be either (binary) numbers or canonical basis element strings.
-        X = MultiVector(vals={'a': 2, 'e12': 1}, algebra=pga1d)
-    X = MultiVector(vals={0: 2.2, 'e12': 1.2}, algebra=pga1d)
-    assert X.vals == {0: 2.2, 3: 1.2}
+        X = MultiVector(values={'a': 2, 'e12': 1}, algebra=pga1d)
+    X = MultiVector(values={0: 2.2, 'e12': 1.2}, algebra=pga1d)
+    assert dict(X.items()) == {0: 2.2, 3: 1.2}
 
 def test_anticommutation(pga1d, vga11, vga2d):
     for alg in [pga1d, vga11, vga2d]:
@@ -94,10 +90,10 @@ def test_anticommutation(pga1d, vga11, vga2d):
 
 def test_gp(pga1d):
     # Multiply two multivectors
-    X = MultiVector(vals={'1': 2, 'e12': 3}, algebra=pga1d)
-    Y = MultiVector(vals={'1': 7, 'e12': 5}, algebra=pga1d)
+    X = MultiVector(values={'1': 2, 'e12': 3}, algebra=pga1d)
+    Y = MultiVector(values={'1': 7, 'e12': 5}, algebra=pga1d)
     Z = X.gp(Y)
-    assert Z.vals == {0: 2*7, 3: 2*5 + 3*7}
+    assert dict(Z.items()) == {0: 2*7, 3: 2*5 + 3*7}
 
 def test_cayley(pga1d, vga2d, vga11):
     assert pga1d.cayley == {('1', '1'): '1', ('1', 'e1'): 'e1', ('1', 'e12'): 'e12', ('1', 'e2'): 'e2',
@@ -159,23 +155,25 @@ def test_reverse(R6):
 
 def test_indexing(pga1d):
     # Test indexing of a mv with canonical and binary indices.
-    X = pga1d.multivector()
-    X[0], X['e12'] = 2, 3
+    X = pga1d.multivector({0: 2, 'e12': 3})
     assert X['1'] == 2 and X[3] == 3
 
 def test_gp_symbolic(vga2d):
     u = vga2d.vector(name='u')
-    u1, u2 = u.vals[1], u.vals[2]
+    u1, u2 = u[1], u[2]
     usq = u*u
     # Square of a vector should be purely scalar.
     assert usq[0] == u1**2 + u2**2
     assert len(usq) == 1
-    with pytest.raises(KeyError):
-        usq['e12']
+    assert 'e12' not in usq
+    assert 0 in usq
+    # Asking for an element that is not there always returns zero.
+    # It does not raise a KeyError, because that might break people's code.
+    assert usq['e12'] == 0
 
     # A bireflection should have both a scalar and bivector part however.
     v = vga2d.vector(name='v')
-    v1, v2 = v.vals[1], v.vals[2]
+    v1, v2 = v[1], v[2]
     R = u*v
     assert R[0] == u1 * v1 + u2 * v2
     assert R[3] == u1 * v2 - u2 * v1
@@ -183,8 +181,10 @@ def test_gp_symbolic(vga2d):
     # The norm of a bireflection is a scalar.
     Rnormsq = R*~R
     assert Rnormsq[0] == (u1*v1 + u2*v2)**2 - (-u1*v2 + u2*v1)*(u1*v2 - u2*v1)
-    with pytest.raises(KeyError):
-        Rnormsq['e12']
+    assert len(Rnormsq) == 1
+    assert 'e12' not in Rnormsq
+    assert 0 in Rnormsq
+    assert Rnormsq['e12'] == 0
 
 def test_conj_symbolic(vga2d):
     u = vga2d.vector(name='u')
@@ -215,7 +215,7 @@ def test_outer(sta):
 
     # Test basis bivectors.
     e12, e23 = sta.blades['e12'], sta.blades['e23']
-    assert (e12 ^ e23).vals == {}  # TODO: support == 0?
+    assert not (e12 ^ e23)
     e12, e34 = sta.blades['e12'], sta.blades['e34']
     assert (e12 ^ e34) == (e34 ^ e12)
 
@@ -232,9 +232,6 @@ def test_alg_graded(vga2d):
     v = vga2d_graded.multivector({'e2': 3})
     print(u*v)
 
-def test_fromtrusted(vga2d):
-    x = vga2d.mvfromtrusted(vals={1: 1.1})
-    print(x)
 
 def test_inner_products(vga2d):
     a = vga2d.multivector(name='a')
@@ -268,9 +265,9 @@ def test_hodge_dual(pga2d, pga3d):
         x.dual(kind='polarity')
     y = x.dual()
     # GAmphetamine.js output
-    assert y.vals == {0: x[7], 1: x[6], 2: -x[5], 4: x[3], 3: x[4], 5: -x[2], 6: x[1], 7: x[0]}
+    assert dict(y.items()) == {0: x[7], 1: x[6], 2: -x[5], 4: x[3], 3: x[4], 5: -x[2], 6: x[1], 7: x[0]}
     z = y.undual()
-    assert x.vals == z.vals
+    assert x == z
     with pytest.raises(ValueError):
         x.dual('poincare')
 
@@ -282,7 +279,7 @@ def test_hodge_dual(pga2d, pga3d):
     # GAmphetamine.js output
     "x1234 - x234 e₁ + x134 e₂ - x124 e₃ + x123 e₄ + x34 e₁₂ - x24 e₁₃ + x23 e₁₄ + x14 e₂₃ - x13 e₂₄ + x12 e₃₄ " \
     "- x4 e₁₂₃ + x3 e₁₂₄ - x2 e₁₃₄ + x1 e₂₃₄ + x e₁₂₃₄"
-    assert y.vals == {
+    assert dict(y.items()) == {
         0b0000: x[0b1111],
         0b0001: -x[0b1110], 0b0010: x[0b1101], 0b0100: -x[0b1011], 0b1000: x[0b0111],
         0b0011: x[0b1100], 0b0101: -x[0b1010], 0b1001: x[0b0110], 0b0110: x[0b1001], 0b1010: -x[0b0101], 0b1100: x[0b0011],
@@ -290,7 +287,7 @@ def test_hodge_dual(pga2d, pga3d):
         0b1111: x[0]
     }
     z = y.undual()
-    assert z.vals == x.vals
+    assert z == x
 
 def test_regressive(pga3d):
     x1, x2, x3 = symbols('x1, x2, x3')
@@ -298,8 +295,8 @@ def test_regressive(pga3d):
     y1, y2, y3 = symbols('y1, y2, y3')
     y = pga3d.trivector([y1, y2, y3, 1])
     # Compare with known output from  GAmphetamine.js
-    vals = {'e12': x1*y2-x2*y1, 'e13': x1*y3-x3*y1, 'e14': x2*y3-x3*y2,
-            'e23': x1-y1, 'e24': x2-y2, 'e34': x3-y3}
+    vals = {'e12': x1*y2-x2*y1, 'e13': x1*y3-x3*y1, 'e23': x1-y1,
+            'e14': x2*y3-x3*y2, 'e24': x2-y2, 'e34': x3-y3}
     known = pga3d.multivector(vals)
     assert x & y == known
 
@@ -347,4 +344,33 @@ def test_matrixreps(vga2d):
     x = vga2d.multivector(name='x')
     xmat = x.asmatrix()
     xprime = MultiVector.frommatrix(vga2d, matrix=xmat)
-    assert x.vals == xprime.vals
+    assert np.all(x.values() == xprime.values())
+    assert x.keys() == xprime.keys()
+
+
+def test_fromkeysvalues():
+    alg = Algebra(2, numba=False)
+    xvals = symbols('x x1 x2 x12')
+    xkeys = tuple(range(4))
+    x = alg.multivector(keys=xkeys, values=xvals)
+
+    assert x._values is xvals
+    assert x._keys is xkeys
+
+    # We use sympify, so string that look like equations are also allowed
+    y = alg.multivector(['a*b+c', '-15*c'], grades=(1,))
+    assert y[1] == Symbol('a')*Symbol('b') + Symbol('c')
+    assert y[2] == -15 * Symbol('c')
+
+    yvals = symbols('y y1 y2 y12')
+    with pytest.raises(TypeError):
+        y = alg.multivector(yvals, xkeys[:3])
+    y = alg.multivector(yvals)
+    assert y._values is yvals
+    assert y._keys == xkeys
+
+    xy = x * y
+    assert xy[0] == sympify("(x*y+x1*y1-x12*y12+x2*y2)")
+    assert xy['e1'] == sympify("(x*y1+x1*y+x12*y2-x2*y12)")
+    assert xy[2] == sympify("(x*y2+x1*y12-x12*y1+x2*y)")
+    assert xy['e12'] == sympify("(x*y12+x1*y2+x12*y-x2*y1)")
