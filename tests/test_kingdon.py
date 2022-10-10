@@ -374,3 +374,21 @@ def test_fromkeysvalues():
     assert xy['e1'] == sympify("(x*y1+x1*y+x12*y2-x2*y12)")
     assert xy[2] == sympify("(x*y2+x1*y12-x12*y1+x2*y)")
     assert xy['e12'] == sympify("(x*y12+x1*y2+x12*y-x2*y1)")
+
+def test_commutator():
+    alg = Algebra(2, 1, 1)
+    x = alg.multivector(name='x')
+    y = alg.multivector(name='y')
+    xcpy = x.cp(y)
+    xcpy_expected = ((x*y)-(y*x)) / 2
+    for i in range(len(alg)):
+        assert xcpy[i] == xcpy_expected[i]
+
+def test_anticommutator():
+    alg = Algebra(2, 1, 1)
+    x = alg.multivector(name='x')
+    y = alg.multivector(name='y')
+    xacpy = x.acp(y)
+    xacpy_expected = ((x*y)+(y*x)) / 2
+    for i in range(len(alg)):
+        assert xacpy[i] == xacpy_expected[i]

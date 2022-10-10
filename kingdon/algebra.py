@@ -462,6 +462,13 @@ class MultiVector:
         """
         return self._binary_operation(other, func_dictionary=self.algebra._cp, codegen=codegen_cp)
 
+    def acp(self, other):
+        """
+        Calculate the anti-commutator product of :code:`x := self` and :code:`y := other`:
+        :code:`x.cp(y) = 0.5*(x*y+y*x)`.
+        """
+        return self._binary_operation(other, func_dictionary=self.algebra._acp, codegen=codegen_acp)
+
     def ip(self, other):
         return self._binary_operation(other, func_dictionary=self.algebra._ip, codegen=codegen_ip)
 

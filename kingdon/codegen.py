@@ -40,24 +40,47 @@ def codegen_conj(x, y, symbolic=False):
 
     return _lambdify_binary(x, y, xyx)
 
-def codegen_cp(x, y):
+def codegen_cp(x, y, symbolic=False):
     """
     Generate the commutator product of `x := self` and `y := other`: `x.cp(y) = 0.5*(x*y-y*x)`.
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    xy = codegen_gp(x, y / 2, symbolic=True)
-    yx = codegen_gp(y, x / 2, symbolic=True)
-    xcpy = xy - yx
-    return _lambdify_binary(x, y, xcpy)
+    res_vals = defaultdict(int)
+    for (ei, vi), (ej, vj) in product(x.items(), y.items()):
+        if x.algebra.signs[ei, ej] and (x.algebra.signs[(ei, ej)] - x.algebra.signs[(ej, ei)]):
+            res_vals[ei ^ ej] += x.algebra.signs[(ei, ej)] * vi * vj
 
-def codegen_acp(x, y):
+    # Remove expressions which are identical to zero
+    if x.algebra.simplify:
+        res_vals = {k: simp_expr for k, expr in res_vals.items() if (simp_expr := simplify(expr))}
+
+    if symbolic:
+        return x.fromkeysvalues(x.algebra, tuple(res_vals.keys()), tuple(res_vals.values()))
+
+    return _lambdify_binary(x, y, res_vals)
+
+
+def codegen_acp(x, y, symbolic=False):
     """
     Generate the anti-commutator product of `x := self` and `y := other`: `x.acp(y) = 0.5*(x*y+y*x)`.
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    return NotImplementedError
+    res_vals = defaultdict(int)
+    for (ei, vi), (ej, vj) in product(x.items(), y.items()):
+        if x.algebra.signs[ei, ej] and (x.algebra.signs[(ei, ej)] + x.algebra.signs[(ej, ei)]):
+            res_vals[ei ^ ej] += x.algebra.signs[(ei, ej)] * vi * vj
+
+    # Remove expressions which are identical to zero
+    if x.algebra.simplify:
+        res_vals = {k: simp_expr for k, expr in res_vals.items() if (simp_expr := simplify(expr))}
+
+    if symbolic:
+        return x.fromkeysvalues(x.algebra, tuple(res_vals.keys()), tuple(res_vals.values()))
+
+    return _lambdify_binary(x, y, res_vals)
+
 
 def codegen_ip(x, y, diff_func=abs, symbolic=False):
     """
