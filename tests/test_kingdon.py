@@ -290,15 +290,38 @@ def test_hodge_dual(pga2d, pga3d):
     assert z == x
 
 def test_regressive(pga3d):
-    x1, x2, x3 = symbols('x1, x2, x3')
-    x = pga3d.trivector([x1, x2, x3, 1])
-    y1, y2, y3 = symbols('y1, y2, y3')
-    y = pga3d.trivector([y1, y2, y3, 1])
-    # Compare with known output from  GAmphetamine.js
-    vals = {'e12': x1*y2-x2*y1, 'e13': x1*y3-x3*y1, 'e23': x1-y1,
-            'e14': x2*y3-x3*y2, 'e24': x2-y2, 'e34': x3-y3}
-    known = pga3d.multivector(vals)
-    assert x & y == known
+    """ Test the regressive product of full mvs in 3DPGA against the known result from GAmphetamine.js"""
+    xvals = symbols(','.join(f'x{i}' for i in range(1, len(pga3d) + 1)))
+    x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16 = xvals
+    x = pga3d.multivector({k: xvals[i] for i, k in enumerate(pga3d.canon2bin)})
+    yvals = symbols(','.join(f'y{i}' for i in range(1, len(pga3d) + 1)))
+    y1, y2, y3, y4, y5, y6, y7, y8, y9, y10, y11, y12, y13, y14, y15, y16 = yvals
+    y = pga3d.multivector({k: yvals[i] for i, k in enumerate(pga3d.canon2bin)})
+
+    # Known output from GAmphetamine.js
+    known_vals = {
+        "1": (x1*y16-x10*y7+x11*y6+x12*y5-x13*y4+x14*y3-x15*y2+x16*y1+x2*y15-x3*y14+x4*y13-x5*y12+x6*y11-x7*y10+x8*y9+x9*y8),
+        "e1": (x12*y8-x13*y7+x14*y6+x16*y2+x2*y16+x6*y14-x7*y13+x8*y12),
+        "e2": (x10*y12+x12*y10-x13*y9+x15*y6+x16*y3+x3*y16+x6*y15-x9*y13),
+        "e3": (x11*y12+x12*y11-x14*y9+x15*y7+x16*y4+x4*y16+x7*y15-x9*y14),
+        "e4": (-x10*y14+x11*y13+x13*y11-x14*y10+x15*y8+x16*y5+x5*y16+x8*y15),
+        "e12": (x12*y13-x13*y12+x16*y6+x6*y16),
+        "e13": (x12*y14-x14*y12+x16*y7+x7*y16),
+        "e14": (x13*y14-x14*y13+x16*y8+x8*y16),
+        "e23": (x12*y15-x15*y12+x16*y9+x9*y16),
+        "e24": (x10*y16+x13*y15-x15*y13+x16*y10),
+        "e34": (x11*y16+x14*y15-x15*y14+x16*y11),
+        "e123": (x12*y16+x16*y12),
+        "e124": (x13*y16+x16*y13),
+        "e134": (x14*y16+x16*y14),
+        "e234": (x15*y16+x16*y15),
+        "e1234": (x16*y16)
+    }
+    known = pga3d.multivector(known_vals)
+    x_regr_y = x & y
+    for i in range(len(pga3d)):
+        assert x_regr_y[i] == known[i]
+
 
 def test_projection(pga3d):
     x1, x2, x3 = symbols('x1, x2, x3')
@@ -313,14 +336,19 @@ def test_projection(pga3d):
     assert z.grades == (3,)
 
 
-def test_inverse(pga2d):
+def test_inverse_div(pga2d):
     u = pga2d.multivector(name='u')
+    # Multiply by inverse results in a scalar exp, which numerically evaluates to 1.
     res = u*u.inv()
     assert res.grades == (0,)
     # All the null elements will have disappeared from the output,
     # so only four values left to provide.
     u_vals = np.random.random(4)
     assert res(*u_vals)[0] == pytest.approx(1.0)
+    # Division by self is truly the scalar 1.
+    res = u / u
+    assert res.grades == (0,)
+    assert res[0] == 1
 
 
 def test_mixed_symbolic(vga2d):
@@ -382,7 +410,7 @@ def test_commutator():
     xcpy = x.cp(y)
     xcpy_expected = ((x*y)-(y*x)) / 2
     for i in range(len(alg)):
-        assert xcpy[i] == xcpy_expected[i]
+        assert xcpy[i] - xcpy_expected[i] == 0
 
 def test_anticommutator():
     alg = Algebra(2, 1, 1)
@@ -391,4 +419,24 @@ def test_anticommutator():
     xacpy = x.acp(y)
     xacpy_expected = ((x*y)+(y*x)) / 2
     for i in range(len(alg)):
-        assert xacpy[i] == xacpy_expected[i]
+        assert xacpy[i] - xacpy_expected[i] == 0
+
+def test_conjugation():
+    alg = Algebra(1, 1, 1)
+    x = alg.multivector(name='x')  # multivector
+    y = alg.multivector(name='y')
+
+    xconjy_expected = x*y*(~x)
+    xconjy = x.conj(y)
+    for i in range(len(alg)):
+        assert expand(xconjy[i]) == expand(xconjy_expected[i])
+
+def test_projection():
+    alg = Algebra(1, 1, 1)
+    x = alg.multivector(name='x')  # multivector
+    y = alg.multivector(name='y')
+
+    xconjy_expected = (x | y) * ~y
+    xconjy = x.proj(y)
+    for i in range(len(alg)):
+        assert expand(xconjy[i]) == expand(xconjy_expected[i])

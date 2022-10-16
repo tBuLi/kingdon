@@ -337,20 +337,7 @@ class MultiVector:
         return self + (-other)
 
     def __truediv__(self, other):
-        if not hasattr(other, 'algebra'):
-            # Assume scalar
-            if not other:
-                raise ZeroDivisionError
-            try:
-                values = self.values() / other
-            except TypeError:
-                values = tuple(v / other for v in self.values())
-            finally:
-                return self.fromkeysvalues(self.algebra, self.keys(), values)
-        elif not len(other):
-            raise ZeroDivisionError
-        return self * other.inv()
-        # return self._binary_operation(other, func_dictionary=self.algebra._div, codegen=codegen_div)
+        return self._binary_operation(other, func_dictionary=self.algebra._div, codegen=codegen_div)
 
     def __str__(self):
         if len(self.values()):
@@ -431,9 +418,9 @@ class MultiVector:
 
         values = func(self.values(), other.values())
         if self.algebra.simplify and self.issymbolic or other.issymbolic:
-            keysvalues = filter(lambda kv: True if not isinstance(kv[1], Expr) else simplify(kv[1]),
-                                zip(keys_out, values))
-            keys_out, values = zip(*keysvalues)
+            keysvalues = tuple(filter(lambda kv: True if not isinstance(kv[1], Expr) else simplify(kv[1]),
+                                      zip(keys_out, values)))
+            keys_out, values = zip(*keysvalues) if keysvalues else (tuple(), tuple())
 
         return self.fromkeysvalues(self.algebra, keys_out, values)
 
@@ -513,10 +500,10 @@ class MultiVector:
             use :code:`kind='hodge'`.
         """
         if kind == 'polarity' or kind == 'auto' and self.algebra.r == 0:
-            return self * self.algebra.pss.inv()
+            return self / self.algebra.pss
         elif kind == 'hodge' or kind == 'auto' and self.algebra.r == 1:
             return self.algebra.multivector(
-                {2**self.algebra.d - 1 - eI: self.algebra.signs[eI, 2**self.algebra.d - 1 - eI] * val
+                {len(self.algebra) - 1 - eI: self.algebra.signs[eI, len(self.algebra) - 1 - eI] * val
                  for eI, val in self.items()}
             )
         elif kind == 'auto':
@@ -532,7 +519,7 @@ class MultiVector:
             return self * self.algebra.pss
         elif kind == 'hodge' or kind == 'auto' and self.algebra.r == 1:
             return self.algebra.multivector(
-                {2**self.algebra.d - 1 - eI: self.algebra.signs[2**self.algebra.d - 1 - eI, eI] * val
+                {len(self.algebra) - 1 - eI: self.algebra.signs[len(self.algebra) - 1 - eI, eI] * val
                  for eI, val in self.items()}
             )
         elif kind == 'auto':
