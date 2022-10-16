@@ -6,4 +6,5 @@ __version__ = '0.1.0'
 
 from sympy import symbols
 
-from kingdon.algebra import Algebra, MultiVector
+from kingdon.algebra import Algebra
+from kingdon.multivector import MultiVector
