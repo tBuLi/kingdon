@@ -1,6 +1,6 @@
-====
+=======
 Kingdon
-====
+=======
 
 
 .. image:: https://img.shields.io/pypi/v/kingdon.svg
@@ -102,7 +102,7 @@ A :code:`kingdon` MultiVector with symbols is callable. So in order to evaluate 
 for a specific value of :code:`b12`, simply call :code:`w`::
 
     >>> w(b12=10)
-    >>> (-10) * e2 + (-3) * e4
+    (-10) * e2 + (-3) * e4
 
 
 Operators
