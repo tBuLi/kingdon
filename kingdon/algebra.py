@@ -1,9 +1,16 @@
 from itertools import combinations, product, chain, groupby
-from functools import partial, cached_property, reduce
+from functools import partial, reduce
 from collections.abc import Mapping
 from collections import defaultdict, Counter
 from dataclasses import dataclass, field, replace, fields
 from contextlib import contextmanager
+try:
+    from functools import cached_property
+except ImportError:
+    from functools import lru_cache
+    
+    def cached_property(func):
+        return property(lru_cache()(func))
 
 import numpy as np
 from sympy import Symbol, Expr, simplify, sympify
