@@ -3,3 +3,4 @@ sphinx
 nbsphinx
 IPython
 ipykernel
+pandoc
