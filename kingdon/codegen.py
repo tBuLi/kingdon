@@ -45,7 +45,7 @@ def codegen_product(*mvs, name_base, filter_func=lambda tt: tt.sign, sign_func=N
     """
     Helper function for the codegen of all product-type functions.
 
-    :param *mvs: Positional-argument :class:`~kingdon.algebra.MultiVector`
+    :param mvs: Positional-argument :class:`~kingdon.algebra.MultiVector`.
     :param filter_func: A condition which should be true in the preprocessing of terms.
         For example, for the geometric product we filter out all values for which
         ei*ej = 0 since these do not have to be considered anyway.
@@ -213,17 +213,11 @@ def codegen_op(x, y, symbolic=False):
 
 def codegen_rp(x, y):
     """
-    Generate the commutator product of `x := self` and `y := other`: `x.cp(y) = 0.5*(x*y-y*x)`.
+    Generate the regressive product of :code:`x` and :code:`y`:,
+    :math:`x \\vee y`.
 
-    :return: tuple of keys in binary representation and a lambda function.
-    """
-    x_regr_y = (x.dual().op(y.dual())).undual()
-    return _lambdify_binary(x, y, x_regr_y)
-
-def codegen_rp(x, y):
-    """
-    Generate the regressive product of :code:`x` and :code:`y`: :math:`x \vee y`.
-
+    :param x:
+    :param y:
     :return: tuple of keys in binary representation and a lambda function.
     """
     algebra = x.algebra

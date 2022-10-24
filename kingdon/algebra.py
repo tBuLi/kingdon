@@ -119,7 +119,9 @@ class Algebra:
     @cached_property
     def indices_for_grades(self):
         """
-        Mapping from a sequence of grades to the corresponding indices. E.g. in 2D VGA, this returns
+        Mapping from a sequence of grades to the corresponding indices.
+        E.g. in 2D VGA, this returns
+
         {(0,): (0,), (1,): (1, 2), (2,): (3,), (0, 1): (0, 1, 2),
          (0, 2): (0, 3), (1, 2): (1, 2, 3), (0, 1, 2): (0, 1, 2, 3)}
         """
@@ -498,10 +500,10 @@ class MultiVector:
         non-degenerate metrics (Algebra.r = 0). However, for degenerate spaces this no longer works, and we have
         two popular options: Poincaré and Hodge duality.
 
-        By default, `kingdon` will use polarity in non-degenerate spaces, and Hodge duality for spaces with
+        By default, :code:`kingdon` will use polarity in non-degenerate spaces, and Hodge duality for spaces with
         `Algebra.r = 1`. For spaces with `r > 2`, little to no literature exists, and you are on your own.
 
-        :param kind: if 'auto' (default), :mod:`kingdon` will try to determine the best dual on the
+        :param kind: if 'auto' (default), :code:`kingdon` will try to determine the best dual on the
             basis of the signature of the space. See explenation above.
             To ensure polarity, use :code:`kind='polarity'`, and to ensure Hodge duality,
             use :code:`kind='hodge'`.
