@@ -13,7 +13,22 @@ class MultiVector:
     _values: tuple = field(default_factory=tuple)
     _keys: tuple = field(default_factory=tuple)
 
-    def __new__(cls, algebra, values=None, keys=None, name=None, grades=None):
+    def __new__(cls, algebra, values=None, keys=None, *, name=None, grades=None, symbolcls=Symbol):
+        """
+        :param algebra: Instance of :class:`~kingdon.algebra.Algebra`.
+        :param keys: Keys corresponding to the basis blades in binary rep.
+        :param values: Values of the multivector. If keys are provided, then keys and values should
+            satisfy :code:`len(keys) == len(values)`. If no keys nor grades are provided, :code:`len(values)`
+            should equal :code:`len(algebra)`, i.e. a full multivector. If grades is provided,
+            then :code:`len(values)` should be identical to the number of values in a multivector
+            of that grade.
+        :param name: Base string to be used as the name for symbolic values.
+        :param grades: Optional, :class:`tuple` of grades in this multivector.
+            If present, :code:`keys` is checked against these grades.
+        :param symbolcls: Optional, class to be used for symbol creation. This is a :class:`sympy.Symbol` by default,
+            but could be e.g. :class:`symfit.Variable` or :class:`symfit.Parameter` when the goal is to use this
+            multivector in a fitting problem.
+        """
         # Sanitize input
         values = values if values is not None else tuple()
         keys = keys if keys is not None else tuple()
@@ -34,7 +49,7 @@ class MultiVector:
         elif name and not values:
             # values was not given, but we do have a name. So we are in symbolic mode.
             keys = algebra.indices_for_grades[grades]
-            values = tuple(Symbol(f'{name}{algebra.bin2canon[k][1:]}') for k in keys)
+            values = tuple(symbolcls(f'{name}{algebra.bin2canon[k][1:]}') for k in keys)
         elif len(keys) != len(values):
             raise TypeError(f'Length of `keys` and `values` have to match.')
 
