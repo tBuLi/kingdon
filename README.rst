@@ -13,6 +13,8 @@ Kingdon
         :target: https://kingdon.readthedocs.io/en/latest/?version=latest
         :alt: Documentation Status
 
+.. image:: https://coveralls.io/repos/github/tBuLi/kingdon/badge.svg?branch=master
+        :target: https://coveralls.io/github/tBuLi/kingdon?branch=master
 
 
 

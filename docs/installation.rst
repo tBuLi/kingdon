@@ -8,7 +8,7 @@ Installation
 Stable release
 --------------
 
-:mod:`Kingdon` is currently still under development, and thus no stable release is available yet.
+:code:`Kingdon` is currently still under development, and thus no stable release is available yet.
 
 .. only:: comment
 
