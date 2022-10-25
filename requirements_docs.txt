@@ -4,3 +4,4 @@ nbsphinx
 IPython
 ipykernel
 symfit
+matplotlib
