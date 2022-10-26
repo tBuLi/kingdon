@@ -31,7 +31,6 @@ class MultiVector:
         """
         # Sanitize input
         values = values if values is not None else tuple()
-        keys = keys if keys is not None else tuple()
         name = name if name is not None else ''
         if grades is not None:
             if not all(0 <= grade <= algebra.d for grade in grades):
@@ -48,7 +47,7 @@ class MultiVector:
             keys = algebra.indices_for_grades[grades]
         elif name and not values:
             # values was not given, but we do have a name. So we are in symbolic mode.
-            keys = algebra.indices_for_grades[grades]
+            keys = algebra.indices_for_grades[grades] if not keys else keys
             values = tuple(symbolcls(f'{name}{algebra.bin2canon[k][1:]}') for k in keys)
         elif len(keys) != len(values):
             raise TypeError(f'Length of `keys` and `values` have to match.')
@@ -136,7 +135,7 @@ class MultiVector:
         return self.fromkeysvalues(self.algebra, self.keys(), values)
 
     def normsq(self):
-        return self * ~self
+        return self.algebra.normsq(self)
 
     def inv(self):
         """ Inverse of this multivector. """
@@ -239,7 +238,7 @@ class MultiVector:
     def op(self, other):
         return self.algebra.op(self, other)
 
-    __xor__ = op
+    __xor__ = __rxor__ = op
 
     def lc(self, other):
         return self.algebra.lc(self, other)

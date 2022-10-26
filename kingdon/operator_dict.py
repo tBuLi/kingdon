@@ -29,8 +29,6 @@ class OperatorDict(Mapping):
                 vals = tuple(Symbol(f'{name}{self.algebra.bin2canon[ek][1:]}') for ek in keys)
                 mvs.append(MultiVector.fromkeysvalues(self.algebra, keys=keys, values=vals))
             self.operator_dict[keys_in] = self.codegen(*mvs)
-        else:
-            self.operator_dict[keys_in]
         return self.operator_dict[keys_in]
 
     def __iter__(self):

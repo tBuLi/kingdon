@@ -14,7 +14,8 @@ import numpy as np
 
 from kingdon.codegen import (
     codegen_gp, codegen_conj, codegen_cp, codegen_ip, codegen_op, codegen_div,
-    codegen_rp, codegen_acp, codegen_proj, codegen_sp, codegen_lc, codegen_inv, codegen_rc
+    codegen_rp, codegen_acp, codegen_proj, codegen_sp, codegen_lc, codegen_inv,
+    codegen_rc, codegen_normsq
 )
 from kingdon.operator_dict import OperatorDict
 from kingdon.matrixreps import matrix_rep
@@ -60,6 +61,7 @@ class Algebra:
     proj: OperatorDict = operation_field(metadata={'codegen': codegen_proj})  # projection dict
     div: OperatorDict = operation_field(metadata={'codegen': codegen_div})  # division dict
     inv: OperatorDict = operation_field(metadata={'codegen': codegen_inv})  # inverse dict
+    normsq: OperatorDict = operation_field(metadata={'codegen': codegen_normsq})  # norm squared dict
 
     # Mappings from binary to canonical reps. e.g. 0b01 = 1 <-> 'e1', 0b11 = 3 <-> 'e12'.
     canon2bin: dict = field(init=False, repr=False, compare=False)

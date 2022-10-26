@@ -295,6 +295,14 @@ def codegen_div(x, y):
         xdivy = x.algebra.multivector({k: v / normsqy for k, v in x_adjy.items()})
     return _lambdify_binary(x, y, xdivy)
 
+def codegen_normsq(x):
+    if x.algebra.simplify:
+        res = codegen_product(x, ~x, name_base='gp', asdict=True, sympy=True)
+        res = {k: str(simp_expr) for k, expr in res.items() if (simp_expr := simplify(expr))}
+    else:
+        res = codegen_product(x, ~x, name_base='gp', asdict=True)
+    return _func_builder(res, x, name_base="normsq")
+
 
 def _lambdify_binary(x, y, x_bin_y):
     xy_symbols = [list(x.values()), list(y.values())]
