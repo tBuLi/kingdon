@@ -259,6 +259,13 @@ class MultiVector:
 
     __and__ = rp
 
+    def __pow__(self, power, modulo=None):
+        # TODO: this should also be taken care of via codegen, but for now this workaround is ok.
+        if power == 2:
+            return self.algebra.gp(self, self)
+        else:
+            raise NotImplementedError
+
     def dual(self, kind='auto'):
         """
         Compute the dual of `self`. There are three different kinds of duality in common usage.
