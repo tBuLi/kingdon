@@ -18,11 +18,12 @@ jobs:
         pip install wheel
         pip install coveralls
         pip install pytest
+        pip install pytest-cov
         pip install -r requirements.txt
         pip install -e .
     - name: Test with coverage
       run: |
-        coverage run --source kingdon -m py.test
+        pytest --cov=kingdon
     - name: Upload to Coveralls
       env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
