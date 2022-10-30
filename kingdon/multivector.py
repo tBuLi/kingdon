@@ -114,7 +114,7 @@ class MultiVector:
         elif not isinstance(grades, tuple):
             grades = tuple(grades)
 
-        vals = {k: self.values()[k]
+        vals = {k: self[k]
                 for k in self.algebra.indices_for_grades[grades] if k in self.keys()}
         return self.fromkeysvalues(self.algebra, tuple(vals.keys()), tuple(vals.values()))
 
@@ -265,6 +265,10 @@ class MultiVector:
             return self.algebra.gp(self, self)
         else:
             raise NotImplementedError
+
+    def outerexp(self):
+        return self.algebra.outerexp(self)
+
 
     def dual(self, kind='auto'):
         """

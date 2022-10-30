@@ -3,6 +3,7 @@ from collections import namedtuple
 from functools import reduce
 import operator
 import linecache
+import warnings
 
 from sympy import simplify, sympify, Add, Mul
 from sympy.utilities.lambdify import lambdify
@@ -304,6 +305,29 @@ def codegen_normsq(x):
     return _func_builder(res, x, name_base="normsq")
 
 
+def codegen_outerexp(x, asterms=False):
+    if len(x.grades) != 1:
+        warnings.warn('Outer exponential might not converge for mixed-grade multivectors.', RuntimeWarning)
+    k = x.algebra.d
+
+    Ws = [x.algebra.scalar([1]), x]
+    j = 2
+    while j <= k:
+        Wj = Ws[-1] ^ x
+        # Dividing like this avoids floating point numbers, which is excellent.
+        Wj._values = tuple(v / j for v in Wj._values)
+        if Wj:
+            Ws.append(Wj)
+            j += 1
+        else:
+            break
+
+    if asterms:
+        return Ws
+    L = reduce(operator.add, Ws)
+    return _func_builder(dict(L.items()), x, name_base='outerexp')
+
+
 def _lambdify_binary(x, y, x_bin_y):
     xy_symbols = [list(x.values()), list(y.values())]
     func = lambdify(xy_symbols, list(x_bin_y.values()), cse=x.algebra.cse)
@@ -337,7 +361,7 @@ def _func_builder(res_vals: dict, *mvs, name_base: str):
     header = f'def {func_name}({", ".join(args)}):'
     if res_vals:
         body = "\n".join(f'    {",".join(v.name for v in mv.values())}, = {arg}' for mv, arg in zip(mvs, args))
-        return_val = f'    return ({", ".join(res_vals.values())},)'
+        return_val = f'    return ({", ".join(v if isinstance(v, str) else str(v) for v in res_vals.values())},)'
     else:
         body = ''
         return_val = f'    return tuple()'

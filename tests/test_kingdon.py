@@ -440,3 +440,20 @@ def test_projection():
     xconjy = x.proj(y)
     for i in range(len(alg)):
         assert expand(xconjy[i]) == expand(xconjy_expected[i])
+
+
+def test_outerexp(R6):
+    B = R6.bivector(name='B')
+    LB = B.outerexp()
+    LB_exact = B + (B ^ B) / 2 + (B ^ B ^ B) / 6 + 1
+
+    diff = LB - LB_exact
+    for val in diff.values():
+        assert simplify(val) == 0
+
+    v = R6.vector(name='v')
+    Lv = v.outerexp()
+    Lv_exact = v + 1
+    diff = Lv - Lv_exact
+    for val in diff.values():
+        assert val == 0
