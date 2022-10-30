@@ -46,7 +46,7 @@ def codegen_product(*mvs, name_base, filter_func=lambda tt: tt.sign, sign_func=N
     """
     Helper function for the codegen of all product-type functions.
 
-    :param mvs: Positional-argument :class:`~kingdon.algebra.MultiVector`.
+    :param mvs: Positional-argument :class:`~kingdon.multivector.MultiVector`.
     :param filter_func: A condition which should be true in the preprocessing of terms.
         For example, for the geometric product we filter out all values for which
         ei*ej = 0 since these do not have to be considered anyway.
@@ -85,9 +85,9 @@ def codegen_gp(x, y, symbolic=False):
     """
     Generate the geometric product between :code:`x` and :code:`y`.
 
-    :param x: Fully symbolic :class:`~kingdon.algebra.MultiVector`.
-    :param y: Fully symbolic :class:`~kingdon.algebra.MultiVector`.
-    :param symbolic: If true, return a symbolic :class:`~kingdon.algebra.MultiVector` instead of a lambda function.
+    :param x: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
+    :param y: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
+    :param symbolic: If true, return a symbolic :class:`~kingdon.multivector.MultiVector` instead of a lambda function.
     :return: tuple with integers indicating the basis blades present in the
         product in binary convention, and a lambda function that perform the product.
     """

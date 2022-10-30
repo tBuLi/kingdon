@@ -184,17 +184,17 @@ class Algebra:
         return swaps_arr, signs, cayley
 
     def multivector(self, *args, **kwargs):
-        """ Create a new :class:`~kingdon.algebra.MultiVector`. """
+        """ Create a new :class:`~kingdon.multivector.MultiVector`. """
         return MultiVector(self, *args, **kwargs)
 
     def evenmv(self, *args, **kwargs):
-        """ Create a new :class:`~kingdon.algebra.MultiVector` in the even subalgebra. """
+        """ Create a new :class:`~kingdon.multivector.MultiVector` in the even subalgebra. """
         grades = tuple(filter(lambda x: x % 2 == 0, range(self.d + 1)))
         return MultiVector(self, *args, grades=grades, **kwargs)
 
     def oddmv(self, *args, **kwargs):
         """
-        Create a new :class:`~kingdon.algebra.MultiVector` of odd grades.
+        Create a new :class:`~kingdon.multivector.MultiVector` of odd grades.
         (There is technically no such thing as an odd subalgebra, but
         otherwise this is similar to :class:`~kingdon.algebra.Algebra.evenmv`.)
         """
@@ -203,7 +203,7 @@ class Algebra:
 
     def purevector(self, *args, grade, **kwargs):
         """
-        Create a new :class:`~kingdon.algebra.MultiVector` of a specific grade.
+        Create a new :class:`~kingdon.multivector.MultiVector` of a specific grade.
 
         :param grade: Grade of the mutivector to create.
         """

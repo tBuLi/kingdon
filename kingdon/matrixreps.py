@@ -1,6 +1,6 @@
 """
 This module contains support functions to turn
-:class:`~kingdon.algebra.MultiVector`'s into matrices.
+:class:`~kingdon.multivector.MultiVector`'s into matrices.
 
 This follows the approach outlined in
 Graded Symmetry Groups: Plane and Simple, section 10.
