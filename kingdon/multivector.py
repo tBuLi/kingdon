@@ -166,13 +166,27 @@ class MultiVector:
             return '0'
 
     def __getitem__(self, item):
-        item = item if item in self.algebra.bin2canon else self.algebra.canon2bin[item]
-        try:
-            index = self.keys().index(item)
-        except ValueError:
-            return 0
+        if isinstance(item, tuple):
+            key, slicing = item
         else:
-            return self.values()[index]
+            key, slicing = item, None
+
+        if key == slice(None, None, None):
+            values = self.values()
+        else:
+            # Convert key from a basis-blade in binary rep to a valid index in values.
+            key = key if key in self.algebra.bin2canon else self.algebra.canon2bin[key]
+            try:
+                key = self.keys().index(key)
+            except ValueError:
+                return 0
+            else:
+                values = self.values()
+
+        if slicing is None:
+            return values[key]
+        else:
+            return values[key][slicing] if isinstance(values, (tuple, list)) else values[key, slicing]
 
     def __contains__(self, item):
         item = item if item in self.algebra.bin2canon else self.algebra.canon2bin[item]

@@ -457,3 +457,22 @@ def test_outerexp(R6):
     diff = Lv - Lv_exact
     for val in diff.values():
         assert val == 0
+
+
+def test_indexing():
+    alg = Algebra(4)
+    nrows = 3
+    bvals = np.random.random((len(alg.indices_for_grade[2]), nrows))
+    B = alg.bivector(bvals)
+    np.testing.assert_allclose(B[3, 2:4], bvals[0, 2:4])
+    np.testing.assert_allclose(B[3, 2], bvals[0, 2])
+    np.testing.assert_allclose(B[3, :], bvals[0, :])
+    np.testing.assert_allclose(B[:, 0], bvals[:, 0])
+
+    #TODO: same tests but without using a numpy array
+    bvals = tuple(np.random.random(nrows) for _ in range(len(alg.indices_for_grade[2])))
+    B = alg.bivector(bvals)
+    np.testing.assert_allclose(B[3, 2:4], bvals[0][2:4])
+    np.testing.assert_allclose(B[3, 2], bvals[0][2])
+    np.testing.assert_allclose(B[3, :], bvals[0][:])
+    np.testing.assert_allclose(B[:, 0], bvals[:][0])
