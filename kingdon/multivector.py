@@ -138,6 +138,7 @@ class MultiVector:
         return self.algebra.normsq(self)
 
     def normalized(self):
+        """ Normalized version of this multivector. """
         normsq = self.normsq()
         if normsq.grades == (0,):
             return self / normsq[0] ** 0.5
