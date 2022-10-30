@@ -137,6 +137,13 @@ class MultiVector:
     def normsq(self):
         return self.algebra.normsq(self)
 
+    def normalized(self):
+        normsq = self.normsq()
+        if normsq.grades == (0,):
+            return self / normsq[0] ** 0.5
+        else:
+            raise NotImplementedError
+
     def inv(self):
         """ Inverse of this multivector. """
         return self.algebra.inv(self)

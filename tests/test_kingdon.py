@@ -476,3 +476,13 @@ def test_indexing():
     np.testing.assert_allclose(B[3, 2], bvals[0][2])
     np.testing.assert_allclose(B[3, :], bvals[0][:])
     np.testing.assert_allclose(B[:, 0], bvals[:][0])
+
+def test_normalization(pga3d):
+    vvals = np.random.random(len(pga3d.indices_for_grade[1]))
+    v = pga3d.vector(vvals).normalized()
+    assert (v*v)[0] == pytest.approx(1.0)
+    np.testing.assert_allclose((v*v)[0], 1.0)
+
+    bvals = np.random.random(len(pga3d.indices_for_grade[2]))
+    with pytest.raises(NotImplementedError):
+        B = pga3d.bivector(bvals).normalized()
