@@ -440,3 +440,49 @@ def test_projection():
     xconjy = x.proj(y)
     for i in range(len(alg)):
         assert expand(xconjy[i]) == expand(xconjy_expected[i])
+
+
+def test_outerexp(R6):
+    B = R6.bivector(name='B')
+    LB = B.outerexp()
+    LB_exact = B + (B ^ B) / 2 + (B ^ B ^ B) / 6 + 1
+
+    diff = LB - LB_exact
+    for val in diff.values():
+        assert simplify(val) == 0
+
+    v = R6.vector(name='v')
+    Lv = v.outerexp()
+    Lv_exact = v + 1
+    diff = Lv - Lv_exact
+    for val in diff.values():
+        assert val == 0
+
+
+def test_indexing():
+    alg = Algebra(4)
+    nrows = 3
+    bvals = np.random.random((len(alg.indices_for_grade[2]), nrows))
+    B = alg.bivector(bvals)
+    np.testing.assert_allclose(B[3, 2:4], bvals[0, 2:4])
+    np.testing.assert_allclose(B[3, 2], bvals[0, 2])
+    np.testing.assert_allclose(B[3, :], bvals[0, :])
+    np.testing.assert_allclose(B[:, 0], bvals[:, 0])
+
+    #TODO: same tests but without using a numpy array
+    bvals = tuple(np.random.random(nrows) for _ in range(len(alg.indices_for_grade[2])))
+    B = alg.bivector(bvals)
+    np.testing.assert_allclose(B[3, 2:4], bvals[0][2:4])
+    np.testing.assert_allclose(B[3, 2], bvals[0][2])
+    np.testing.assert_allclose(B[3, :], bvals[0][:])
+    np.testing.assert_allclose(B[:, 0], bvals[:][0])
+
+def test_normalization(pga3d):
+    vvals = np.random.random(len(pga3d.indices_for_grade[1]))
+    v = pga3d.vector(vvals).normalized()
+    assert (v*v)[0] == pytest.approx(1.0)
+    np.testing.assert_allclose((v*v)[0], 1.0)
+
+    bvals = np.random.random(len(pga3d.indices_for_grade[2]))
+    with pytest.raises(NotImplementedError):
+        B = pga3d.bivector(bvals).normalized()

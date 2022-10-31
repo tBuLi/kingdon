@@ -3,6 +3,7 @@ from collections import namedtuple
 from functools import reduce
 import operator
 import linecache
+import warnings
 
 from sympy import simplify, sympify, Add, Mul
 from sympy.utilities.lambdify import lambdify
@@ -45,7 +46,7 @@ def codegen_product(*mvs, name_base, filter_func=lambda tt: tt.sign, sign_func=N
     """
     Helper function for the codegen of all product-type functions.
 
-    :param mvs: Positional-argument :class:`~kingdon.algebra.MultiVector`.
+    :param mvs: Positional-argument :class:`~kingdon.multivector.MultiVector`.
     :param filter_func: A condition which should be true in the preprocessing of terms.
         For example, for the geometric product we filter out all values for which
         ei*ej = 0 since these do not have to be considered anyway.
@@ -84,9 +85,9 @@ def codegen_gp(x, y, symbolic=False):
     """
     Generate the geometric product between :code:`x` and :code:`y`.
 
-    :param x: Fully symbolic :class:`~kingdon.algebra.MultiVector`.
-    :param y: Fully symbolic :class:`~kingdon.algebra.MultiVector`.
-    :param symbolic: If true, return a symbolic :class:`~kingdon.algebra.MultiVector` instead of a lambda function.
+    :param x: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
+    :param y: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
+    :param symbolic: If true, return a symbolic :class:`~kingdon.multivector.MultiVector` instead of a lambda function.
     :return: tuple with integers indicating the basis blades present in the
         product in binary convention, and a lambda function that perform the product.
     """
@@ -295,6 +296,37 @@ def codegen_div(x, y):
         xdivy = x.algebra.multivector({k: v / normsqy for k, v in x_adjy.items()})
     return _lambdify_binary(x, y, xdivy)
 
+def codegen_normsq(x):
+    if x.algebra.simplify:
+        res = codegen_product(x, ~x, name_base='gp', asdict=True, sympy=True)
+        res = {k: str(simp_expr) for k, expr in res.items() if (simp_expr := simplify(expr))}
+    else:
+        res = codegen_product(x, ~x, name_base='gp', asdict=True)
+    return _func_builder(res, x, name_base="normsq")
+
+
+def codegen_outerexp(x, asterms=False):
+    if len(x.grades) != 1:
+        warnings.warn('Outer exponential might not converge for mixed-grade multivectors.', RuntimeWarning)
+    k = x.algebra.d
+
+    Ws = [x.algebra.scalar([1]), x]
+    j = 2
+    while j <= k:
+        Wj = Ws[-1] ^ x
+        # Dividing like this avoids floating point numbers, which is excellent.
+        Wj._values = tuple(v / j for v in Wj._values)
+        if Wj:
+            Ws.append(Wj)
+            j += 1
+        else:
+            break
+
+    if asterms:
+        return Ws
+    L = reduce(operator.add, Ws)
+    return _func_builder(dict(L.items()), x, name_base='outerexp')
+
 
 def _lambdify_binary(x, y, x_bin_y):
     xy_symbols = [list(x.values()), list(y.values())]
@@ -329,7 +361,7 @@ def _func_builder(res_vals: dict, *mvs, name_base: str):
     header = f'def {func_name}({", ".join(args)}):'
     if res_vals:
         body = "\n".join(f'    {",".join(v.name for v in mv.values())}, = {arg}' for mv, arg in zip(mvs, args))
-        return_val = f'    return ({", ".join(res_vals.values())},)'
+        return_val = f'    return ({", ".join(v if isinstance(v, str) else str(v) for v in res_vals.values())},)'
     else:
         body = ''
         return_val = f'    return tuple()'
