@@ -92,11 +92,6 @@ class Algebra:
 
         self.swaps, self.signs, self.cayley = self._prepare_signs_and_cayley()
 
-        # Make convenient shorthand constructors for commonly used vector types.
-        for grade, name in enumerate(['scalar', 'vector', 'bivector', 'trivector', 'quadvector'][:min(self.d+1, 5)]):
-            setattr(self, name, partial(self.purevector, grade=grade))
-            setattr(self, 'pseudo' + name, partial(self.purevector, grade=self.d - grade))
-
         self.blades = {k: MultiVector.fromkeysvalues(self, keys=(v,), values=(1,))
                        for k, v in self.canon2bin.items()}
         self.pss = self.blades[self.bin2canon[2 ** self.d - 1]]
@@ -183,16 +178,16 @@ class Algebra:
                 cayley[eI, eJ] = f'0'
         return swaps_arr, signs, cayley
 
-    def multivector(self, *args, **kwargs):
+    def multivector(self, *args, **kwargs) -> MultiVector:
         """ Create a new :class:`~kingdon.multivector.MultiVector`. """
         return MultiVector(self, *args, **kwargs)
 
-    def evenmv(self, *args, **kwargs):
+    def evenmv(self, *args, **kwargs) -> MultiVector:
         """ Create a new :class:`~kingdon.multivector.MultiVector` in the even subalgebra. """
         grades = tuple(filter(lambda x: x % 2 == 0, range(self.d + 1)))
         return MultiVector(self, *args, grades=grades, **kwargs)
 
-    def oddmv(self, *args, **kwargs):
+    def oddmv(self, *args, **kwargs) -> MultiVector:
         """
         Create a new :class:`~kingdon.multivector.MultiVector` of odd grades.
         (There is technically no such thing as an odd subalgebra, but
@@ -201,10 +196,40 @@ class Algebra:
         grades = tuple(filter(lambda x: x % 2 == 1, range(self.d + 1)))
         return MultiVector(self, *args, grades=grades, **kwargs)
 
-    def purevector(self, *args, grade, **kwargs):
+    def purevector(self, *args, grade, **kwargs) -> MultiVector:
         """
         Create a new :class:`~kingdon.multivector.MultiVector` of a specific grade.
 
         :param grade: Grade of the mutivector to create.
         """
         return MultiVector(self, *args, grades=(grade,), **kwargs)
+
+    def scalar(self, *args, **kwargs) -> MultiVector:
+        return self.purevector(*args, grade=0, **kwargs)
+
+    def vector(self, *args, **kwargs) -> MultiVector:
+        return self.purevector(*args, grade=1, **kwargs)
+
+    def bivector(self, *args, **kwargs) -> MultiVector:
+        return self.purevector(*args, grade=2, **kwargs)
+
+    def trivector(self, *args, **kwargs) -> MultiVector:
+        return self.purevector(*args, grade=3, **kwargs)
+
+    def quadvector(self, *args, **kwargs) -> MultiVector:
+        return self.purevector(*args, grade=4, **kwargs)
+
+    def pseudoscalar(self, *args, **kwargs) -> MultiVector:
+        return self.purevector(*args, grade=self.d - 0, **kwargs)
+
+    def pseudovector(self, *args, **kwargs) -> MultiVector:
+        return self.purevector(*args, grade=self.d - 1, **kwargs)
+
+    def pseudobivector(self, *args, **kwargs) -> MultiVector:
+        return self.purevector(*args, grade=self.d - 2, **kwargs)
+
+    def pseudotrivector(self, *args, **kwargs) -> MultiVector:
+        return self.purevector(*args, grade=self.d - 3, **kwargs)
+
+    def pseudoquadvector(self, *args, **kwargs) -> MultiVector:
+        return self.purevector(*args, grade=self.d - 4, **kwargs)
