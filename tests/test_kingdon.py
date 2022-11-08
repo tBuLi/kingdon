@@ -47,24 +47,6 @@ def sta():
 def vga3d():
     return Algebra(3)
 
-def test_algebra_constructors(pga1d):
-    assert pga1d.scalar.keywords['grade'] == 0
-    assert pga1d.vector.keywords['grade'] == 1
-    assert pga1d.bivector.keywords['grade'] == 2
-    assert pga1d.pseudoscalar.keywords['grade'] == 2
-    assert pga1d.pseudovector.keywords['grade'] == 1
-    assert pga1d.pseudobivector.keywords['grade'] == 0
-
-    assert not hasattr(pga1d, 'trivector')
-    assert not hasattr(pga1d, 'pseudotrivector')
-
-    x = pga1d.vector([1, 2])
-    assert len(x) == 2
-    assert isinstance(x, MultiVector)
-
-def test_algebra_symbolic():
-    alg = Algebra(3, 0, 1)
-
 
 def test_MultiVector(pga1d):
     with pytest.raises(TypeError):
