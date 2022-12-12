@@ -445,15 +445,12 @@ def test_outertrig(R6):
     B = alg.bivector(name='B', keys=(0b110000, 0b1100, 0b11))
     sB = B.outersin()
     cB = B.outercos()
-    tB = B.outertan()
 
-    sB_exact = B + (B ^ B ^ B) / 6
-    cB_exact = 1 + (B ^ B) / 2
-    tB_exact = sB_exact / cB_exact
+    sB_exact = B + (B ^ B ^ B) / sympify(6)
+    cB_exact = sympify(1) + (B ^ B) / sympify(2)
 
-    for diff in [sB - sB_exact, cB - cB_exact, tB - tB_exact]:
-        for val in diff.values():
-            assert simplify(val) == 0
+    for diff in [sB - sB_exact, cB - cB_exact]:
+        assert all(v == 0 for v in diff.values())
 
 
 def test_indexing():
