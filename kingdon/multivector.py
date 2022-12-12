@@ -1,3 +1,4 @@
+import operator
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import reduce, cached_property
@@ -40,7 +41,7 @@ class MultiVector:
 
         # Construct a new MV on the basis of the kind of input we received.
         if isinstance(values, Mapping):
-            keys, values = zip(*values.items())
+            keys, values = zip(*values.items()) if values else (tuple(), tuple())
         elif len(values) == len(algebra) and not keys:
             keys = tuple(range(len(values)))
         elif len(values) == len(algebra.indices_for_grades[grades]) and not keys:
@@ -160,8 +161,13 @@ class MultiVector:
                 vals[k] = v
         return self.fromkeysvalues(self.algebra, tuple(vals.keys()), tuple(vals.values()))
 
+    __radd__ = __add__
+
     def __sub__(self, other):
         return self + (-other)
+
+    def __rsub__(self, other):
+        return other + (-self)
 
     def __truediv__(self, other):
         return self.algebra.div(self, other)
@@ -172,6 +178,12 @@ class MultiVector:
             return ' + '.join([f'({val}) * {self.algebra.bin2canon[key]}' for key, val in canon_sorted_vals])
         else:
             return '0'
+
+    def __format__(self, format_spec):
+        if format_spec == 'keys_binary':
+            iden = '_'.join(''.join('1' if i in self.keys() else '0' for i in bin_blades)
+                            for bin_blades in self.algebra.indices_for_grade.values())
+            return iden
 
     def __getitem__(self, item):
         if isinstance(item, tuple):
@@ -202,7 +214,7 @@ class MultiVector:
 
     @cached_property
     def free_symbols(self):
-        return reduce(lambda tot, x: tot | x, (v.free_symbols for v in self.values()))
+        return reduce(operator.or_, (v.free_symbols for v in self.values() if hasattr(v, "free_symbols")))
 
     @cached_property
     def _callable(self):
@@ -291,6 +303,14 @@ class MultiVector:
     def outerexp(self):
         return self.algebra.outerexp(self)
 
+    def outersin(self):
+        return self.algebra.outersin(self)
+
+    def outercos(self):
+        return self.algebra.outercos(self)
+
+    def outertan(self):
+        return self.algebra.outertan(self)
 
     def dual(self, kind='auto'):
         """

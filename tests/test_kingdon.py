@@ -427,7 +427,7 @@ def test_projection():
 def test_outerexp(R6):
     B = R6.bivector(name='B')
     LB = B.outerexp()
-    LB_exact = B + (B ^ B) / 2 + (B ^ B ^ B) / 6 + 1
+    LB_exact = 1 + B + (B ^ B) / 2 + (B ^ B ^ B) / 6
 
     diff = LB - LB_exact
     for val in diff.values():
@@ -435,10 +435,25 @@ def test_outerexp(R6):
 
     v = R6.vector(name='v')
     Lv = v.outerexp()
-    Lv_exact = v + 1
+    Lv_exact = 1 + v
     diff = Lv - Lv_exact
     for val in diff.values():
         assert val == 0
+
+def test_outertrig(R6):
+    alg = Algebra(6)
+    B = alg.bivector(name='B', keys=(0b110000, 0b1100, 0b11))
+    sB = B.outersin()
+    cB = B.outercos()
+    tB = B.outertan()
+
+    sB_exact = B + (B ^ B ^ B) / 6
+    cB_exact = 1 + (B ^ B) / 2
+    tB_exact = sB_exact / cB_exact
+
+    for diff in [sB - sB_exact, cB - cB_exact, tB - tB_exact]:
+        for val in diff.values():
+            assert simplify(val) == 0
 
 
 def test_indexing():
