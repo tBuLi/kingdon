@@ -354,28 +354,3 @@ class MultiVector:
             raise Exception('Cannot select a suitable undual in auto mode for this algebra.')
         else:
             raise ValueError(f'No undual found for kind={kind}.')
-
-
-# class GradedMultiplication:
-#     def _binary_operation(self, other, func_dictionary, codegen):
-#         """ Helper function for all multiplication types such as gp, sp, cp etc. """
-#         if self.algebra != other.algebra:
-#             raise AlgebraError("Cannot multiply elements of different algebra's.")
-#
-#         keys_in = (self.algebra.indices_for_grades[self.grades],
-#                    self.algebra.indices_for_grades[other.grades])
-#         if keys_in not in func_dictionary:
-#             x = self.algebra.multivector(vals={ek: Symbol(f'a{self.algebra.bin2canon[ek][1:]}')
-#                                                for ek in keys_in[0]})
-#             y = self.algebra.multivector(vals={ek: Symbol(f'b{self.algebra.bin2canon[ek][1:]}')
-#                                                for ek in keys_in[1]})
-#             keys_out, func = func_dictionary[keys_in] = codegen(x, y)
-#         else:
-#             keys_out, func = func_dictionary[keys_in]
-#
-#         args = chain((self.vals.get(i, 0) for i in keys_in[0]),
-#                      (other.vals.get(i, 0) for i in keys_in[1]))
-#         res_vals = defaultdict(int, {k: v for k, v in zip(keys_out, func(*args))
-#                                      if (True if v.__class__ is not Expr else simplify(v))})
-#
-#         return self.algebra.mvfromtrusted(vals=res_vals)
