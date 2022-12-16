@@ -3,6 +3,7 @@ from collections.abc import Mapping
 from typing import Callable, Tuple
 import string
 
+from numba import njit
 from sympy import Symbol, Expr, simplify
 
 from kingdon.multivector import MultiVector
@@ -42,7 +43,8 @@ class OperatorDict(Mapping):
                     values=tuple(Symbol(f'{name}{self.algebra.bin2canon[ek][1:]}') for ek in keys))
                 for name, keys in zip(string.ascii_lowercase, keys_in)
             )
-            self.operator_dict[keys_in] = self.codegen(*mvs)
+            keys_out, func = self.codegen(*mvs)
+            self.operator_dict[keys_in] = (keys_out, func, njit(func))
         return self.operator_dict[keys_in]
 
     def __iter__(self):
@@ -57,18 +59,23 @@ class OperatorDict(Mapping):
                for mv in mvs]
         if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
             raise AlgebraError("Cannot multiply elements of different algebra's.")
+
         keys_in = tuple(mv.keys() for mv in mvs)
         values_in = tuple(mv.values() for mv in mvs)
-        keys_out, func = self[keys_in]
-        values_out = func(*values_in)
+        keys_out, func, numba_func = self[keys_in]
+        issymbolic = any(mv.issymbolic for mv in mvs)
+        if issymbolic or not mvs[0].algebra.numba:
+            values_out = func(*values_in)
+        else:
+            values_out = numba_func(*values_in)
 
-        if self.algebra.simplify and any(mv.issymbolic for mv in mvs):
+        if issymbolic and self.algebra.simplify:
             # Keep only symbolically non-zero elements.
             keysvalues = tuple(filter(
                 lambda kv: True if not isinstance(kv[1], Expr) else simplify(kv[1]),
                 zip(keys_out, values_out)
             ))
-            keys_out, values = zip(*keysvalues) if keysvalues else (tuple(), tuple())
+            keys_out, values_out = zip(*keysvalues) if keysvalues else (tuple(), tuple())
 
         return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)
 
@@ -81,16 +88,20 @@ class OperatorDict(Mapping):
         if not (mv1.algebra is mv2.algebra or mv1.algebra == mv2.algebra):
             raise AlgebraError("Cannot multiply elements of different algebra's.")
 
-        keys_out, func = self[mv1.keys(), mv2.keys()]
-        values_out = func(mv1.values(), mv2.values())
+        keys_out, func, numba_func = self[mv1.keys(), mv2.keys()]
+        issymbolic = (mv1.issymbolic or mv2.issymbolic)
+        if issymbolic or not mv1.algebra.numba:
+            values_out = func(mv1.values(), mv2.values())
+        else:
+            values_out = numba_func(mv1.values(), mv2.values())
 
-        if self.algebra.simplify and (mv1.issymbolic or mv2.issymbolic):
+        if issymbolic and self.algebra.simplify:
             # Keep only symbolically non-zero elements.
             keysvalues = tuple(filter(
                 lambda kv: True if not isinstance(kv[1], Expr) else simplify(kv[1]),
                 zip(keys_out, values_out)
             ))
-            keys_out, values = zip(*keysvalues) if keysvalues else (tuple(), tuple())
+            keys_out, values_out = zip(*keysvalues) if keysvalues else (tuple(), tuple())
 
         return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)
 
@@ -105,19 +116,25 @@ class UnaryOperatorDict(OperatorDict):
         if keys_in not in self.operator_dict:
             vals = tuple(Symbol(f'a{self.algebra.bin2canon[ek][1:]}') for ek in keys_in)
             mv = MultiVector.fromkeysvalues(self.algebra, keys=keys_in, values=vals)
-            self.operator_dict[keys_in] = self.codegen(mv)
+            keys_out, func = self.codegen(mv)
+            self.operator_dict[keys_in] = (keys_out, func, njit(func))
         return self.operator_dict[keys_in]
 
     def __call__(self, mv):
-        keys_out, func = self[mv.keys()]
-        values_out = func(mv.values())
+        keys_out, func, numba_func = self[mv.keys()]
 
-        if self.algebra.simplify and mv.issymbolic:
+        issymbolic = mv.issymbolic
+        if issymbolic or not mv.algebra.numba:
+            values_out = func(mv.values())
+        else:
+            values_out = numba_func(mv.values())
+
+        if issymbolic and self.algebra.simplify:
             # Keep only symbolically non-zero elements.
             keysvalues = tuple(filter(
                 lambda kv: True if not isinstance(kv[1], Expr) else simplify(kv[1]),
                 zip(keys_out, values_out)
             ))
-            keys_out, values = zip(*keysvalues) if keysvalues else (tuple(), tuple())
+            keys_out, values_out = zip(*keysvalues) if keysvalues else (tuple(), tuple())
 
         return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)

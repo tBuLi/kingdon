@@ -10,7 +10,6 @@ import warnings
 
 from sympy import simplify, sympify, Add, Mul, Symbol
 from sympy.utilities.lambdify import lambdify
-from numba import njit
 
 
 class TermTuple(NamedTuple):
@@ -37,8 +36,6 @@ class CodegenOutput(NamedTuple):
     :param keys_out: tuple with the output blades in binary rep.
     :param func: callable that takes (several) sequence(s) of values
         returns a tuple of :code:`len(keys_out)`.
-    :param kwargs: (Optional) a dictionary of extra keyword arguments that have
-        to be passed to :code:`func`.
     """
     keys_out: Tuple[int]
     func: Callable
@@ -373,19 +370,19 @@ def codegen_outertan(x):
 def _lambdify_binary(x, y, x_bin_y):
     xy_symbols = [list(x.values()), list(y.values())]
     func = lambdify(xy_symbols, list(x_bin_y.values()), cse=x.algebra.cse)
-    return CodegenOutput(tuple(x_bin_y.keys()), njit(func) if x.algebra.numba else func)
+    return CodegenOutput(tuple(x_bin_y.keys()), func)
 
 
 def _lambdify_unary(x, x_unary):
     func = lambdify([list(x.values())], list(x_unary.values()), cse=x.algebra.cse)
-    return CodegenOutput(tuple(x_unary.keys()), njit(func) if x.algebra.numba else func)
+    return CodegenOutput(tuple(x_unary.keys()), func)
 
 
 def _lambdify_mv(free_symbols, mv):
     # TODO: Numba wants a tuple in the line below, but simpy only produces a
     #  list as output if this is a list, not a tuple. See if we can solve this.
     func = lambdify(free_symbols, list(mv.values()), cse=mv.algebra.cse)
-    return CodegenOutput(tuple(mv.keys()), njit(func) if mv.algebra.numba else func)
+    return CodegenOutput(tuple(mv.keys()), func)
 
 
 def _func_builder(res_vals: dict, *mvs, name_base: str):
@@ -418,4 +415,4 @@ def _func_builder(res_vals: dict, *mvs, name_base: str):
     # Add the generated code to linecache such that it is inspect-safe.
     linecache.cache[func_name] = (len(func_source), None, func_source.splitlines(True), func_name)
     func = func_locals[func_name]
-    return tuple(res_vals.keys()), njit(func) if mvs[0].algebra.numba else func
+    return CodegenOutput(tuple(res_vals.keys()), func)
