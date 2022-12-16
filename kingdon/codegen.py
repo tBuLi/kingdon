@@ -19,7 +19,7 @@ class TermTuple(NamedTuple):
     :param key_out: is the basis blade to which this monomial belongs.
     :param keys_in: are the input basis blades in this monomial.
     :param sign: Sign of the monomial.
-    :param values_in: Input values. Typically tuple of sympy symbols.
+    :param values_in: Input values. Typically, tuple of :class:`~sympy.core.Symbol`.
     :param termstr: The string representation of this monomial, e.g. '-x*y'.
     """
     key_out: int
