@@ -387,7 +387,7 @@ def _lambdify_mv(free_symbols, mv):
 
 def _func_builder(res_vals: dict, *mvs, name_base: str):
     """
-    Build a Python functions for the product between given multivectors.
+    Build a Python function for the product between given multivectors.
 
     :param res_vals: Dict to be converted into a function. The keys correspond to the basis blades in binary,
         while the values are strings to be converted into source code.
