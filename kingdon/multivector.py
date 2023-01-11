@@ -132,7 +132,7 @@ class MultiVector:
         return self.fromkeysvalues(self.algebra, self.keys(), values)
 
     def __invert__(self):  # reversion
-        values = tuple((-1)**(bin(k).count("1") // 2) * v for k, v in self.items())
+        values = tuple(- v if k in self.algebra._reverse_keys else v for k, v in self.items())
         return self.fromkeysvalues(self.algebra, self.keys(), values)
 
     def normsq(self):

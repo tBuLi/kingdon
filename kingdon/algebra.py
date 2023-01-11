@@ -132,6 +132,10 @@ class Algebra:
                 for comb in all_grade_combs}
 
     @cached_property
+    def _reverse_keys(self):
+        return tuple(chain(*(keys for grade, keys in self.indices_for_grade.items() if (grade // 2) % 2)))
+
+    @cached_property
     def matrix_basis(self):
         return matrix_rep(self.p, self.q, self.r)
 
