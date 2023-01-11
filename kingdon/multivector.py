@@ -142,7 +142,7 @@ class MultiVector:
         """ Normalized version of this multivector. """
         normsq = self.normsq()
         if normsq.grades == (0,):
-            return self / normsq[0] ** 0.5
+            return self / normsq.values()[0] ** 0.5
         else:
             raise NotImplementedError
 
@@ -216,10 +216,17 @@ class MultiVector:
     def free_symbols(self):
         return reduce(operator.or_, (v.free_symbols for v in self.values() if hasattr(v, "free_symbols")))
 
+    def subs(self, *args, **kwargs) -> "MultiVector":
+        if not self.issymbolic:
+            return self
+        vals = tuple(v.subs(*args, **kwargs) if isinstance(v, Expr) else v
+                     for v in self.values())
+        return self.fromkeysvalues(self.algebra, keys=self.keys(), values=vals)
+
     @cached_property
     def _callable(self):
         """ Return the callable function for this MV. """
-        return _lambdify_mv(sorted(self.free_symbols, key=lambda x: x.name), self)
+        return _lambdify_mv({k.name: k for k in sorted(self.free_symbols, key=lambda x: x.name)}, self)
 
     def __call__(self, *args, **kwargs):
         if not self.free_symbols:
