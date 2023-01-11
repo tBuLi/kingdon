@@ -350,6 +350,12 @@ def test_oddmultivector(R6):
     assert x.grades == (1, 3, 5)
 
 
+def test_namedmv(R6):
+    keys = (1, 3, 17)
+    x = R6.multivector(name='x', keys=keys)
+    assert x.keys() == keys
+
+
 def test_matrixreps(vga2d):
     x = vga2d.multivector(name='x')
     xmat = x.asmatrix()

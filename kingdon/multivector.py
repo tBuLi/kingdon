@@ -48,7 +48,7 @@ class MultiVector:
             keys = algebra.indices_for_grades[grades]
         elif name and not values:
             # values was not given, but we do have a name. So we are in symbolic mode.
-            keys = algebra.indices_for_grades[grades] if not keys else keys
+            keys = algebra.indices_for_grades[grades] if keys is None else keys
             values = tuple(symbolcls(f'{name}{algebra.bin2canon[k][1:]}') for k in keys)
         elif len(keys) != len(values):
             raise TypeError(f'Length of `keys` and `values` have to match.')
