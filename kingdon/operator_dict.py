@@ -4,9 +4,10 @@ from typing import Callable, Tuple
 import string
 
 from numba import njit
-from sympy import Symbol, Expr, simplify
+from sympy import Symbol, Expr, expand
 
 from kingdon.multivector import MultiVector
+from kingdon.codegen import do_codegen
 
 
 class AlgebraError(Exception):
@@ -37,18 +38,24 @@ class OperatorDict(Mapping):
     def __getitem__(self, keys_in: Tuple[Tuple[int]]):
         if keys_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
-            mvs = tuple(
-                MultiVector.fromkeysvalues(
-                    self.algebra, keys=keys,
-                    values=tuple(Symbol(f'{name}{self.algebra.bin2canon[ek][1:]}') for ek in keys))
-                for name, keys in zip(string.ascii_lowercase, keys_in)
-            )
-            keys_out, func = self.codegen(*mvs)
+            mvs = [self.algebra.multivector(name=name, keys=keys)
+                   for name, keys in zip(string.ascii_lowercase, keys_in)]
+            keys_out, func = do_codegen(self.codegen, *mvs)
             self.operator_dict[keys_in] = (keys_out, func, njit(func))
         return self.operator_dict[keys_in]
 
+    def __contains__(self, keys_in: Tuple[Tuple[int]]):
+        return keys_in in self.operator_dict
+
     def __iter__(self):
         return iter(self.operator_dict)
+
+    def filter(self, keys_out, values_out):
+        """ For given keys and values, keep only symbolically non-zero elements. """
+        keysvalues = ((k, v if not isinstance(v, Expr) else expand(v))
+                      for k, v in zip(keys_out, values_out))
+        keysvalues = tuple((k, v) for k, v in keysvalues if not isinstance(v, Expr) or v)
+        return zip(*keysvalues) if keysvalues else (tuple(), tuple())
 
     def __call__(self, *mvs):
         if len(mvs) == 2:
@@ -70,12 +77,7 @@ class OperatorDict(Mapping):
             values_out = numba_func(*values_in)
 
         if issymbolic and self.algebra.simplify:
-            # Keep only symbolically non-zero elements.
-            keysvalues = tuple(filter(
-                lambda kv: True if not isinstance(kv[1], Expr) else simplify(kv[1]),
-                zip(keys_out, values_out)
-            ))
-            keys_out, values_out = zip(*keysvalues) if keysvalues else (tuple(), tuple())
+            keys_out, values_out = self.filter(keys_out, values_out)
 
         return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)
 
@@ -96,12 +98,7 @@ class OperatorDict(Mapping):
             values_out = numba_func(mv1.values(), mv2.values())
 
         if issymbolic and self.algebra.simplify:
-            # Keep only symbolically non-zero elements.
-            keysvalues = tuple(filter(
-                lambda kv: True if not isinstance(kv[1], Expr) else simplify(kv[1]),
-                zip(keys_out, values_out)
-            ))
-            keys_out, values_out = zip(*keysvalues) if keysvalues else (tuple(), tuple())
+            keys_out, values_out = self.filter(keys_out, values_out)
 
         return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)
 
@@ -116,7 +113,7 @@ class UnaryOperatorDict(OperatorDict):
         if keys_in not in self.operator_dict:
             vals = tuple(Symbol(f'a{self.algebra.bin2canon[ek][1:]}') for ek in keys_in)
             mv = MultiVector.fromkeysvalues(self.algebra, keys=keys_in, values=vals)
-            keys_out, func = self.codegen(mv)
+            keys_out, func = do_codegen(self.codegen, mv)
             self.operator_dict[keys_in] = (keys_out, func, njit(func))
         return self.operator_dict[keys_in]
 
@@ -130,11 +127,6 @@ class UnaryOperatorDict(OperatorDict):
             values_out = numba_func(mv.values())
 
         if issymbolic and self.algebra.simplify:
-            # Keep only symbolically non-zero elements.
-            keysvalues = tuple(filter(
-                lambda kv: True if not isinstance(kv[1], Expr) else simplify(kv[1]),
-                zip(keys_out, values_out)
-            ))
-            keys_out, values_out = zip(*keysvalues) if keysvalues else (tuple(), tuple())
+            keys_out, values_out = self.filter(keys_out, values_out)
 
         return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)

@@ -1,15 +1,78 @@
 from __future__ import annotations
 
+import string
 from itertools import product, combinations, groupby
 from collections import namedtuple
-from typing import NamedTuple, Callable, Tuple
-from functools import reduce
-import operator
+from typing import NamedTuple, Callable, Tuple, Dict
+from functools import reduce, cached_property
 import linecache
 import warnings
+import operator
+from dataclasses import dataclass
+import inspect
+import builtins
+import keyword
 
-from sympy import simplify, sympify, Add, Mul, Symbol
-from sympy.utilities.lambdify import lambdify
+from sympy import simplify, Add, Mul, Symbol, expand
+from sympy.utilities.iterables import iterable, flatten
+from sympy.printing.numpy import NumPyPrinter
+
+
+@dataclass
+class AdditionChains:
+    limit: int
+
+    @cached_property
+    def minimal_chains(self) -> Dict[int, Tuple[int, ...]]:
+        chains = {1: (1,)}
+        while any(i not in chains for i in range(1, self.limit + 1)):
+            for chain in chains.copy().values():
+                right_summand = chain[-1]
+                for left_summand in chain:
+                    value = left_summand + right_summand
+                    if value <= self.limit and value not in chains:
+                        chains[value] = (*chain, value)
+        return chains
+
+    def __getitem__(self, n: int) -> Tuple[int, ...]:
+        return self.minimal_chains[n]
+
+    def __contains__(self, item):
+        return self[item]
+
+def power_supply(x: "MultiVector", exponents: Tuple[int, ...], operation: Callable[["MultiVector", "MultiVector"], "MultiVector"] = operator.mul):
+    """
+    Generates powers of a given multivector using the least amount of multiplications.
+    For example, to raise a multivector :math:`x` to the power :math:`a = 15`, only 5
+    multiplications are needed since :math:`x^{2} = x * x`, :math:`x^{3} = x * x^2`,
+    :math:`x^{5} = x^2 * x^3`, :math:`x^{10} = x^5 * x^5`, :math:`x^{15} = x^5 * x^{10}`.
+    The :class:`power_supply` uses :class:`AdditionChains` to determine these shortest
+    chains.
+
+    When called with only a single integer, e.g. :code:`power_supply(x, 15)`, iterating
+    over it yields the above sequence in order; ending with :math:`x^{15}`.
+
+    When called with a sequence of integers, the generator instead returns only the requested terms.
+
+
+    :param x: The MultiVector to be raised to a power.
+    :param exponents: When an :code:`int`, this generates the shortest possible way to
+        get to :math:`x^a`, where :math:`x`
+    """
+    if isinstance(exponents, int):
+        target = exponents
+        addition_chains = AdditionChains(target)
+        exponents = addition_chains[target]
+    else:
+        addition_chains = AdditionChains(max(exponents))
+
+    powers = {1: x}
+    for step in exponents:
+        if step not in powers:
+            chain = addition_chains[step]
+            powers[step] = operation(powers[chain[-2]], powers[step - chain[-2]])
+
+        yield powers[step]
 
 
 class TermTuple(NamedTuple):
@@ -61,7 +124,7 @@ def term_tuple(items, sign_func, keyout_func=operator.xor):
                      termstr=f'{"+" if sign > 0 else "-"}{"*".join(v.name for v in values_in)}')
 
 
-def codegen_product(*mvs, name_base, filter_func=lambda tt: tt.sign, sign_func=None, keyout_func=operator.xor, asdict=False, sympy=False):
+def codegen_product(*mvs, filter_func=lambda tt: tt.sign, sign_func=None, keyout_func=operator.xor, symbolic=False):
     """
     Helper function for the codegen of all product-type functions.
 
@@ -72,7 +135,6 @@ def codegen_product(*mvs, name_base, filter_func=lambda tt: tt.sign, sign_func=N
         Input is a TermTuple.
     :param sign_func: function to compute sign between terms. E.g. algebra.signs[ei, ej]
         for metric dependent products. Input: 2-tuple of blade indices, e.g. (ei, ej).
-    :param name_base: base name for the generated code.
     :param asdict: If true, return the dict of strings before converting to a function.
     """
     sortfunc = lambda x: x.key_out
@@ -84,20 +146,14 @@ def codegen_product(*mvs, name_base, filter_func=lambda tt: tt.sign, sign_func=N
                                  for items in product(*(mv.items() for mv in mvs))))
     # TODO: Can we loop over the basis blades in such a way that no sort is needed?
     sorted_terms = sorted(terms, key=sortfunc)
-    if not sympy:
-        res = {k: "".join(term.termstr for term in group)
+    if not symbolic:
+        return {k: "".join(term.termstr for term in group)
                for k, group in groupby(sorted_terms, key=sortfunc)}
     else:
         res = {k: Add(*(Mul(*(term.values_in if term.sign == 1 else (term.sign, *term.values_in)), evaluate=False)
                         for term in group), evaluate=False)
                for k, group in groupby(sorted_terms, key=sortfunc)}
-
-    if asdict:
-        return res
-    elif not sympy:
-        return _func_builder(res, *mvs, name_base=name_base)
-    else:
-        return _lambdify_binary(*mvs, res)
+        return algebra.multivector(res)
 
 
 def codegen_gp(x, y, symbolic=False):
@@ -110,20 +166,16 @@ def codegen_gp(x, y, symbolic=False):
     :return: tuple with integers indicating the basis blades present in the
         product in binary convention, and a lambda function that perform the product.
     """
-    keys_out, func = codegen_product(x, y, name_base='gp')
-    if symbolic:
-        return x.fromkeysvalues(x.algebra, keys_out, func(x.values(), y.values()))
-
-    return CodegenOutput(keys_out, func)
+    return codegen_product(x, y, symbolic=symbolic)
 
 
 def codegen_conj(x, y):
     if x.algebra.simplify:
-        res = codegen_product(x, y, ~x, name_base='gp', asdict=True, sympy=True)
-        res = {k: str(simp_expr) for k, expr in res.items() if (simp_expr := simplify(expr))}
+        res = codegen_product(x, y, ~x, symbolic=True)
+        res = {k: str(simp_expr) for k, expr in res.items() if (simp_expr := expand(expr))}
     else:
-        res = codegen_product(x, y, ~x, name_base='gp', asdict=True)
-    return _func_builder(res, x, y, name_base="conj")
+        res = codegen_product(x, y, ~x, symbolic=False)
+    return res
 
 
 def codegen_cp(x, y, symbolic=False):
@@ -134,11 +186,7 @@ def codegen_cp(x, y, symbolic=False):
     """
     algebra = x.algebra
     filter_func = lambda tt: (algebra.signs[tt.keys_in] - algebra.signs[tt.keys_in[::-1]])
-    keys_out, func = codegen_product(x, y, filter_func=filter_func, name_base='cp')
-    if symbolic:
-        return x.fromkeysvalues(algebra, keys_out, func(x.values(), y.values()))
-
-    return CodegenOutput(keys_out, func)
+    return codegen_product(x, y, filter_func=filter_func, symbolic=symbolic)
 
 
 def codegen_acp(x, y, symbolic=False):
@@ -149,11 +197,7 @@ def codegen_acp(x, y, symbolic=False):
     """
     algebra = x.algebra
     filter_func = lambda tt: (algebra.signs[tt.keys_in] + algebra.signs[tt.keys_in[::-1]])
-    keys_out, func = codegen_product(x, y, filter_func=filter_func, name_base='acp')
-    if symbolic:
-        return x.fromkeysvalues(algebra, keys_out, func(x.values(), y.values()))
-
-    return CodegenOutput(keys_out, func)
+    return codegen_product(x, y, filter_func=filter_func, symbolic=symbolic)
 
 
 def codegen_ip(x, y, diff_func=abs, symbolic=False):
@@ -167,11 +211,7 @@ def codegen_ip(x, y, diff_func=abs, symbolic=False):
     """
     algebra = x.algebra
     filter_func = lambda tt: tt.key_out == diff_func(tt.keys_in[0] - tt.keys_in[1])
-    keys_out, func = codegen_product(x, y, filter_func=filter_func, name_base='ip')
-    if symbolic:
-        return x.fromkeysvalues(algebra, keys_out, func(x.values(), y.values()))
-
-    return CodegenOutput(keys_out, func)
+    return codegen_product(x, y, filter_func=filter_func, symbolic=symbolic)
 
 
 def codegen_lc(x, y):
@@ -208,8 +248,10 @@ def codegen_proj(x, y):
     :return: tuple of keys in binary representation and a lambda function.
     """
     filter_func = lambda tt: tt.key_out == abs(tt.keys_in[0] - tt.keys_in[1]) ^ tt.keys_in[2]
-    res = codegen_product(x, y, ~y, name_base='gp', filter_func=filter_func, asdict=True)
-    return _func_builder(res, x, y, name_base='proj')
+    if x.algebra.simplify:
+        res = codegen_product(x, y, ~y, filter_func=filter_func, symbolic=True)
+        return {k: str(simp_expr) for k, expr in res.items() if (simp_expr := expand(expr))}
+    return codegen_product(x, y, ~y, filter_func=filter_func, symbolic=False)
 
 
 def codegen_op(x, y, symbolic=False):
@@ -224,11 +266,7 @@ def codegen_op(x, y, symbolic=False):
     algebra = x.algebra
     filter_func = lambda tt: tt.key_out == sum(tt.keys_in)
     sign_func = lambda pair: (-1)**algebra.swaps[pair]
-    keys_out, func = codegen_product(x, y, filter_func=filter_func, sign_func=sign_func, name_base='op')
-    if symbolic:
-        return x.fromkeysvalues(algebra, keys_out, func(x.values(), y.values()))
-
-    return CodegenOutput(keys_out, func)
+    return codegen_product(x, y, filter_func=filter_func, sign_func=sign_func, symbolic=symbolic)
 
 
 def codegen_rp(x, y):
@@ -256,7 +294,6 @@ def codegen_rp(x, y):
         filter_func=filter_func,
         keyout_func=keyout_func,
         sign_func=sign_func,
-        name_base='rp'
     )
 
 
@@ -265,71 +302,131 @@ Fraction.__doc__ = """
 Tuple representing a fraction.
 """
 
-def codegen_inv(x, symbolic=False):
-    """
-    Generate code for the inverse of :code:`x`.
-    Currently, this always uses the Shirokov inverse, which is works in any algebra,
-    but it can be expensive to compute.
-    In the future this should be extended to use dedicated solutions for known cases.
-    """
-    n = 2 ** ((x.algebra.d + 1) // 2)
-    x_i = x
-    if x.grades == (0,):
-        adj_x = 1
-    else:
-        n = sympify(n)  # Sympify ratio to keep the ratios exact and avoid floating point errors.
-        for i in range(1, n + 1):
-            c_i = (n / i) * x_i[0] if x_i[0] else x_i[0]
-            adj_x = (x_i - c_i)
-            if x.algebra.simplify:
-                keys, values = zip(*((k, simp_expr) for k, expr in adj_x.items() if (simp_expr := simplify(expr))))
-                adj_x = adj_x.fromkeysvalues(adj_x.algebra, keys=keys, values=values)
-            x_i = x * adj_x
-            if x_i:
-                if x.algebra.simplify:
-                    keys, values = zip(*((k, simp_expr) for k, expr in x_i.items() if (simp_expr := simplify(expr))))
-                    x_i = x_i.fromkeysvalues(x_i.algebra, keys=keys, values=values)
+def codegen_inv(y, x=None, symbolic=False):
+    alg = y.algebra
+    # As preprocessing we invert y*~y since y^{-1} = ~y / (y*~y)
+    ynormsq = y.normsq()
 
-                if x_i.grades == (0,):
-                    break
-            else:
-                break
+    if ynormsq.grades == tuple():
+        raise ZeroDivisionError
+    elif ynormsq.grades == (0,):
+        adj_y, denom_y = ~y if x is None else x * ~y, ynormsq[0]
+    else:
+        # Make a mv with the same components as ynormsq, and invert that instead.
+        # Although this requires some more bookkeeping, it is much more performant.
+        z = alg.multivector(name='z', keys=ynormsq.keys())
+        adj_z, denom_z = codegen_shirokov_inv(z, symbolic=True)
+
+        # Same trick, make a mv that mimicks adj_z and multiply it with ~y.
+        A_z = alg.multivector(name='A_z', keys=adj_z.keys())
+        # Faster to this `manually` instead of with ~a * A_z
+        res = codegen_product(~y, A_z, symbolic=True)
+        A_y = res if x is None else x * res
+
+        # Replace all the dummy A_z symbols by the expressions in adj_z.
+        subs_dict = dict(zip(A_z.values(), adj_z.values()))
+        adj_y = A_y.subs(subs_dict)
+        # Replace all the dummy b symbols by the expressions in anormsq to
+        # recover the actual adjoint of a and corresponding denominator.
+        subs_dict = dict(zip(z.values(), ynormsq.values()))
+        denom_y = denom_z.subs(subs_dict)
+        adj_y = adj_y.subs(subs_dict)
 
     if symbolic:
-        return Fraction(adj_x, x_i[0])
-    xinv = x.algebra.multivector({k: v / x_i[0] for k, v in adj_x.items()})
-    return _lambdify_unary(x, xinv)
+        return Fraction(adj_y, denom_y)
+
+    d = alg.scalar(name='d')
+    denom_y_inv = alg.scalar([1 / denom_y])
+    yinv = alg.multivector({k: Mul(d[0], v, evaluate=False) for k, v in adj_y.items()})
+
+    # Prepare all the input for lambdify
+    args = {'y': y.values()}
+    expr = yinv.values()
+    dependencies = [(d.values(), denom_y_inv.values())]
+    return CodegenOutput(
+        yinv.keys(),
+        lambdify(args, expr, funcname=f'inv_{y:keys_binary}', dependencies=dependencies, cse=alg.cse)
+    )
+
+
+def codegen_shirokov_inv(x, symbolic=False):
+    """
+    Generate code for the inverse of :code:`x` using the Shirokov inverse,
+    which is works in any algebra, but it can be expensive to compute.
+    """
+    alg = x.algebra
+    n = simplify(2 ** ((alg.d + 1) // 2))  # Sympify ratio to keep the ratios exact and avoid floating point errors.
+    supply = power_supply(x, tuple(range(1, n + 1)))
+    powers = []
+    cs = []
+    xs = []
+    for i in range(1, n + 1):
+        powers.append(next(supply))
+        xi = powers[i - 1]
+        for j in range(i - 1):
+            power_idx = i - j - 2
+            xi_diff = x.fromkeysvalues(
+                alg, keys=xi.keys(),
+                values=tuple(Mul(cs[j], v) for v in powers[power_idx].values())
+            )
+            xi = xi - xi_diff
+            xi = alg.multivector(
+                {k: simp_expr for k, expr in xi.items() if (simp_expr := expand(expr))}
+            )
+        if xi.grades == (0,):
+            break
+        xs.append(xi)
+        cs.append((n / i) * xi[0])
+
+    if i == 1:
+        adj = alg.scalar([1])
+    else:
+        adj = xs[-1] - cs[-1]
+
+    if symbolic:
+        return Fraction(adj, xi[0])
+    return alg.multivector({k: v / xi[0] for k, v in adj.items()})
 
 
 def codegen_div(x, y):
     """
     Generate code for :math:`x y^{-1}`.
     """
-    adjy, normsqy = codegen_inv(y, symbolic=True)
-    if not normsqy:
+    alg = x.algebra
+    num, denom = codegen_inv(y, x, symbolic=True)
+    if not denom:
         raise ZeroDivisionError
-    x_adjy = x * adjy
-    if x.algebra.simplify:
-        xdivy = x.algebra.multivector({k: simplify(v / normsqy) for k, v in x_adjy.items()})
-    else:
-        xdivy = x.algebra.multivector({k: v / normsqy for k, v in x_adjy.items()})
-    return _lambdify_binary(x, y, xdivy)
+    d = alg.scalar(name='d')
+    denom_inv = alg.scalar([1 / denom])
+    res = alg.multivector({k: Mul(d[0], v, evaluate=False) for k, v in num.items()})
+
+    # Prepare all the input for lambdify
+    args = {'x': x.values(), 'y': y.values()}
+    expr = res.values()
+    dependencies = [(d.values(), denom_inv.values())]
+    return CodegenOutput(
+        res.keys(),
+        lambdify(args, expr, funcname=f'inv_{x:keys_binary}_x_{y:keys_binary}',
+                 dependencies=dependencies, cse=alg.cse)
+    )
+
 
 def codegen_normsq(x):
     if x.algebra.simplify:
-        res = codegen_product(x, ~x, name_base='gp', asdict=True, sympy=True)
-        res = {k: str(simp_expr) for k, expr in res.items() if (simp_expr := simplify(expr))}
+        res = codegen_product(x, ~x, symbolic=True)
+        res = {k: simp_expr for k, expr in res.items() if (simp_expr := expand(expr))}
     else:
-        res = codegen_product(x, ~x, name_base='gp', asdict=True)
-    return _func_builder(res, x, name_base="normsq")
+        res = codegen_product(x, ~x, symbolic=False)
+    return res
 
 
 def codegen_outerexp(x, asterms=False):
+    alg = x.algebra
     if len(x.grades) != 1:
         warnings.warn('Outer exponential might not converge for mixed-grade multivectors.', RuntimeWarning)
-    k = x.algebra.d
+    k = alg.d
 
-    Ws = [x.algebra.scalar([1]), x]
+    Ws = [alg.scalar([1]), x]
     j = 2
     while j <= k:
         Wj = Ws[-1] ^ x
@@ -343,19 +440,18 @@ def codegen_outerexp(x, asterms=False):
 
     if asterms:
         return Ws
-    L = reduce(operator.add, Ws)
-    return _func_builder(dict(L.items()), x, name_base='outerexp')
+    return reduce(operator.add, Ws)
 
 def codegen_outersin(x):
     odd_Ws = codegen_outerexp(x, asterms=True)[1::2]
     outersin = reduce(operator.add, odd_Ws)
-    return _func_builder(outersin, x, name_base='outersin')
+    return outersin
 
 
 def codegen_outercos(x):
     even_Ws = codegen_outerexp(x, asterms=True)[0::2]
     outercos = reduce(operator.add, even_Ws)
-    return _func_builder(outercos, x, name_base='outercos')
+    return outercos
 
 
 def codegen_outertan(x):
@@ -364,55 +460,251 @@ def codegen_outertan(x):
     outercos = reduce(operator.add, even_Ws)
     outersin = reduce(operator.add, odd_Ws)
     outertan = outersin / outercos
-    return _func_builder(outertan, x, name_base='outertan')
-
-
-def _lambdify_binary(x, y, x_bin_y):
-    xy_symbols = [list(x.values()), list(y.values())]
-    func = lambdify(xy_symbols, list(x_bin_y.values()), cse=x.algebra.cse)
-    return CodegenOutput(tuple(x_bin_y.keys()), func)
-
-
-def _lambdify_unary(x, x_unary):
-    func = lambdify([list(x.values())], list(x_unary.values()), cse=x.algebra.cse)
-    return CodegenOutput(tuple(x_unary.keys()), func)
+    return outertan
 
 
 def _lambdify_mv(free_symbols, mv):
-    # TODO: Numba wants a tuple in the line below, but simpy only produces a
-    #  list as output if this is a list, not a tuple. See if we can solve this.
-    func = lambdify(free_symbols, list(mv.values()), cse=mv.algebra.cse)
+    func = lambdify(free_symbols, mv.values(), funcname=f'custom_{mv:keys_binary}', cse=mv.algebra.cse)
     return CodegenOutput(tuple(mv.keys()), func)
 
 
-def _func_builder(res_vals: dict, *mvs, name_base: str):
+def do_codegen(codegen, *mvs) -> CodegenOutput:
     """
-    Build a Python function for the product between given multivectors.
+    :param codegen: callable that performs codegen for the given :code:`mvs`. This can be any callable
+        that returns either a :class:`MultiVector`, a dictionary, or an instance of :class:`CodegenOutput`.
+    :param *mvs: Any remaining positional arguments are taken to be symbolic :class:`Multivector`'s.
+    :return: Instance of :class:`CodegenOutput`.
+    """
+    res = codegen(*mvs)
+    if isinstance(res, CodegenOutput):
+        return res
+    funcname = f'{codegen.__name__}_' + '_x_'.join(f"{mv:keys_binary}" for mv in mvs)
+    args = {arg_name: arg.values() for arg_name, arg in zip(string.ascii_uppercase, mvs)}
+    exprs = tuple(res.values())
+    return CodegenOutput(
+        tuple(res.keys()),
+        lambdify(args, exprs, funcname=funcname, cse=mvs[0].algebra.cse)
+    )
 
-    :param res_vals: Dict to be converted into a function. The keys correspond to the basis blades in binary,
-        while the values are strings to be converted into source code.
-    :param mvs: all the multivectors that the resulting function is a product of.
-    :param name_base: Base for the name of the function. E.g. 'gp'.
-    :return: tuple of output keys of the callable, and the callable.
+
+def lambdify(args: dict, exprs: tuple, funcname: str, dependencies: tuple = None, printer=NumPyPrinter, dummify=False, cse=False):
     """
-    args = [f'arg{i}' for i in range(1, len(mvs) + 1)]
-    keys_str_per_arg = ["_".join(str(k) for k in mv.keys()) for mv in mvs]
-    func_name = f'{name_base}_{"_x_".join(keys_str_per_arg)}'
-    header = f'def {func_name}({", ".join(args)}):'
-    if res_vals:
-        body = "\n".join(f'    {",".join(v.name for v in mv.values())}, = {arg}' for mv, arg in zip(mvs, args))
-        return_val = f'    return ({", ".join(v if isinstance(v, str) else str(v) for v in res_vals.values())},)'
+    Function that turns symbolic expressions into Python functions. Heavily inspired by
+    :mod:`sympy`'s function by the same name, but adapted for the needs of :mod:`kingdon`.
+
+    Particularly, this version gives us more control over the names of the function and its
+    arguments, and is more performant, particularly when the given expressions are strings.
+
+    Example usage:
+
+    .. code-block ::
+
+        alg = Algebra(2)
+        a = alg.multivector(name='a')
+        b = alg.multivector(name='b')
+        args = {'A': a.values(), 'B': b.values()}
+        exprs = tuple(codegen_cp(a, b).values())
+        func = lambdify(args, exprs, funcname='cp', cse=False)
+
+    This will produce the following code:
+
+    .. code-block ::
+
+        def cp(A, B):
+            [a, a1, a2, a12] = A
+            [b, b1, b2, b12] = B
+            return (+a1*b2-a2*b1,)
+
+    It is recommended not to call this function directly, but rather to use
+    :func:`do_codegen` which provides a clean API around this function.
+
+    :param args: dictionary of type dict[str | Symbol, tuple[Symbol]].
+    :param exprs: tuple[Expr]
+    :param funcname: string to be used as the bases for the name of the function.
+    :param dependencies: These are extra expressions that can be provided such that quantities can be precomputed.
+        For example, in the inverse of a multivector, this is used to compute the scalar denominator only once,
+        after which all values in expr are multiplied by it. When :code:`cse = True`, these dependencies are also
+        included in the CSE process.
+    :param cse: If :code:`True` (default), CSE is applied to the expressions and dependencies.
+        This typically greatly improves performance and reduces numba's initialization time.
+    return: Function that represents that can be used to calculate the values of exprs.
+    """
+    if printer is NumPyPrinter:
+        printer = NumPyPrinter(
+            {'fully_qualified_modules': False, 'inline': True,
+             'allow_unknown_functions': True,
+             'user_functions': {}}
+        )
+
+    names = tuple(arg if isinstance(arg, str) else arg.name for arg in args.keys())
+    iterable_args = tuple(args.values())
+
+    funcprinter = KingdonPrinter(printer, dummify)
+
+    # TODO: Extend CSE to include the dependencies.
+    lhsides, rhsides = zip(*dependencies) if dependencies else ([], [])
+    if cse and not any(isinstance(expr, str) for expr in exprs):
+        if not callable(cse):
+            from sympy.simplify.cse_main import cse
+        if dependencies:
+            all_exprs = (*exprs, *rhsides)
+            cses, _all_exprs = cse(all_exprs, list=False)
+            _exprs, _rhsides = _all_exprs[:-len(rhsides)], _all_exprs[len(exprs):]
+            cses.extend(tuple(zip(flatten(lhsides), flatten(_rhsides))))
+        else:
+            cses, _exprs = cse(exprs, list=False)
     else:
-        body = ''
-        return_val = f'    return tuple()'
-    func_source = f'{header}\n{body}\n{return_val}'
+        cses, _exprs = list(zip(flatten(lhsides), flatten(rhsides))), exprs
 
-    # Dynamically build a function
-    func_locals = {}
-    c = compile(func_source, func_name, 'exec')
-    exec(c, {}, func_locals)
+    funcstr = funcprinter.doprint(funcname, iterable_args, names, _exprs, cses=cses)
 
-    # Add the generated code to linecache such that it is inspect-safe.
-    linecache.cache[func_name] = (len(func_source), None, func_source.splitlines(True), func_name)
-    func = func_locals[func_name]
-    return CodegenOutput(tuple(res_vals.keys()), func)
+    # Provide lambda expression with builtins, and compatible implementation of range
+    namespace = {'builtins': builtins, 'range': range}
+
+    funclocals = {}
+    filename = f'<{funcname}>'
+    c = compile(funcstr, filename, 'exec')
+    exec(c, namespace, funclocals)
+    # mtime has to be None or else linecache.checkcache will remove it
+    linecache.cache[filename] = (len(funcstr), None, funcstr.splitlines(True), filename) # type: ignore
+
+    func = funclocals[funcname]
+    return func
+
+
+class KingdonPrinter:
+    def __init__(self, printer=None, dummify=False):
+        self._dummify = dummify
+
+        #XXX: This has to be done here because of circular imports
+        from sympy.printing.lambdarepr import LambdaPrinter
+
+        if printer is None:
+            printer = LambdaPrinter()
+
+        if inspect.isfunction(printer):
+            self._exprrepr = printer
+        else:
+            if inspect.isclass(printer):
+                printer = printer()
+
+            self._exprrepr = printer.doprint
+
+        # Used to print the generated function arguments in a standard way
+        self._argrepr = LambdaPrinter().doprint
+
+    def doprint(self, funcname, args, names, expr, *, cses=()):
+        """
+        Returns the function definition code as a string.
+        """
+        funcbody = []
+
+        if not iterable(args):
+            args = [args]
+
+        if cses:
+            subvars, subexprs = zip(*cses)
+            exprs = [expr] + list(subexprs)
+            argstrs, exprs = self._preprocess(args, exprs)
+            expr, subexprs = exprs[0], exprs[1:]
+            cses = zip(subvars, subexprs)
+        else:
+            argstrs, expr = self._preprocess(args, expr)
+
+        # Generate argument unpacking and final argument list
+        funcargs = []
+        unpackings = []
+
+        for name, argstr in zip(names, argstrs):
+            if iterable(argstr):
+                funcargs.append(name)
+                unpackings.extend(self._print_unpacking(argstr, funcargs[-1]))
+            else:
+                funcargs.append(argstr)
+
+        funcsig = 'def {}({}):'.format(funcname, ', '.join(funcargs))
+
+        # Wrap input arguments before unpacking
+        funcbody.extend(self._print_funcargwrapping(funcargs))
+
+        funcbody.extend(unpackings)
+
+        for s, e in cses:
+            if e is None:
+                funcbody.append('del {}'.format(s))
+            else:
+                funcbody.append('{} = {}'.format(s, self._exprrepr(e)))
+
+        str_expr = _recursive_to_string(self._exprrepr, expr)
+
+        if '\n' in str_expr:
+            str_expr = '({})'.format(str_expr)
+        funcbody.append('return {}'.format(str_expr))
+
+        funclines = [funcsig]
+        funclines.extend(['    ' + line for line in funcbody])
+
+        return '\n'.join(funclines) + '\n'
+
+    @classmethod
+    def _is_safe_ident(cls, ident):
+        return isinstance(ident, str) and ident.isidentifier() \
+                and not keyword.iskeyword(ident)
+
+    def _preprocess(self, args, expr):
+        """Preprocess args, expr to replace arguments that do not map
+        to valid Python identifiers.
+
+        Returns string form of args, and updated expr.
+        """
+        argstrs = [None]*len(args)
+        for i, arg in enumerate(args):
+            if iterable(arg):
+                s, expr = self._preprocess(arg, expr)
+            elif hasattr(arg, 'name'):
+                s = arg.name
+            elif arg.is_symbol:
+                s = self._argrepr(arg)
+            else:
+                s = str(arg)
+            argstrs[i] = s
+        return argstrs, expr
+
+    def _print_funcargwrapping(self, args):
+        """Generate argument wrapping code.
+
+        args is the argument list of the generated function (strings).
+
+        Return value is a list of lines of code that will be inserted  at
+        the beginning of the function definition.
+        """
+        return []
+
+    def _print_unpacking(self, unpackto, arg):
+        """Generate argument unpacking code.
+
+        arg is the function argument to be unpacked (a string), and
+        unpackto is a list or nested lists of the variable names (strings) to
+        unpack to.
+        """
+        def unpack_lhs(lvalues):
+            return '[{}]'.format(', '.join(
+                unpack_lhs(val) if iterable(val) else val for val in lvalues))
+
+        return ['{} = {}'.format(unpack_lhs(unpackto), arg)]
+
+def _recursive_to_string(doprint, arg):
+    if isinstance(arg, str):
+        return arg
+    elif not arg:
+        return str(arg)  # Empty list or tuple
+    elif iterable(arg):
+        if isinstance(arg, list):
+            left, right = "[", "]"
+        elif isinstance(arg, tuple):
+            left, right = "(", ",)"
+        else:
+            raise NotImplementedError("unhandled type: %s, %s" % (type(arg), arg))
+        return ''.join((left, ', '.join(_recursive_to_string(doprint, e) for e in arg), right))
+    else:
+        return doprint(arg)
