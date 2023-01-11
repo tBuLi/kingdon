@@ -248,6 +248,11 @@ class MultiVector:
         """ Apply `x := self` to `y := other` under conjugation: `x*y*~x`. """
         return self.algebra.conj(self, other)
 
+    __rshift__ = conj
+
+    def __lshift__(self, other):
+        return other.conj(self)
+
     def proj(self, other):
         """
         Project :code:`x := self` onto :code:`y := other`: :code:`x @ y = (x | y) * ~y`.
@@ -284,12 +289,8 @@ class MultiVector:
     def lc(self, other):
         return self.algebra.lc(self, other)
 
-    __lshift__ = lc
-
     def rc(self, other):
         return self.algebra.rc(self, other)
-
-    __rshift__ = rc
 
     def sp(self, other):
         """ Scalar product: :math:`\langle x \cdot y \rangle`. """
