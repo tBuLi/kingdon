@@ -1,5 +1,3 @@
-from dataclasses import fields
-
 import pytest
 
 from kingdon.operator_dict import OperatorDict, UnaryOperatorDict
