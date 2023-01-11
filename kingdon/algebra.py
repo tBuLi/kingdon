@@ -133,6 +133,7 @@ class Algebra:
 
     @cached_property
     def _reverse_keys(self):
+        """ Keys that should change sign upon reversion. """
         return tuple(chain(*(keys for grade, keys in self.indices_for_grade.items() if (grade // 2) % 2)))
 
     @cached_property
