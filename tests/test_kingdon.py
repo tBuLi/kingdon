@@ -74,7 +74,7 @@ def test_gp(pga1d):
     # Multiply two multivectors
     X = MultiVector(values={'1': 2, 'e12': 3}, algebra=pga1d)
     Y = MultiVector(values={'1': 7, 'e12': 5}, algebra=pga1d)
-    Z = X.gp(Y)
+    Z = X * Y
     assert dict(Z.items()) == {0: 2*7, 3: 2*5 + 3*7}
 
 def test_cayley(pga1d, vga2d, vga11):
@@ -162,7 +162,7 @@ def test_gp_symbolic(vga2d):
 
     # The norm of a bireflection is a scalar.
     Rnormsq = R*~R
-    assert Rnormsq[0] == (u1*v1 + u2*v2)**2 - (-u1*v2 + u2*v1)*(u1*v2 - u2*v1)
+    assert Rnormsq[0] == expand((u1*v1 + u2*v2)**2 - (-u1*v2 + u2*v1)*(u1*v2 - u2*v1))
     assert len(Rnormsq) == 1
     assert 'e12' not in Rnormsq
     assert 0 in Rnormsq
@@ -318,17 +318,18 @@ def test_projection(pga3d):
     assert z.grades == (3,)
 
 
-def test_inverse_div(pga2d):
+def test_inv_div(pga2d):
     u = pga2d.multivector(name='u')
     # Multiply by inverse results in a scalar exp, which numerically evaluates to 1.
     res = u*u.inv()
-    assert res.grades == (0,)
     # All the null elements will have disappeared from the output,
     # so only four values left to provide.
     u_vals = np.random.random(4)
     assert res(*u_vals)[0] == pytest.approx(1.0)
+    assert res.grades == (0,)
     # Division by self is truly the scalar 1.
     res = u / u
+    assert res(*u_vals)[0] == pytest.approx(1.0)
     assert res.grades == (0,)
     assert res[0] == 1
 
@@ -414,10 +415,15 @@ def test_conjugation():
     x = alg.multivector(name='x')  # multivector
     y = alg.multivector(name='y')
 
-    xconjy_expected = x*y*(~x)
-    xconjy = x.conj(y)
+    xconjy_expected = x * y * (~x)
+    xconjy = x >> y
     for i in range(len(alg)):
         assert expand(xconjy[i]) == expand(xconjy_expected[i])
+
+    yconjx_expected = y * x * (~y)
+    yconjx = x << y
+    for i in range(len(alg)):
+        assert expand(yconjx[i]) == expand(yconjx_expected[i])
 
 def test_projection():
     alg = Algebra(1, 1, 1)
@@ -425,7 +431,7 @@ def test_projection():
     y = alg.multivector(name='y')
 
     xconjy_expected = (x | y) * ~y
-    xconjy = x.proj(y)
+    xconjy = x @ y
     for i in range(len(alg)):
         assert expand(xconjy[i]) == expand(xconjy_expected[i])
 
@@ -480,8 +486,8 @@ def test_indexing():
 def test_normalization(pga3d):
     vvals = np.random.random(len(pga3d.indices_for_grade[1]))
     v = pga3d.vector(vvals).normalized()
-    assert (v*v)[0] == pytest.approx(1.0)
-    np.testing.assert_allclose((v*v)[0], 1.0)
+    assert (v*v).values()[0] == pytest.approx(1.0)
+    np.testing.assert_allclose((v*v).values()[0], 1.0)
 
     bvals = np.random.random(len(pga3d.indices_for_grade[2]))
     with pytest.raises(NotImplementedError):
