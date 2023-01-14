@@ -195,11 +195,28 @@ class MultiVector:
         return self.algebra.div(self, other)
 
     def __str__(self):
-        if len(self.values()):
-            canon_sorted_vals = sorted(self.items(), key=lambda x: (len(self.algebra.bin2canon[x[0]]), self.algebra.bin2canon[x[0]]))
-            return ' + '.join([f'({val}) * {self.algebra.bin2canon[key]}' for key, val in canon_sorted_vals])
-        else:
+        if not len(self.values()):
             return '0'
+
+        def print_value(val):
+            if isinstance(val, Expr):
+                if val.is_Symbol:
+                    return f"{val}"
+                else:
+                    return f"({val})"
+            elif isinstance(val, float):
+                return f'{val:.3}'
+            else:
+                return f'{val}'
+
+        canon_vals = {self.algebra._bin2canon_prettystr[key]: val for key, val in self.items()}
+        canon_sorted_vals = sorted(canon_vals.items(), key=lambda x: (len(x[0]), x[0]))
+        str_repr = ' + '.join(
+            [f'{print_value(val)} {blade}' if blade != '1' else f'{print_value(val)}'
+             for blade, val in canon_sorted_vals if (val.any() if hasattr(val, 'any') else val)]
+        )
+        return str_repr
+
 
     def __getitem__(self, item):
         if isinstance(item, tuple):

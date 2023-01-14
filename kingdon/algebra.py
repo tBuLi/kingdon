@@ -72,6 +72,7 @@ class Algebra:
     # Mappings from binary to canonical reps. e.g. 0b01 = 1 <-> 'e1', 0b11 = 3 <-> 'e12'.
     canon2bin: dict = field(init=False, repr=False, compare=False)
     bin2canon: dict = field(init=False, repr=False, compare=False)
+    _bin2canon_prettystr: dict = field(init=False, repr=False, compare=False)
 
     # Options for the algebra
     cse: bool = field(default=True)  # Common Subexpression Elimination (CSE)
@@ -109,6 +110,13 @@ class Algebra:
             for eJ in range(2 ** self.d)
         }
         self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
+        def pretty_blade(blade):
+            if blade == 'e':
+                return '1'
+            for old, new in tuple(zip("e0123456789", "𝐞₀₁₂₃₄₅₆₇₈₉")):
+                blade = blade.replace(old, new)
+            return blade
+        self._bin2canon_prettystr = {k: pretty_blade(v) for k, v in self.bin2canon.items()}
 
         self.swaps, self.signs, self.cayley = self._prepare_signs_and_cayley()
 
