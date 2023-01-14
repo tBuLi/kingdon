@@ -444,20 +444,24 @@ def test_outerexp(R6):
 def test_indexing():
     alg = Algebra(4)
     nrows = 3
-    bvals = np.random.random((len(alg.indices_for_grade[2]), nrows))
+    ncolumns = 4
+    shape = (len(alg.indices_for_grade[2]), nrows, ncolumns)
+    bvals = np.random.random(shape)
     B = alg.bivector(bvals)
     np.testing.assert_allclose(B[3, 2:4], bvals[0, 2:4])
     np.testing.assert_allclose(B[3, 2], bvals[0, 2])
     np.testing.assert_allclose(B[3, :], bvals[0, :])
     np.testing.assert_allclose(B[:, 0], bvals[:, 0])
+    np.testing.assert_allclose(B[3, 2:4, 0], bvals[0, 2:4, 0])
+    # Same tests but without using a numpy array, instead use a tuple of sub np.ndarray.
+    B = alg.bivector(tuple(bvals))
+    np.testing.assert_allclose(B[3, 2:4], bvals[0, 2:4])
+    np.testing.assert_allclose(B[3, 2], bvals[0, 2])
+    np.testing.assert_allclose(B[3, :], bvals[0, :])
+    np.testing.assert_allclose(B[:, 0], bvals[:, 0])
+    # np.testing.assert_allclose(B[3, 2:4, 0], bvals[0, 2:4, 0]) # Still fails, fix in the future
+    np.testing.assert_allclose(B[:, 0, 0], bvals[:, 0, 0])
 
-    #TODO: same tests but without using a numpy array
-    bvals = tuple(np.random.random(nrows) for _ in range(len(alg.indices_for_grade[2])))
-    B = alg.bivector(bvals)
-    np.testing.assert_allclose(B[3, 2:4], bvals[0][2:4])
-    np.testing.assert_allclose(B[3, 2], bvals[0][2])
-    np.testing.assert_allclose(B[3, :], bvals[0][:])
-    np.testing.assert_allclose(B[:, 0], bvals[:][0])
 
 def test_normalization(pga3d):
     vvals = np.random.random(len(pga3d.indices_for_grade[1]))
@@ -468,3 +472,30 @@ def test_normalization(pga3d):
     bvals = np.random.random(len(pga3d.indices_for_grade[2]))
     with pytest.raises(NotImplementedError):
         B = pga3d.bivector(bvals).normalized()
+
+
+def test_itermv():
+    alg = Algebra(4)
+    nrows = 3
+    # ncolumns = 5
+    shape = (len(alg.indices_for_grade[2]), nrows)#, ncolumns)
+    bvals = np.random.random(shape)
+    B = alg.bivector(bvals)
+    for i, b in enumerate(B.itermv()):
+        np.testing.assert_allclose(b.values(), bvals[:, i])
+    assert i + 1 == nrows
+
+
+def test_fromsignature():
+    alg = Algebra(signature=[0, -1, 1, 1])
+    assert alg.start_index == 0
+    assert isinstance(alg.signature, np.ndarray)
+    assert np.all(alg.signature == [0, -1, 1, 1])
+    assert (alg.p, alg.q, alg.r) == (2, 1, 1)
+
+
+def test_start_index():
+    pga2d = Algebra(signature=[0, 1, 1], start_index=0)
+    alg = Algebra(signature=[0, 1, 1], start_index=1)
+    for ei, fi in zip(pga2d.blades.values(), alg.blades.values()):
+        assert fi**2 == ei**2
