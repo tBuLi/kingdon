@@ -256,6 +256,20 @@ class MultiVector:
         """ Returns a matrix representation of this multivector. """
         return sum(v * self.algebra.matrix_basis[k] for k, v in self.items())
 
+    def asdensemv(self, canonical=True):
+        """
+        Returns a dense version of the same multivector.
+
+        :param canonical: If True (default) the values are in canonical order,
+          even if the mutivector was already dense.
+        """
+        if canonical:
+            keys = self.algebra.indices_for_grades[tuple(range(self.algebra.d + 1))]
+        else:
+            keys = tuple(range(len(self.algebra)))
+        values = tuple(self[k] for k in keys)
+        return self.fromkeysvalues(self.algebra, keys=keys, values=values)
+
     def gp(self, other):
         return self.algebra.gp(self, other)
 

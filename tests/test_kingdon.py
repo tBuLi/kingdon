@@ -8,6 +8,7 @@ import numpy as np
 
 from sympy import Symbol, simplify, factor, expand, collect, sympify
 from kingdon import Algebra, MultiVector, symbols
+from kingdon.multivector_json import MultiVectorEncoder
 
 import timeit
 
@@ -499,3 +500,33 @@ def test_start_index():
     alg = Algebra(signature=[0, 1, 1], start_index=1)
     for ei, fi in zip(pga2d.blades.values(), alg.blades.values()):
         assert fi**2 == ei**2
+
+
+def test_asdensemv():
+    alg = Algebra(2, 0, 1)
+    xvals = np.random.random(3)
+    x = alg.vector(xvals)
+    # Manually make the expected dense x
+    x_densevals = np.zeros(len(alg))
+    x_densevals[np.array([1, 2, 4])] = xvals
+    x_dense = alg.multivector(x_densevals)
+    # Compare to asdensemv method.
+    y = x.asdensemv(canonical=False)
+    assert y.keys() == x_dense.keys()
+    np.testing.assert_equal(y.values(), x_dense.values())
+
+    # Manually make the expected dense x in canonical ordering
+    x_densevals = np.zeros(len(alg))
+    x_densevals[np.array([1, 2, 3])] = xvals
+    # Compare to asdensemv method.
+    y = x.asdensemv()
+    np.testing.assert_equal(y.values(), x_densevals)
+
+
+def test_json():
+    import json
+    alg = Algebra(signature=[0, 1, 1], start_index=0)
+    xvals = np.array([2, 3, 4])
+    x = alg.vector(xvals)
+    xjson = json.dumps(x, cls=MultiVectorEncoder)
+    assert xjson == "[0, 2, 3, 4, 0, 0, 0, 0]"
