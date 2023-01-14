@@ -1,6 +1,8 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import reduce, cached_property
+from typing import Generator
+from itertools import product
 
 from sympy import Symbol, Expr, sympify
 
@@ -97,6 +99,32 @@ class MultiVector:
     def __len__(self):
         return len(self._values)
 
+    def itermv(self, axis=None) -> Generator["MultiVector", None, None]:
+        """
+        Returns an iterator over the multivectors within this multivector.
+
+        :param axis: Axis over which to iterate. Default is to iterate over all possible mv.
+        """
+        shape = self.shape()[1:]
+        if not shape:
+            return self
+        elif axis is None:
+            return (
+                MultiVector.fromkeysvalues(self.algebra, keys=self.keys(), values=self[(slice(None), *indices)])
+                for indices in product(*(range(n) for n in shape))
+            )
+        else:
+            raise NotImplementedError
+
+    def shape(self):
+        """ Return the shape of the .values() attribute of this multivector. """
+        if hasattr(self._values, 'shape'):
+            return self._values.shape
+        elif hasattr(self._values[0], 'shape'):
+            return len(self), *self._values[0].shape
+        else:
+            return len(self),
+
     @cached_property
     def grades(self):
         """ Tuple of the grades present in `self`. """
@@ -175,26 +203,34 @@ class MultiVector:
 
     def __getitem__(self, item):
         if isinstance(item, tuple):
-            key, slicing = item
+            key, *subslices = item
         else:
-            key, slicing = item, None
+            key, subslices = item, tuple()
 
-        if key == slice(None, None, None):
-            values = self.values()
-        else:
+        # TODO: We could turn slices into the valid range in binary rep.
+        #  This is complicated by the fact that the binary keys do not
+        #  form a consecutive range.
+        if not isinstance(key, slice):
             # Convert key from a basis-blade in binary rep to a valid index in values.
             key = key if key in self.algebra.bin2canon else self.algebra.canon2bin[key]
             try:
                 key = self.keys().index(key)
             except ValueError:
                 return 0
-            else:
-                values = self.values()
 
-        if slicing is None:
-            return values[key]
+        values = self.values()
+        if isinstance(values, (tuple, list)):
+            keys = [key] if key != slice(None) else [self.keys().index(k) for k in self.keys()]
+            return_values = []
+            for key in keys:
+                return_values.append(values[key])
+                for subslice in subslices:
+                    return_values[key] = return_values[key][subslice]
+            if len(keys) == 1:
+                return_values = return_values[0]
         else:
-            return values[key][slicing] if isinstance(values, (tuple, list)) else values[key, slicing]
+            return_values = values[(key, *subslices)]
+        return return_values
 
     def __contains__(self, item):
         item = item if item in self.algebra.bin2canon else self.algebra.canon2bin[item]
