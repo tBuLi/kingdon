@@ -309,6 +309,12 @@ class Algebra:
 
         json_subjects = json.dumps(flat_subjects, cls=MultiVectorEncoder)
 
+        cayley_table = [[s if (s := self.cayley[eJ, eI])[-1] != 'e' else f"{s[:-1]}1"
+                         for eI in self.canon2bin]
+                        for eJ in self.canon2bin]
+        cayley_table = json.dumps(cayley_table)
+        metric = json.dumps(list(self.signature), cls=MultiVectorEncoder)
+
         src = f"""
         fetch("https://enki.ws/ganja.js/ganja.js")
         .then(x=>x.text())
@@ -319,7 +325,7 @@ class Algebra:
           f(module);
           var Algebra = module.exports;
 
-          var canvas = Algebra({self.p}, {self.q}, {self.r},()=>{{
+          var canvas = Algebra({{metric:{metric}, Cayley:{cayley_table}}},()=>{{
               var data = {json_subjects}.map(x=>x.length=={len(self)}?new Element(x):x);
               return this.graph(data, {options})
           }})
