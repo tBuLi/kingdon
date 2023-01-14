@@ -14,17 +14,17 @@ import timeit
 
 @pytest.fixture
 def pga1d():
-    return Algebra(1, 0, 1)
+    return Algebra(signature=np.array([1, 0]), start_index=1)
 
 
 @pytest.fixture
 def pga2d():
-    return Algebra(2, 0, 1)
+    return Algebra(signature=np.array([1, 1, 0]), start_index=1)
 
 
 @pytest.fixture
 def pga3d():
-    return Algebra(3, 0, 1)
+    return Algebra(signature=np.array([1, 1, 1, 0]), start_index=1)
 
 
 @pytest.fixture
@@ -73,24 +73,24 @@ def test_anticommutation(pga1d, vga11, vga2d):
 
 def test_gp(pga1d):
     # Multiply two multivectors
-    X = MultiVector(values={'1': 2, 'e12': 3}, algebra=pga1d)
-    Y = MultiVector(values={'1': 7, 'e12': 5}, algebra=pga1d)
+    X = MultiVector(values={'e': 2, 'e12': 3}, algebra=pga1d)
+    Y = MultiVector(values={'e': 7, 'e12': 5}, algebra=pga1d)
     Z = X.gp(Y)
     assert dict(Z.items()) == {0: 2*7, 3: 2*5 + 3*7}
 
 def test_cayley(pga1d, vga2d, vga11):
-    assert pga1d.cayley == {('1', '1'): '1', ('1', 'e1'): 'e1', ('1', 'e12'): 'e12', ('1', 'e2'): 'e2',
-                          ('e1', '1'): 'e1', ('e1', 'e1'): '1', ('e1', 'e12'): 'e2', ('e1', 'e2'): 'e12',
-                          ('e12', '1'): 'e12', ('e12', 'e1'): '-e2', ('e12', 'e12'): '0', ('e12', 'e2'): '0',
-                          ('e2', '1'): 'e2', ('e2', 'e1'): '-e12', ('e2', 'e12'): '0', ('e2', 'e2'): '0'}
-    assert vga2d.cayley == {('1', '1'): '1', ('1', 'e1'): 'e1', ('1', 'e2'): 'e2', ('1', 'e12'): 'e12',
-                          ('e1', '1'): 'e1', ('e1', 'e1'): '1', ('e1', 'e2'): 'e12', ('e1', 'e12'): 'e2',
-                          ('e2', '1'): 'e2', ('e2', 'e1'): '-e12', ('e2', 'e2'): '1', ('e2', 'e12'): '-e1',
-                          ('e12', '1'): 'e12', ('e12', 'e1'): '-e2', ('e12', 'e2'): 'e1', ('e12', 'e12'): '-1'}
-    assert vga11.cayley == {('1', '1'): '1', ('1', 'e1'): 'e1', ('1', 'e2'): 'e2', ('1', 'e12'): 'e12',
-                          ('e1', '1'): 'e1', ('e1', 'e1'): '1', ('e1', 'e2'): 'e12', ('e1', 'e12'): 'e2',
-                          ('e2', '1'): 'e2', ('e2', 'e1'): '-e12', ('e2', 'e2'): '-1', ('e2', 'e12'): 'e1',
-                          ('e12', '1'): 'e12', ('e12', 'e1'): '-e2', ('e12', 'e2'): '-e1', ('e12', 'e12'): '1'}
+    assert pga1d.cayley == {('e', 'e'): 'e', ('e', 'e1'): 'e1', ('e', 'e12'): 'e12', ('e', 'e2'): 'e2',
+                          ('e1', 'e'): 'e1', ('e1', 'e1'): 'e', ('e1', 'e12'): 'e2', ('e1', 'e2'): 'e12',
+                          ('e12', 'e'): 'e12', ('e12', 'e1'): '-e2', ('e12', 'e12'): '0', ('e12', 'e2'): '0',
+                          ('e2', 'e'): 'e2', ('e2', 'e1'): '-e12', ('e2', 'e12'): '0', ('e2', 'e2'): '0'}
+    assert vga2d.cayley == {('e', 'e'): 'e', ('e', 'e1'): 'e1', ('e', 'e2'): 'e2', ('e', 'e12'): 'e12',
+                          ('e1', 'e'): 'e1', ('e1', 'e1'): 'e', ('e1', 'e2'): 'e12', ('e1', 'e12'): 'e2',
+                          ('e2', 'e'): 'e2', ('e2', 'e1'): '-e12', ('e2', 'e2'): 'e', ('e2', 'e12'): '-e1',
+                          ('e12', 'e'): 'e12', ('e12', 'e1'): '-e2', ('e12', 'e2'): 'e1', ('e12', 'e12'): '-e'}
+    assert vga11.cayley == {('e', 'e'): 'e', ('e', 'e1'): 'e1', ('e', 'e2'): 'e2', ('e', 'e12'): 'e12',
+                          ('e1', 'e'): 'e1', ('e1', 'e1'): 'e', ('e1', 'e2'): 'e12', ('e1', 'e12'): 'e2',
+                          ('e2', 'e'): 'e2', ('e2', 'e1'): '-e12', ('e2', 'e2'): '-e', ('e2', 'e12'): 'e1',
+                          ('e12', 'e'): 'e12', ('e12', 'e1'): '-e2', ('e12', 'e2'): '-e1', ('e12', 'e12'): 'e'}
 
 def test_purevector(pga1d):
     with pytest.raises(TypeError):
@@ -139,7 +139,7 @@ def test_reverse(R6):
 def test_indexing(pga1d):
     # Test indexing of a mv with canonical and binary indices.
     X = pga1d.multivector({0: 2, 'e12': 3})
-    assert X['1'] == 2 and X[3] == 3
+    assert X['e'] == 2 and X[3] == 3
 
 def test_gp_symbolic(vga2d):
     u = vga2d.vector(name='u')
@@ -185,7 +185,7 @@ def test_cp_symbolic(R6):
     assert w.grades == (1,)
 
 def test_blades(vga2d):
-    assert vga2d.blades['1'] == vga2d.multivector({'1': 1})
+    assert vga2d.blades['e'] == vga2d.multivector({'e': 1})
     assert vga2d.blades['e1'] == vga2d.multivector({'e1': 1})
     assert vga2d.blades['e2'] == vga2d.multivector({'e2': 1})
     assert vga2d.blades['e12'] == vga2d.multivector({'e12': 1})
@@ -283,7 +283,7 @@ def test_regressive(pga3d):
 
     # Known output from GAmphetamine.js
     known_vals = {
-        "1": (x1*y16-x10*y7+x11*y6+x12*y5-x13*y4+x14*y3-x15*y2+x16*y1+x2*y15-x3*y14+x4*y13-x5*y12+x6*y11-x7*y10+x8*y9+x9*y8),
+        "e": (x1*y16-x10*y7+x11*y6+x12*y5-x13*y4+x14*y3-x15*y2+x16*y1+x2*y15-x3*y14+x4*y13-x5*y12+x6*y11-x7*y10+x8*y9+x9*y8),
         "e1": (x12*y8-x13*y7+x14*y6+x16*y2+x2*y16+x6*y14-x7*y13+x8*y12),
         "e2": (x10*y12+x12*y10-x13*y9+x15*y6+x16*y3+x3*y16+x6*y15-x9*y13),
         "e3": (x11*y12+x12*y11-x14*y9+x15*y7+x16*y4+x4*y16+x7*y15-x9*y14),

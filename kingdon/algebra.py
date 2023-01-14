@@ -198,7 +198,7 @@ class Algebra:
             if sign:
                 prod = ''.join(key*value for key, value in count.items())
                 sign = '-' if sign == -1 else ''
-                cayley[eI, eJ] = f'{sign}{"e" if prod != "" else "1"}{prod}'
+                cayley[eI, eJ] = f'{sign}e{prod}'
             else:
                 cayley[eI, eJ] = f'0'
         return swaps_arr, signs, cayley
