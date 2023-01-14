@@ -45,7 +45,8 @@ class Algebra:
     q: int = 0
     r: int = 0
     d: int = field(init=False, repr=False, compare=False)  # Total number of dimensions
-    signature: list = field(init=False, repr=False, compare=False)
+    signature: np.ndarray = field(default=None, compare=False)
+    start_index: int = field(default=None, repr=False, compare=False)
 
     # Clever dictionaries that cache previously symbolically optimized lambda functions between elements.
     gp: OperatorDict = operation_field(metadata={'codegen': codegen_gp})  # geometric product dict
@@ -81,13 +82,28 @@ class Algebra:
     pss: object = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
+        if self.signature is not None:
+            counts = Counter(self.signature)
+            self.p, self.q, self.r = counts[1], counts[-1], counts[0]
+            if self.p + self.q + self.r != len(self.signature):
+                raise TypeError('Unsupported signature.')
+            self.signature = np.array(self.signature)
+        else:
+            if self.r == 1:  # PGA, so put r first.
+                self.signature = np.array([0] * self.r + [1] * self.p + [-1] * self.q)
+            else:
+                self.signature = np.array([1] * self.p + [-1] * self.q + [0] * self.r)
+
+        if self.start_index is None:
+            self.start_index = 0 if self.r == 1 else 1
+
         self.d = self.p + self.q + self.r
-        self.signature = np.array([1]*self.p + [-1]*self.q + [0]*self.r)
 
         # Setup mapping from binary to canonical string rep and vise versa
-        self.bin2canon = {eJ: 'e' + ''.join(str((eJ & 2**ei).bit_length()).replace('0', '') for ei in range(0, self.d))
-                          for eJ in range(2 ** self.d)}
-        self.bin2canon[0] = '1'
+        self.bin2canon = {
+            eJ: 'e' + ''.join(str(num + self.start_index - 1) for ei in range(0, self.d) if (num := (eJ & 2**ei).bit_length()))
+            for eJ in range(2 ** self.d)
+        }
         self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
 
         self.swaps, self.signs, self.cayley = self._prepare_signs_and_cayley()
@@ -165,7 +181,7 @@ class Algebra:
             count = Counter(prod)
             for key, value in count.items():
                 if value // 2:
-                    sign *= self.signature[int(key) - 1]
+                    sign *= self.signature[int(key) - self.start_index]
                 count[key] = value % 2
             signs[self.canon2bin[eI], self.canon2bin[eJ]] = sign
 
