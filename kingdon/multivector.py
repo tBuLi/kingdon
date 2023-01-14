@@ -217,6 +217,11 @@ class MultiVector:
         )
         return str_repr
 
+    def _repr_pretty_(self, p, cycle):
+        if cycle:
+            p.text(f'{self.__class__.__name__}(...)')
+        else:
+            p.text(str(self))
 
     def __getitem__(self, item):
         if isinstance(item, tuple):
