@@ -2,6 +2,7 @@ from itertools import combinations, product, chain, groupby
 from functools import partial
 from collections import Counter
 from dataclasses import dataclass, field, fields
+import json
 try:
     from functools import cached_property
 except ImportError:
@@ -11,6 +12,7 @@ except ImportError:
         return property(lru_cache()(func))
 
 import numpy as np
+from IPython.display import Javascript, display
 
 from kingdon.codegen import (
     codegen_gp, codegen_conj, codegen_cp, codegen_ip, codegen_op, codegen_div,
@@ -19,7 +21,9 @@ from kingdon.codegen import (
 )
 from kingdon.operator_dict import OperatorDict
 from kingdon.matrixreps import matrix_rep
+from kingdon.multivector_json import MultiVectorEncoder
 from kingdon.multivector import MultiVector
+
 # from kingdon.module_builder import predefined_modules
 
 operation_field = partial(field, default_factory=dict, init=False, repr=False, compare=False)
@@ -124,7 +128,10 @@ class Algebra:
     def indices_for_grade(self):
         """
         Mapping from the grades to the indices for that grade. E.g. in 2D VGA, this returns
-        {0: (0,), 1: (1, 2), 2: (3,)}
+
+        .. code-block ::
+
+            {0: (0,), 1: (1, 2), 2: (3,)}
         """
         key = lambda i: bin(i).count('1')
         sorted_inds = sorted(range(len(self)), key=key)
@@ -136,8 +143,10 @@ class Algebra:
         Mapping from a sequence of grades to the corresponding indices.
         E.g. in 2D VGA, this returns
 
-        {(0,): (0,), (1,): (1, 2), (2,): (3,), (0, 1): (0, 1, 2),
-         (0, 2): (0, 3), (1, 2): (1, 2, 3), (0, 1, 2): (0, 1, 2, 3)}
+        .. code-block ::
+
+            {(0,): (0,), (1,): (1, 2), (2,): (3,), (0, 1): (0, 1, 2),
+             (0, 2): (0, 3), (1, 2): (1, 2, 3), (0, 1, 2): (0, 1, 2, 3)}
         """
         all_grade_combs = chain(*(combinations(range(0, self.d + 1), r=j) for j in range(1, len(self) + 1)))
         return {comb: sum((self.indices_for_grade[grade] for grade in comb), ())
@@ -249,3 +258,66 @@ class Algebra:
 
     def pseudoquadvector(self, *args, **kwargs) -> MultiVector:
         return self.purevector(*args, grade=self.d - 4, **kwargs)
+
+    def graph(self, *subjects, **options):
+        """
+        The graph function outputs :code:`ganja.js` renders and is meant
+        for use in jupyter notebooks. The syntax of the graph function will feel
+        familiar to users of :code:`ganja.js`: all position arguments are considered
+        as subjects to graph, while all keyword arguments are interpreted as options
+        to :code:`ganja.js`'s :code:`Algebra.graph` method.
+
+        Example usage:
+
+        .. code-block ::
+
+            alg.graph(
+                0xD0FFE1, [A,B,C],
+                0x224488, A, "A", B, "B", C, "C",
+                lineWidth=3, grid=1, labels=1
+            )
+
+        Will create
+
+        .. image :: ../docs/_static/graph_triangle.png
+            :scale: 50%
+            :align: center
+
+        Not all features of :code:`ganja.js` are supported yet. Most notably,
+        only static graphs can be made. While ganja also accepts functions as
+        input, this syntax is not currently supported in Kingdon.
+
+        :param *subjects: Subjects to be graphed.
+            Can be strings, hexadecimal colors, (lists of) MultiVector.
+        :param **options: Options passed to :code:`ganja.js`'s :code:`Algebra.graph`.
+        """
+        # Flatten multidimensional multivectors
+        flat_subjects = []
+        for subject in subjects:
+            if isinstance(subject, MultiVector) and len(subject.shape()) > 1:
+                flat_subjects.extend(subject.itermv())
+            else:
+                flat_subjects.append(subject)
+
+        json_subjects = json.dumps(flat_subjects, cls=MultiVectorEncoder)
+
+        src = f"""
+        fetch("https://enki.ws/ganja.js/ganja.js")
+        .then(x=>x.text())
+        .then(ganja=>{{
+
+          var f = new Function("module",ganja);
+          var module = {{exports:{{}}}};
+          f(module);
+          var Algebra = module.exports;
+
+          var canvas = Algebra({self.p}, {self.q}, {self.r},()=>{{
+              var data = {json_subjects}.map(x=>x.length=={len(self)}?new Element(x):x);
+              return this.graph(data, {options})
+          }})
+
+          element.append(canvas)
+
+        }})
+        """
+        display(Javascript(src))
