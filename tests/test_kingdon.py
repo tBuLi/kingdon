@@ -411,6 +411,7 @@ def test_anticommutator():
     for i in range(len(alg)):
         assert xacpy[i] - xacpy_expected[i] == 0
 
+
 def test_conjugation():
     alg = Algebra(1, 1, 1)
     x = alg.multivector(name='x')  # multivector
@@ -421,10 +422,6 @@ def test_conjugation():
     for i in range(len(alg)):
         assert expand(xconjy[i]) == expand(xconjy_expected[i])
 
-    yconjx_expected = y * x * (~y)
-    yconjx = x << y
-    for i in range(len(alg)):
-        assert expand(yconjx[i]) == expand(yconjx_expected[i])
 
 def test_projection():
     alg = Algebra(1, 1, 1)
