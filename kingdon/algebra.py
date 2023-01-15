@@ -295,9 +295,9 @@ class Algebra:
         only static graphs can be made. While ganja also accepts functions as
         input, this syntax is not currently supported in Kingdon.
 
-        :param *subjects: Subjects to be graphed.
+        :param `*subjects`: Subjects to be graphed.
             Can be strings, hexadecimal colors, (lists of) MultiVector.
-        :param **options: Options passed to :code:`ganja.js`'s :code:`Algebra.graph`.
+        :param `**options`: Options passed to :code:`ganja.js`'s :code:`Algebra.graph`.
         """
         # Flatten multidimensional multivectors
         flat_subjects = []
