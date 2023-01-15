@@ -39,6 +39,19 @@ extensions = [
     'nbsphinx',
 ]
 
+intersphinx_mapping = {
+    'sympy': ('https://docs.sympy.org/latest', None),
+    'symfit': ('https://symfit.readthedocs.io/en/stable/', None),
+    'python': ('https://docs.python.org/3', None),
+}
+
+nitpick_ignore = [
+    ('py:mod', 'sympy'),
+    ('py:class', 'sympy.core.Symbol'),
+]
+
+autodoc_mock_imports = ["sympy"]
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 
@@ -75,7 +88,7 @@ language = 'en'
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This patterns also effect to html_static_path and html_extra_path
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+exclude_patterns = ['_build', 'build_docs', 'Thumbs.db', '.DS_Store', '**.ipynb_checkpoints']
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'

@@ -1,25 +1,44 @@
+from __future__ import annotations
+
 from itertools import product, combinations, groupby
 from collections import namedtuple
+from typing import NamedTuple, Callable, Tuple
 from functools import reduce
 import operator
 import linecache
 import warnings
 
-from sympy import simplify, sympify, Add, Mul
+from sympy import simplify, sympify, Add, Mul, Symbol
 from sympy.utilities.lambdify import lambdify
-from numba import njit
 
 
-TermTuple = namedtuple('TermTuple', ['key_out', 'keys_in', 'sign', 'values_in', 'termstr'])
-TermTuple.__doc__ = """
-TermTuple represents a single monomial in a product of multivectors.
+class TermTuple(NamedTuple):
+    """
+    TermTuple represents a single monomial in a product of multivectors.
 
-:param key_out: is the basis blade to which this monomial belongs.
-:param keys_in: are the input basis blades in this monomial.
-:param sign: Sign of the monomial.
-:param values_in: Input values. Typically sympy symbols.
-:param termstr: The string representation of this monomial, e.g. '-x*y'.
-"""
+    :param key_out: is the basis blade to which this monomial belongs.
+    :param keys_in: are the input basis blades in this monomial.
+    :param sign: Sign of the monomial.
+    :param values_in: Input values. Typically, tuple of :class:`~sympy.core.Symbol`.
+    :param termstr: The string representation of this monomial, e.g. '-x*y'.
+    """
+    key_out: int
+    keys_in: Tuple[int]
+    sign: int
+    values_in: Tuple[Symbol]
+    termstr: str
+
+
+class CodegenOutput(NamedTuple):
+    """
+    Output of a codegen function.
+
+    :param keys_out: tuple with the output blades in binary rep.
+    :param func: callable that takes (several) sequence(s) of values
+        returns a tuple of :code:`len(keys_out)`.
+    """
+    keys_out: Tuple[int]
+    func: Callable
 
 
 def term_tuple(items, sign_func, keyout_func=operator.xor):
@@ -95,7 +114,7 @@ def codegen_gp(x, y, symbolic=False):
     if symbolic:
         return x.fromkeysvalues(x.algebra, keys_out, func(x.values(), y.values()))
 
-    return keys_out, func
+    return CodegenOutput(keys_out, func)
 
 
 def codegen_sw(x, y):
@@ -119,7 +138,7 @@ def codegen_cp(x, y, symbolic=False):
     if symbolic:
         return x.fromkeysvalues(algebra, keys_out, func(x.values(), y.values()))
 
-    return keys_out, func
+    return CodegenOutput(keys_out, func)
 
 
 def codegen_acp(x, y, symbolic=False):
@@ -134,7 +153,7 @@ def codegen_acp(x, y, symbolic=False):
     if symbolic:
         return x.fromkeysvalues(algebra, keys_out, func(x.values(), y.values()))
 
-    return keys_out, func
+    return CodegenOutput(keys_out, func)
 
 
 def codegen_ip(x, y, diff_func=abs, symbolic=False):
@@ -152,7 +171,7 @@ def codegen_ip(x, y, diff_func=abs, symbolic=False):
     if symbolic:
         return x.fromkeysvalues(algebra, keys_out, func(x.values(), y.values()))
 
-    return keys_out, func
+    return CodegenOutput(keys_out, func)
 
 
 def codegen_lc(x, y):
@@ -209,7 +228,7 @@ def codegen_op(x, y, symbolic=False):
     if symbolic:
         return x.fromkeysvalues(algebra, keys_out, func(x.values(), y.values()))
 
-    return keys_out, func
+    return CodegenOutput(keys_out, func)
 
 
 def codegen_rp(x, y):
@@ -253,14 +272,14 @@ def codegen_inv(x, symbolic=False):
     but it can be expensive to compute.
     In the future this should be extended to use dedicated solutions for known cases.
     """
-    k = 2 ** ((x.algebra.d + 1) // 2)
+    n = 2 ** ((x.algebra.d + 1) // 2)
     x_i = x
     if x.grades == (0,):
         adj_x = 1
     else:
-        for i in range(1, k + 1):
-            # Sympify ratio to keep the ratios exact and avoid floating point errors.
-            c_i = (sympify(k) / i) * x_i[0] if x_i[0] else x_i[0]
+        n = sympify(n)  # Sympify ratio to keep the ratios exact and avoid floating point errors.
+        for i in range(1, n + 1):
+            c_i = (n / i) * x_i[0] if x_i[0] else x_i[0]
             adj_x = (x_i - c_i)
             if x.algebra.simplify:
                 keys, values = zip(*((k, simp_expr) for k, expr in adj_x.items() if (simp_expr := simplify(expr))))
@@ -327,27 +346,48 @@ def codegen_outerexp(x, asterms=False):
     L = reduce(operator.add, Ws)
     return _func_builder(dict(L.items()), x, name_base='outerexp')
 
+def codegen_outersin(x):
+    odd_Ws = codegen_outerexp(x, asterms=True)[1::2]
+    outersin = reduce(operator.add, odd_Ws)
+    return _func_builder(outersin, x, name_base='outersin')
+
+
+def codegen_outercos(x):
+    even_Ws = codegen_outerexp(x, asterms=True)[0::2]
+    outercos = reduce(operator.add, even_Ws)
+    return _func_builder(outercos, x, name_base='outercos')
+
+
+def codegen_outertan(x):
+    Ws = codegen_outerexp(x, asterms=True)
+    even_Ws, odd_Ws = Ws[0::2], Ws[1::2]
+    outercos = reduce(operator.add, even_Ws)
+    outersin = reduce(operator.add, odd_Ws)
+    outertan = outersin / outercos
+    return _func_builder(outertan, x, name_base='outertan')
+
 
 def _lambdify_binary(x, y, x_bin_y):
     xy_symbols = [list(x.values()), list(y.values())]
     func = lambdify(xy_symbols, list(x_bin_y.values()), cse=x.algebra.cse)
-    return tuple(x_bin_y.keys()), njit(func) if x.algebra.numba else func
+    return CodegenOutput(tuple(x_bin_y.keys()), func)
 
 
 def _lambdify_unary(x, x_unary):
     func = lambdify([list(x.values())], list(x_unary.values()), cse=x.algebra.cse)
-    return tuple(x_unary.keys()), njit(func) if x.algebra.numba else func
+    return CodegenOutput(tuple(x_unary.keys()), func)
 
 
 def _lambdify_mv(free_symbols, mv):
     # TODO: Numba wants a tuple in the line below, but simpy only produces a
     #  list as output if this is a list, not a tuple. See if we can solve this.
     func = lambdify(free_symbols, list(mv.values()), cse=mv.algebra.cse)
-    return tuple(mv.keys()), njit(func) if mv.algebra.numba else func
+    return CodegenOutput(tuple(mv.keys()), func)
+
 
 def _func_builder(res_vals: dict, *mvs, name_base: str):
     """
-    Build a Python functions for the product between given multivectors.
+    Build a Python function for the product between given multivectors.
 
     :param res_vals: Dict to be converted into a function. The keys correspond to the basis blades in binary,
         while the values are strings to be converted into source code.
@@ -375,4 +415,4 @@ def _func_builder(res_vals: dict, *mvs, name_base: str):
     # Add the generated code to linecache such that it is inspect-safe.
     linecache.cache[func_name] = (len(func_source), None, func_source.splitlines(True), func_name)
     func = func_locals[func_name]
-    return tuple(res_vals.keys()), njit(func) if mvs[0].algebra.numba else func
+    return CodegenOutput(tuple(res_vals.keys()), func)

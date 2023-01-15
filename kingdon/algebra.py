@@ -17,9 +17,10 @@ from IPython.display import Javascript, display
 from kingdon.codegen import (
     codegen_gp, codegen_sw, codegen_cp, codegen_ip, codegen_op, codegen_div,
     codegen_rp, codegen_acp, codegen_proj, codegen_sp, codegen_lc, codegen_inv,
-    codegen_rc, codegen_normsq, codegen_outerexp
+    codegen_rc, codegen_normsq,
+    codegen_outerexp, codegen_outersin, codegen_outercos, codegen_outertan,
 )
-from kingdon.operator_dict import OperatorDict
+from kingdon.operator_dict import OperatorDict, UnaryOperatorDict
 from kingdon.matrixreps import matrix_rep
 from kingdon.multivector_json import MultiVectorEncoder
 from kingdon.multivector import MultiVector
@@ -53,21 +54,24 @@ class Algebra:
     start_index: int = field(default=None, repr=False, compare=False)
 
     # Clever dictionaries that cache previously symbolically optimized lambda functions between elements.
-    gp: OperatorDict = operation_field(metadata={'codegen': codegen_gp})  # geometric product dict
-    sw: OperatorDict = operation_field(metadata={'codegen': codegen_sw})  # conjugation dict
-    cp: OperatorDict = operation_field(metadata={'codegen': codegen_cp})  # commutator product dict
-    acp: OperatorDict = operation_field(metadata={'codegen': codegen_acp})  # anti-commutator product dict
-    ip: OperatorDict = operation_field(metadata={'codegen': codegen_ip})  # inner product dict
-    sp: OperatorDict = operation_field(metadata={'codegen': codegen_sp})  # Scalar product dict
+    gp: OperatorDict = operation_field(metadata={'codegen': codegen_gp})  # geometric product
+    conj: OperatorDict = operation_field(metadata={'codegen': codegen_sw})  # conjugation
+    cp: OperatorDict = operation_field(metadata={'codegen': codegen_cp})  # commutator product
+    acp: OperatorDict = operation_field(metadata={'codegen': codegen_acp})  # anti-commutator product
+    ip: OperatorDict = operation_field(metadata={'codegen': codegen_ip})  # inner product
+    sp: OperatorDict = operation_field(metadata={'codegen': codegen_sp})  # Scalar product
     lc: OperatorDict = operation_field(metadata={'codegen': codegen_lc})  # left-contraction
     rc: OperatorDict = operation_field(metadata={'codegen': codegen_rc})  # right-contraction
-    op: OperatorDict = operation_field(metadata={'codegen': codegen_op})  # exterior product dict
-    rp: OperatorDict = operation_field(metadata={'codegen': codegen_rp})  # regressive product dict
-    proj: OperatorDict = operation_field(metadata={'codegen': codegen_proj})  # projection dict
-    div: OperatorDict = operation_field(metadata={'codegen': codegen_div})  # division dict
-    inv: OperatorDict = operation_field(metadata={'codegen': codegen_inv})  # inverse dict
-    normsq: OperatorDict = operation_field(metadata={'codegen': codegen_normsq})  # norm squared dict
-    outerexp: OperatorDict = operation_field(metadata={'codegen': codegen_outerexp})
+    op: OperatorDict = operation_field(metadata={'codegen': codegen_op})  # exterior product
+    rp: OperatorDict = operation_field(metadata={'codegen': codegen_rp})  # regressive product
+    proj: OperatorDict = operation_field(metadata={'codegen': codegen_proj})  # projection
+    div: OperatorDict = operation_field(metadata={'codegen': codegen_div})  # division
+    inv: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_inv})  # inverse
+    normsq: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_normsq})  # norm squared
+    outerexp: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outerexp})
+    outersin: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outersin})
+    outercos: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outercos})
+    outertan: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outertan})
 
     # Mappings from binary to canonical reps. e.g. 0b01 = 1 <-> 'e1', 0b11 = 3 <-> 'e12'.
     canon2bin: dict = field(init=False, repr=False, compare=False)
@@ -127,7 +131,7 @@ class Algebra:
         # Prepare OperatorDict's
         operators = (f for f in fields(self) if 'codegen' in f.metadata)
         for f in operators:
-            setattr(self, f.name, OperatorDict(name=f.name, codegen=f.metadata['codegen'], algebra=self))
+            setattr(self, f.name, f.type(name=f.name, codegen=f.metadata['codegen'], algebra=self))
 
     def __len__(self):
         return 2 ** self.d

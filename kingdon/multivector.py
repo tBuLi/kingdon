@@ -1,3 +1,4 @@
+import operator
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import reduce, cached_property
@@ -42,7 +43,7 @@ class MultiVector:
 
         # Construct a new MV on the basis of the kind of input we received.
         if isinstance(values, Mapping):
-            keys, values = zip(*values.items())
+            keys, values = zip(*values.items()) if values else (tuple(), tuple())
         elif len(values) == len(algebra) and not keys:
             keys = tuple(range(len(values)))
         elif len(values) == len(algebra.indices_for_grades[grades]) and not keys:
@@ -191,8 +192,13 @@ class MultiVector:
                 vals[k] = v
         return self.fromkeysvalues(self.algebra, tuple(vals.keys()), tuple(vals.values()))
 
+    __radd__ = __add__
+
     def __sub__(self, other):
         return self + (-other)
+
+    def __rsub__(self, other):
+        return other + (-self)
 
     def __truediv__(self, other):
         return self.algebra.div(self, other)
@@ -225,6 +231,12 @@ class MultiVector:
             p.text(f'{self.__class__.__name__}(...)')
         else:
             p.text(str(self))
+
+    def __format__(self, format_spec):
+        if format_spec == 'keys_binary':
+            iden = '_'.join(''.join('1' if i in self.keys() else '0' for i in bin_blades)
+                            for bin_blades in self.algebra.indices_for_grade.values())
+            return iden
 
     def __getitem__(self, item):
         if isinstance(item, tuple):
@@ -263,7 +275,7 @@ class MultiVector:
 
     @cached_property
     def free_symbols(self):
-        return reduce(lambda tot, x: tot | x, (v.free_symbols for v in self.values()))
+        return reduce(operator.or_, (v.free_symbols for v in self.values() if hasattr(v, "free_symbols")))
 
     @cached_property
     def _callable(self):
@@ -367,6 +379,14 @@ class MultiVector:
     def outerexp(self):
         return self.algebra.outerexp(self)
 
+    def outersin(self):
+        return self.algebra.outersin(self)
+
+    def outercos(self):
+        return self.algebra.outercos(self)
+
+    def outertan(self):
+        return self.algebra.outertan(self)
 
     def dual(self, kind='auto'):
         """
@@ -410,28 +430,3 @@ class MultiVector:
             raise Exception('Cannot select a suitable undual in auto mode for this algebra.')
         else:
             raise ValueError(f'No undual found for kind={kind}.')
-
-
-# class GradedMultiplication:
-#     def _binary_operation(self, other, func_dictionary, codegen):
-#         """ Helper function for all multiplication types such as gp, sp, cp etc. """
-#         if self.algebra != other.algebra:
-#             raise AlgebraError("Cannot multiply elements of different algebra's.")
-#
-#         keys_in = (self.algebra.indices_for_grades[self.grades],
-#                    self.algebra.indices_for_grades[other.grades])
-#         if keys_in not in func_dictionary:
-#             x = self.algebra.multivector(vals={ek: Symbol(f'a{self.algebra.bin2canon[ek][1:]}')
-#                                                for ek in keys_in[0]})
-#             y = self.algebra.multivector(vals={ek: Symbol(f'b{self.algebra.bin2canon[ek][1:]}')
-#                                                for ek in keys_in[1]})
-#             keys_out, func = func_dictionary[keys_in] = codegen(x, y)
-#         else:
-#             keys_out, func = func_dictionary[keys_in]
-#
-#         args = chain((self.vals.get(i, 0) for i in keys_in[0]),
-#                      (other.vals.get(i, 0) for i in keys_in[1]))
-#         res_vals = defaultdict(int, {k: v for k, v in zip(keys_out, func(*args))
-#                                      if (True if v.__class__ is not Expr else simplify(v))})
-#
-#         return self.algebra.mvfromtrusted(vals=res_vals)
