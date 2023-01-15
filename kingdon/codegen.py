@@ -13,7 +13,7 @@ import inspect
 import builtins
 import keyword
 
-from sympy import simplify, Add, Mul, Symbol, expand
+from sympy import simplify, sympify, Add, Mul, Symbol, expand
 from sympy.utilities.iterables import iterable, flatten
 from sympy.printing.numpy import NumPyPrinter
 
@@ -169,7 +169,7 @@ def codegen_gp(x, y, symbolic=False):
     return codegen_product(x, y, symbolic=symbolic)
 
 
-def codegen_conj(x, y):
+def codegen_sw(x, y):
     if x.algebra.simplify:
         res = codegen_product(x, y, ~x, symbolic=True)
         res = {k: str(simp_expr) for k, expr in res.items() if (simp_expr := expand(expr))}
@@ -355,7 +355,7 @@ def codegen_shirokov_inv(x, symbolic=False):
     which is works in any algebra, but it can be expensive to compute.
     """
     alg = x.algebra
-    n = simplify(2 ** ((alg.d + 1) // 2))  # Sympify ratio to keep the ratios exact and avoid floating point errors.
+    n = sympify(2 ** ((alg.d + 1) // 2))  # Sympify ratio to keep the ratios exact and avoid floating point errors.
     supply = power_supply(x, tuple(range(1, n + 1)))
     powers = []
     cs = []

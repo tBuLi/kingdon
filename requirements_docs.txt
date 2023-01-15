@@ -1,7 +1,6 @@
 -r requirements.txt
 sphinx
 nbsphinx
-IPython
 ipykernel
 symfit
 matplotlib
