@@ -55,7 +55,7 @@ class Algebra:
 
     # Clever dictionaries that cache previously symbolically optimized lambda functions between elements.
     gp: OperatorDict = operation_field(metadata={'codegen': codegen_gp})  # geometric product
-    conj: OperatorDict = operation_field(metadata={'codegen': codegen_sw})  # conjugation
+    sw: OperatorDict = operation_field(metadata={'codegen': codegen_sw})  # conjugation
     cp: OperatorDict = operation_field(metadata={'codegen': codegen_cp})  # commutator product
     acp: OperatorDict = operation_field(metadata={'codegen': codegen_acp})  # anti-commutator product
     ip: OperatorDict = operation_field(metadata={'codegen': codegen_ip})  # inner product
