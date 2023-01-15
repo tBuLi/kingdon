@@ -125,9 +125,9 @@ def test_broadcasting(vga2d):
 
     # Test broadcasting a rotor across a tensor-valued element
     R = vga2d.multivector({0: np.cos(np.pi / 3), 3: np.sin(np.pi / 3)})
-    Z3 = R.conj(X)
+    Z3 = R.sw(X)
     for i, xrow in enumerate(valsX.T):
-        Rx = R.conj(vga2d.vector(xrow))
+        Rx = R.sw(vga2d.vector(xrow))
         assert Rx[1] == Z3[1][i]
 
 def test_reverse(R6):
@@ -169,11 +169,11 @@ def test_gp_symbolic(vga2d):
     assert 0 in Rnormsq
     assert Rnormsq['e12'] == 0
 
-def test_conj_symbolic(vga2d):
+def test_sw_symbolic(vga2d):
     u = vga2d.vector(name='u')
     v = vga2d.vector(name='v')
     # Pure vector
-    assert u.conj(v).grades == (1,)
+    assert u.sw(v).grades == (1,)
 
 def test_cp_symbolic(R6):
     b = R6.bivector(name='B')
@@ -410,7 +410,7 @@ def test_conjugation():
     y = alg.multivector(name='y')
 
     xconjy_expected = x*y*(~x)
-    xconjy = x.conj(y)
+    xconjy = x.sw(y)
     for i in range(len(alg)):
         assert expand(xconjy[i]) == expand(xconjy_expected[i])
 
@@ -419,10 +419,10 @@ def test_projection():
     x = alg.multivector(name='x')  # multivector
     y = alg.multivector(name='y')
 
-    xconjy_expected = (x | y) * ~y
-    xconjy = x.proj(y)
+    xprojy_expected = (x | y) * ~y
+    xprojy = x.proj(y)
     for i in range(len(alg)):
-        assert expand(xconjy[i]) == expand(xconjy_expected[i])
+        assert expand(xprojy[i]) == expand(xprojy_expected[i])
 
 
 def test_outerexp(R6):

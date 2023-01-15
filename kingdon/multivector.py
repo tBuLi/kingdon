@@ -297,9 +297,14 @@ class MultiVector:
 
     __mul__ = __rmul__ = gp
 
-    def conj(self, other):
-        """ Apply `x := self` to `y := other` under conjugation: `x*y*~x`. """
-        return self.algebra.conj(self, other)
+    def sw(self, other):
+        """
+        Apply :code:`x := self` to :code:`y := other` under conjugation:
+        :code:`x.sw(y) = x*y*~x`.
+        """
+        return self.algebra.sw(self, other)
+
+    __rshift__ = sw
 
     def proj(self, other):
         """
@@ -337,12 +342,8 @@ class MultiVector:
     def lc(self, other):
         return self.algebra.lc(self, other)
 
-    __lshift__ = lc
-
     def rc(self, other):
         return self.algebra.rc(self, other)
-
-    __rshift__ = rc
 
     def sp(self, other):
         """ Scalar product: :math:`\langle x \cdot y \rangle`. """

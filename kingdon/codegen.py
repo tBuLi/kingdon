@@ -98,13 +98,13 @@ def codegen_gp(x, y, symbolic=False):
     return keys_out, func
 
 
-def codegen_conj(x, y):
+def codegen_sw(x, y):
     if x.algebra.simplify:
         res = codegen_product(x, y, ~x, name_base='gp', asdict=True, sympy=True)
         res = {k: str(simp_expr) for k, expr in res.items() if (simp_expr := simplify(expr))}
     else:
         res = codegen_product(x, y, ~x, name_base='gp', asdict=True)
-    return _func_builder(res, x, y, name_base="conj")
+    return _func_builder(res, x, y, name_base="sw")
 
 
 def codegen_cp(x, y, symbolic=False):

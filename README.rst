@@ -148,7 +148,7 @@ Operators
    * - Conjugate :code:`b` by :code:`a`
      - $a b \\widetilde{a}$
      -
-     - :code:`a.conj(b)`
+     - :code:`a.sw(b)`
    * - Project :code:`a` onto :code:`b`
      - $(a \\cdot b) b^{-1}$
      - :code:`a @ b`

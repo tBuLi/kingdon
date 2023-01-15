@@ -18,7 +18,7 @@ if __name__ == "__main__":
     shape_v = (2**d, num_rows) if num_rows != 1 else 2**d
 
     print("Kingdon", end='\n\n')
-    operations = ['b*v', 'b.cp(v)', 'b.conj(v)', 'b.proj(v)', 'b^v', 'b|v', 'b+v', 'b-v', 'b.inv()', 'b / v', '~b']
+    operations = ['b*v', 'b.cp(v)', 'b.sw(v)', 'b.proj(v)', 'b^v', 'b|v', 'b+v', 'b-v', 'b.inv()', 'b / v', '~b']
     times = defaultdict(list)
     for operation in operations:
         print(operation)
@@ -63,7 +63,7 @@ if __name__ == "__main__":
     # b = alg.multivector(bvals)
     # v = alg.multivector(vvals)
     # # print(b.cp(v))
-    # operation = 'b.conj(v)'
+    # operation = 'b.sw(v)'
     # init = timeit.timeit(operation, number=1, globals=globals())
     # print('init', init)
     # prof = cProfile.run(f'for _ in range({num_iter}): {operation}', 'restats')

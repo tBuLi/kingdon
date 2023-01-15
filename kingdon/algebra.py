@@ -15,7 +15,7 @@ import numpy as np
 from IPython.display import Javascript, display
 
 from kingdon.codegen import (
-    codegen_gp, codegen_conj, codegen_cp, codegen_ip, codegen_op, codegen_div,
+    codegen_gp, codegen_sw, codegen_cp, codegen_ip, codegen_op, codegen_div,
     codegen_rp, codegen_acp, codegen_proj, codegen_sp, codegen_lc, codegen_inv,
     codegen_rc, codegen_normsq, codegen_outerexp
 )
@@ -54,7 +54,7 @@ class Algebra:
 
     # Clever dictionaries that cache previously symbolically optimized lambda functions between elements.
     gp: OperatorDict = operation_field(metadata={'codegen': codegen_gp})  # geometric product dict
-    conj: OperatorDict = operation_field(metadata={'codegen': codegen_conj})  # conjugation dict
+    sw: OperatorDict = operation_field(metadata={'codegen': codegen_sw})  # conjugation dict
     cp: OperatorDict = operation_field(metadata={'codegen': codegen_cp})  # commutator product dict
     acp: OperatorDict = operation_field(metadata={'codegen': codegen_acp})  # anti-commutator product dict
     ip: OperatorDict = operation_field(metadata={'codegen': codegen_ip})  # inner product dict
