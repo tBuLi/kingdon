@@ -163,7 +163,7 @@ def test_gp_symbolic(vga2d):
 
     # The norm of a bireflection is a scalar.
     Rnormsq = R*~R
-    assert Rnormsq[0] == expand((u1*v1 + u2*v2)**2 - (-u1*v2 + u2*v1)*(u1*v2 - u2*v1))
+    assert expand(Rnormsq[0]) == expand((u1*v1 + u2*v2)**2 - (-u1*v2 + u2*v1)*(u1*v2 - u2*v1))
     assert len(Rnormsq) == 1
     assert 'e12' not in Rnormsq
     assert 0 in Rnormsq
@@ -272,33 +272,34 @@ def test_hodge_dual(pga2d, pga3d):
     z = y.undual()
     assert z == x
 
-def test_regressive(pga3d):
+def test_regressive():
     """ Test the regressive product of full mvs in 3DPGA against the known result from GAmphetamine.js"""
-    xvals = symbols(','.join(f'x{i}' for i in range(1, len(pga3d) + 1)))
-    x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16 = xvals
+    pga3d = Algebra(3, 0, 1)
+    xvals = symbols(','.join(f'x{i}' for i in range(len(pga3d))))
+    x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15 = xvals
     x = pga3d.multivector({k: xvals[i] for i, k in enumerate(pga3d.canon2bin)})
-    yvals = symbols(','.join(f'y{i}' for i in range(1, len(pga3d) + 1)))
-    y1, y2, y3, y4, y5, y6, y7, y8, y9, y10, y11, y12, y13, y14, y15, y16 = yvals
+    yvals = symbols(','.join(f'y{i}' for i in range(len(pga3d))))
+    y0, y1, y2, y3, y4, y5, y6, y7, y8, y9, y10, y11, y12, y13, y14, y15 = yvals
     y = pga3d.multivector({k: yvals[i] for i, k in enumerate(pga3d.canon2bin)})
 
     # Known output from GAmphetamine.js
     known_vals = {
-        "e": (x1*y16-x10*y7+x11*y6+x12*y5-x13*y4+x14*y3-x15*y2+x16*y1+x2*y15-x3*y14+x4*y13-x5*y12+x6*y11-x7*y10+x8*y9+x9*y8),
-        "e1": (x12*y8-x13*y7+x14*y6+x16*y2+x2*y16+x6*y14-x7*y13+x8*y12),
-        "e2": (x10*y12+x12*y10-x13*y9+x15*y6+x16*y3+x3*y16+x6*y15-x9*y13),
-        "e3": (x11*y12+x12*y11-x14*y9+x15*y7+x16*y4+x4*y16+x7*y15-x9*y14),
-        "e4": (-x10*y14+x11*y13+x13*y11-x14*y10+x15*y8+x16*y5+x5*y16+x8*y15),
-        "e12": (x12*y13-x13*y12+x16*y6+x6*y16),
-        "e13": (x12*y14-x14*y12+x16*y7+x7*y16),
-        "e14": (x13*y14-x14*y13+x16*y8+x8*y16),
-        "e23": (x12*y15-x15*y12+x16*y9+x9*y16),
-        "e24": (x10*y16+x13*y15-x15*y13+x16*y10),
-        "e34": (x11*y16+x14*y15-x15*y14+x16*y11),
-        "e123": (x12*y16+x16*y12),
-        "e124": (x13*y16+x16*y13),
-        "e134": (x14*y16+x16*y14),
-        "e234": (x15*y16+x16*y15),
-        "e1234": (x16*y16)
+        "e": (x0*y15+x1*y14+x10*y5+x11*y4-x12*y3+x13*y2-x14*y1+x15*y0-x2*y13+x3*y12-x4*y11+x5*y10-x6*y9+x7*y8+x8*y7-x9*y6),
+        "e0": (x1*y15+x11*y7-x12*y6+x13*y5+x15*y1+x5*y13-x6*y12+x7*y11),
+        "e1": (x11*y9-x12*y8+x14*y5+x15*y2+x2*y15+x5*y14-x8*y12+x9*y11),
+        "e2": (x10*y11+x11*y10-x13*y8+x14*y6+x15*y3+x3*y15+x6*y14-x8*y13),
+        "e3": (x10*y12+x12*y10-x13*y9+x14*y7+x15*y4+x4*y15+x7*y14-x9*y13),
+        "e01": (x11*y12-x12*y11+x15*y5+x5*y15),
+        "e02": (x11*y13-x13*y11+x15*y6+x6*y15),
+        "e03": (x12*y13-x13*y12+x15*y7+x7*y15),
+        "e12": (x11*y14-x14*y11+x15*y8+x8*y15),
+        "e13": (x12*y14-x14*y12+x15*y9+x9*y15),
+        "e23": (x10*y15+x13*y14-x14*y13+x15*y10),
+        "e012": (x11*y15+x15*y11),
+        "e013": (x12*y15+x15*y12),
+        "e023": (x13*y15+x15*y13),
+        "e123": (x14*y15+x15*y14),
+        "e0123": (x15*y15)
     }
     known = pga3d.multivector(known_vals)
     x_regr_y = x & y
