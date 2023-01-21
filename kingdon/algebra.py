@@ -335,7 +335,17 @@ class Algebra:
           var Algebra = module.exports;
 
           var canvas = Algebra({{metric:{metric}, Cayley:{cayley_table}}},()=>{{
-              var data = {json_subjects}.map(x=>x.length=={len(self)}?new Element(x):x);
+              var toElement = (x)=>{{
+                if (Array.isArray(x)) {{
+                  if (x.length=={len(self)} && !Array.isArray(x[0])) {{
+                    return new Element(x);
+                  }} else {{
+                    return x.map(toElement);
+                  }}
+                }};
+                return x;
+              }};
+              var data = {json_subjects}.map(toElement);
               return this.graph(data, {options})
           }})
 
