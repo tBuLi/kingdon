@@ -170,6 +170,11 @@ def codegen_gp(x, y, symbolic=False):
 
 
 def codegen_sw(x, y):
+    """
+    Generate the projection of :code:`x` onto :code:`y`: :math:`x y \widetilde{x}`.
+
+    :return: tuple of keys in binary representation and a lambda function.
+    """
     if x.algebra.simplify:
         res = codegen_product(x, y, ~x, symbolic=True)
         res = {k: str(simp_expr) for k, expr in res.items() if (simp_expr := expand(expr))}
@@ -180,7 +185,7 @@ def codegen_sw(x, y):
 
 def codegen_cp(x, y, symbolic=False):
     """
-    Generate the commutator product of `x := self` and `y := other`: `x.cp(y) = 0.5*(x*y-y*x)`.
+    Generate the commutator product of :code:`x` and :code:`y`: :code:`x.cp(y) = 0.5*(x*y-y*x)`.
 
     :return: tuple of keys in binary representation and a lambda function.
     """
@@ -191,7 +196,7 @@ def codegen_cp(x, y, symbolic=False):
 
 def codegen_acp(x, y, symbolic=False):
     """
-    Generate the anti-commutator product of `x := self` and `y := other`: `x.acp(y) = 0.5*(x*y+y*x)`.
+    Generate the anti-commutator product of :code:`x` and :code:`y`: :code:`x.acp(y) = 0.5*(x*y+y*x)`.
 
     :return: tuple of keys in binary representation and a lambda function.
     """
@@ -202,7 +207,7 @@ def codegen_acp(x, y, symbolic=False):
 
 def codegen_ip(x, y, diff_func=abs, symbolic=False):
     """
-    Generate the inner product of `x := self` and `y := other`.
+    Generate the inner product of :code:`x` and :code:`y`.
 
     :param diff_func: How to treat the difference between the binary reps of the basis blades.
         if :code:`abs`, compute the symmetric inner product. When :code:`lambda x: -x` this
@@ -216,7 +221,7 @@ def codegen_ip(x, y, diff_func=abs, symbolic=False):
 
 def codegen_lc(x, y):
     """
-    Generate the left-contraction of `x := self` and `y := other`.
+    Generate the left-contraction of :code:`x` and :code:`y`.
 
     :return: tuple of keys in binary representation and a lambda function.
     """
@@ -225,7 +230,7 @@ def codegen_lc(x, y):
 
 def codegen_rc(x, y):
     """
-    Generate the right-contraction of `x := self` and `y := other`.
+    Generate the right-contraction of :code:`x` and :code:`y`.
 
     :return: tuple of keys in binary representation and a lambda function.
     """
@@ -234,7 +239,7 @@ def codegen_rc(x, y):
 
 def codegen_sp(x, y):
     """
-    Generate the scalar product of `x := self` and `y := other`.
+    Generate the scalar product of :code:`x` and :code:`y`.
 
     :return: tuple of keys in binary representation and a lambda function.
     """
@@ -243,7 +248,7 @@ def codegen_sp(x, y):
 
 def codegen_proj(x, y):
     """
-    Generate the projection of `x := self` onto `y := other`: :math:`(x \cdot y) / y`.
+    Generate the projection of :code:`x` onto :code:`y`: :math:`(x \cdot y) \widetilde{y}`.
 
     :return: tuple of keys in binary representation and a lambda function.
     """
@@ -256,7 +261,7 @@ def codegen_proj(x, y):
 
 def codegen_op(x, y, symbolic=False):
     """
-    Generate the outer product of `x := self` and `y := other`: `x.op(y) = x ^ y`.
+    Generate the outer product of :code:`x` and :code:`y`: :code:`x.op(y) = x ^ y`.
 
     :x: MultiVector
     :y: MultiVector
