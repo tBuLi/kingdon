@@ -4,7 +4,7 @@ from typing import Callable, Tuple
 import string
 
 from numba import njit
-from sympy import Symbol, Expr, expand
+from sympy import Symbol, Expr, simplify
 
 from kingdon.multivector import MultiVector
 from kingdon.codegen import do_codegen
@@ -50,9 +50,10 @@ class OperatorDict(Mapping):
     def __iter__(self):
         return iter(self.operator_dict)
 
-    def filter(self, keys_out, values_out):
+    @staticmethod
+    def filter(keys_out, values_out):
         """ For given keys and values, keep only symbolically non-zero elements. """
-        keysvalues = ((k, v if not isinstance(v, Expr) else expand(v))
+        keysvalues = ((k, v if not isinstance(v, Expr) else simplify(v))
                       for k, v in zip(keys_out, values_out))
         keysvalues = tuple((k, v) for k, v in keysvalues if not isinstance(v, Expr) or v)
         return zip(*keysvalues) if keysvalues else (tuple(), tuple())

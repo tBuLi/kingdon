@@ -6,7 +6,7 @@ from dataclasses import replace
 import pytest
 import numpy as np
 
-from sympy import Symbol, simplify, factor, expand, collect, sympify
+from sympy import Symbol, simplify, factor, expand, collect, sympify, cos, sin
 from kingdon import Algebra, MultiVector, symbols
 from kingdon.multivector_json import MultiVectorEncoder
 
@@ -163,7 +163,7 @@ def test_gp_symbolic(vga2d):
 
     # The norm of a bireflection is a scalar.
     Rnormsq = R*~R
-    assert Rnormsq[0] == expand((u1*v1 + u2*v2)**2 - (-u1*v2 + u2*v1)*(u1*v2 - u2*v1))
+    assert expand(Rnormsq[0] - ((u1*v1 + u2*v2)**2 + (u1*v2 - u2*v1)**2)) == 0
     assert len(Rnormsq) == 1
     assert 'e12' not in Rnormsq
     assert 0 in Rnormsq
@@ -183,6 +183,16 @@ def test_cp_symbolic(R6):
     # Pure vector
     w = b.cp(v)
     assert w.grades == (1,)
+
+def test_norm_euler():
+    alg = Algebra(2)
+    e, e12 = alg.blades['e'], alg.blades['e12']
+    t = Symbol('t')
+    R = cos(t) * e + sin(t) * e12
+    Rnormsq = R.normsq()
+    assert Rnormsq.grades == (0,)
+    assert Rnormsq.values()[0] == 1
+
 
 def test_blades(vga2d):
     assert vga2d.blades['e'] == vga2d.multivector({'e': 1})
@@ -355,6 +365,9 @@ def test_oddmultivector(R6):
 def test_namedmv(R6):
     keys = (1, 3, 17)
     x = R6.multivector(name='x', keys=keys)
+    assert x.keys() == keys
+    named_keys = ('e1', 'e12', 'e15')
+    y = R6.multivector(name='x', keys=named_keys)
     assert x.keys() == keys
 
 
