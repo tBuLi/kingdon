@@ -19,7 +19,7 @@ class MultiVector:
     def __new__(cls, algebra, values=None, keys=None, *, name=None, grades=None, symbolcls=Symbol):
         """
         :param algebra: Instance of :class:`~kingdon.algebra.Algebra`.
-        :param keys: Keys corresponding to the basis blades in binary rep.
+        :param keys: Keys corresponding to the basis blades in either binary rep or as strings, e.g. :code:'"e12"'.
         :param values: Values of the multivector. If keys are provided, then keys and values should
             satisfy :code:`len(keys) == len(values)`. If no keys nor grades are provided, :code:`len(values)`
             should equal :code:`len(algebra)`, i.e. a full multivector. If grades is provided,
@@ -35,6 +35,9 @@ class MultiVector:
         # Sanitize input
         values = values if values is not None else tuple()
         name = name if name is not None else ''
+        keys = keys if keys is not None else tuple()
+        if not all(isinstance(k, int) for k in keys):
+            keys = tuple(k if k in algebra.bin2canon else algebra.canon2bin[k] for k in keys)
         if grades is not None:
             if not all(0 <= grade <= algebra.d for grade in grades):
                 raise ValueError(f'Each grade in `grades` needs to be a value between 0 and {algebra.d}.')
@@ -50,7 +53,7 @@ class MultiVector:
             keys = algebra.indices_for_grades[grades]
         elif name and not values:
             # values was not given, but we do have a name. So we are in symbolic mode.
-            keys = algebra.indices_for_grades[grades] if keys is None else keys
+            keys = algebra.indices_for_grades[grades] if not keys else keys
             values = tuple(symbolcls(f'{name}{algebra.bin2canon[k][1:]}') for k in keys)
         elif len(keys) != len(values):
             raise TypeError(f'Length of `keys` and `values` have to match.')
