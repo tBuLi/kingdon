@@ -28,41 +28,44 @@ Pythonic Geometric Algebra Package
 Features
 --------
 
-Kingdon is a Geometric Algebra (GA) library which aims to have a pythonic
-and high-performance API for GA computation.
-It was designed to work with numba to achieve high-performance and
-broadcasts across numpy arrays so transformations can be applied easily to
-e.g. point-clouds and meshes.
+Kingdon is a Geometric Algebra (GA) library which combines a Pythonic API with
+symbolic simplification and just-in-time compilation to achieve high-performance in a single package.
+It support both symbolic and numerical GA computations.
+Moreover, :code:`kingdon` uses :code:`ganja.js` for visualization in notebooks,
+making it an extremely well rounded GA package.
+
+In bullet points:
 
 - Symbolically optimized.
 - Leverage sparseness of input.
-- Automatic broadcasting.
-- Numba enabled.
+- :code:`numba` enabled for numerical computations.
+- :mod:`sympy` support for symbolic computations.
+- :code:`ganja.js` enabled graphics in jupyter notebooks.
+- Automatic broadcasting, such that transformations can be applied to e.g. point-clouds.
 
 Code Example
 ------------
-In order to demonstrate the power of Kingdon, let us first consider the common use-case of the
+In order to demonstrate the power of :code:`Kingdon`, let us first consider the common use-case of the
 commutator product between a bivector and vector.
 
 In order to create an algebra, use :code:`Algebra`. When calling :code:`Algebra` we must provide the signature of the
-algebra, in this case we shall go for 3DPGA, which is the algebra $\\mathbb{R}_{3,0,1}$.
-In order to make elements of the algebra, :code:`kingdon` provides the functions :code:`Algebra.multivector`,
-:code:`Algebra.vector`, :code:`Algebra.bivector`, etc.
-These accept a sequence of values as their primary argument.
-For example:
+algebra, in this case we shall go for 3DPGA, which is the algebra :math:`\mathbb{R}_{3,0,1}`.
+There are a number of ways to make elements of the algebra. It can be convenient to work with the basis blades directly.
+We can add them to the local namespace by calling :code:`locals().update(alg.blades)`:
 
 .. code-block:: python
 
     >>> from kingdon import Algebra
     >>> alg = Algebra(3, 0, 1)
-    >>> b = alg.bivector({'e12': 2})
-    >>> v = alg.vector({'e1': 3})
+    >>> locals().update(alg.blades)
+    >>> b = 2 * e12
+    >>> v = 3 * e1
     >>> b.cp(v)
     (-6) * e2
 
 This example shows that only the :code:`e2` coefficient is calculated, despite the fact that there are
-6 bivector and 4 vector coefficients in 3DPGA. But because :code:`kingdon` performs symbolic optimization before
-performing the computation, it knows that in this case only :code:`e2` can be non-zero.
+6 bivector and 4 vector coefficients in 3DPGA. But by exploiting the sparseness of the input and by performing symbolic
+optimization, :code:`kingdon` knows that in this case only :code:`e2` can be non-zero.
 
 Symbolic usage
 --------------
@@ -82,7 +85,6 @@ relevant fields with symbols. This allows us to easily perform symbolic computat
     >>> b.cp(v)
     (-b12*v1 + b23*v3) * e2 + (b12*v2 + b13*v3) * e1 + (-b13*v1 - b23*v2) * e3 + (-b14*v1 - b24*v2 - b34*v3) * e4
 
-Notice that the indices of the symbols are identical to the basis blades, e.g. $b_{12} \\mathbf{e}_{12}$.
 It is also possible to define some coefficients to be symbolic by inputting a string, while others can be numeric::
 
     >>> from kingdon import Algebra, symbols

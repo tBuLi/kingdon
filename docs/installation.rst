@@ -8,23 +8,19 @@ Installation
 Stable release
 --------------
 
-:code:`Kingdon` is currently still under development, and thus no stable release is available yet.
+To install Kingdon, run this command in your terminal:
 
-.. only:: comment
+.. code-block:: console
 
-    To install Kingdon, run this command in your terminal:
+    $ pip install kingdon
 
-    .. code-block:: console
+This is the preferred method to install Kingdon, as it will always install the most recent stable release.
 
-        $ pip install kingdon
+If you don't have `pip`_ installed, this `Python installation guide`_ can guide
+you through the process.
 
-    This is the preferred method to install Kingdon, as it will always install the most recent stable release.
-
-    If you don't have `pip`_ installed, this `Python installation guide`_ can guide
-    you through the process.
-
-    .. _pip: https://pip.pypa.io
-    .. _Python installation guide: http://docs.python-guide.org/en/latest/starting/installation/
+.. _pip: https://pip.pypa.io
+.. _Python installation guide: http://docs.python-guide.org/en/latest/starting/installation/
 
 
 From sources
