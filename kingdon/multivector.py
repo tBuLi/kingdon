@@ -151,6 +151,10 @@ class MultiVector:
         return self.fromkeysvalues(self.algebra, tuple(vals.keys()), tuple(vals.values()))
 
     @cached_property
+    def type_number(self) -> int:
+        return int(''.join('1' if i in self.keys() else '0' for i in reversed(self.algebra.canon2bin.values())), 2)
+
+    @cached_property
     def issymbolic(self):
         """ True if this mv contains Symbols, False otherwise. """
         return any(isinstance(v, Expr) for v in self.values())

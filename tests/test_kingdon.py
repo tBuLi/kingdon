@@ -564,3 +564,9 @@ def test_json():
     x = alg.vector(xvals)
     xjson = json.dumps(x, cls=MultiVectorEncoder)
     assert xjson == "[0, 2, 3, 4, 0, 0, 0, 0]"
+
+def test_type():
+    alg = Algebra(3)
+    keys = (0b000, 0b100, 0b101, 0b111)
+    x = alg.multivector(name='x', keys=keys)
+    assert x.type_number == 0b10101001
