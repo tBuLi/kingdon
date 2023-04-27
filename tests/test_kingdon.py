@@ -221,9 +221,14 @@ def test_outer(sta):
 def test_alg_graded(vga2d):
     vga2d_graded = replace(vga2d, graded=True)
     assert vga2d != vga2d_graded
-    u = vga2d_graded.multivector({'e1': 1})
-    v = vga2d_graded.multivector({'e2': 3})
-    print(u*v)
+    u = vga2d_graded.vector([1, 2])
+    v = vga2d_graded.vector([0, 3])
+    R = u * v
+    assert R.grades == (0, 2)
+    assert R.e == 6
+    assert R.e1 == 0
+    assert R.e2 == 0
+    assert R.e12 == 3
 
 
 def test_inner_products(vga2d):
@@ -565,8 +570,21 @@ def test_json():
     xjson = json.dumps(x, cls=MultiVectorEncoder)
     assert xjson == "[0, 2, 3, 4, 0, 0, 0, 0]"
 
+
 def test_type():
     alg = Algebra(3)
     keys = (0b000, 0b100, 0b101, 0b111)
     x = alg.multivector(name='x', keys=keys)
     assert x.type_number == 0b10101001
+
+
+def test_graded():
+    alg = Algebra(2, 0, 1, graded=True)
+
+    for b in alg.blades.values():
+        assert len(b.grades) == 1
+        assert b.keys() == alg.indices_for_grades[b.grades]
+
+    with pytest.raises(ValueError):
+        # In graded mode, the keys have to be correct.
+        x = alg.multivector(name='x', keys=(1,))

@@ -133,8 +133,15 @@ class Algebra:
 
         self.swaps, self.signs, self.cayley = self._prepare_signs_and_cayley()
 
-        self.blades = {k: MultiVector.fromkeysvalues(self, keys=(v,), values=(1,))
-                       for k, v in self.canon2bin.items()}
+        if self.graded:
+            # Make the basis blades gradewise dense.
+            self.blades = {self.bin2canon[v]: self.multivector(values=[int(v == i) for i in indices], grades=(g,))
+                           for g, indices in self.indices_for_grade.items() for v in indices}
+        else:
+            # Maximal sparseness, just set the key that was asked for.
+            self.blades = {k: MultiVector.fromkeysvalues(self, keys=(v,), values=(1,))
+                           for k, v in self.canon2bin.items()}
+
         self.pss = self.blades[self.bin2canon[2 ** self.d - 1]]
 
         # Prepare OperatorDict's
