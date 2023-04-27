@@ -38,17 +38,23 @@ class MultiVector:
         keys = keys if keys is not None else tuple()
         if not all(isinstance(k, int) for k in keys):
             keys = tuple(k if k in algebra.bin2canon else algebra.canon2bin[k] for k in keys)
+
         if grades is not None:
             if not all(0 <= grade <= algebra.d for grade in grades):
                 raise ValueError(f'Each grade in `grades` needs to be a value between 0 and {algebra.d}.')
         else:
-            grades = tuple(range(algebra.d + 1))
+            if keys:
+                grades = tuple(sorted({format(k, 'b').count('1') for k in keys}))
+            else:
+                grades = tuple(range(algebra.d + 1))
+
+        if algebra.graded and keys and keys != algebra.indices_for_grades[grades]:
+            raise ValueError(f"In graded mode, the keys should be equal to "
+                             f"those expected for a multivector of {grades=}.")
 
         # Construct a new MV on the basis of the kind of input we received.
         if isinstance(values, Mapping):
             keys, values = zip(*values.items()) if values else (tuple(), tuple())
-        elif len(values) == len(algebra) and not keys:
-            keys = tuple(range(len(values)))
         elif len(values) == len(algebra.indices_for_grades[grades]) and not keys:
             keys = algebra.indices_for_grades[grades]
         elif name and not values:
@@ -61,6 +67,7 @@ class MultiVector:
         if not all(isinstance(k, int) for k in keys):
             keys = tuple(key if key in algebra.bin2canon else algebra.canon2bin[key]
                          for key in keys)
+
         if any(isinstance(v, str) for v in values):
             values = tuple(val if not isinstance(val, str) else sympify(val)
                            for val in values)
@@ -275,6 +282,11 @@ class MultiVector:
         else:
             return_values = values[(key, *subslices)]
         return return_values
+
+    def __getattr__(self, basis_blade):
+        if basis_blade not in self.algebra.canon2bin:
+            return 0
+        return self[self.algebra.canon2bin[basis_blade]]
 
     def __contains__(self, item):
         item = item if item in self.algebra.bin2canon else self.algebra.canon2bin[item]
