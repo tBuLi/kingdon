@@ -548,7 +548,7 @@ def test_asdensemv():
     # Manually make the expected dense x
     x_densevals = np.zeros(len(alg))
     x_densevals[np.array([1, 2, 4])] = xvals
-    x_dense = alg.multivector(x_densevals)
+    x_dense = alg.multivector(x_densevals, keys=tuple(range(8)))
     # Compare to asdensemv method.
     y = x.asdensemv(canonical=False)
     assert y.keys() == x_dense.keys()

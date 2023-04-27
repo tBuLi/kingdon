@@ -133,11 +133,11 @@ Operators
      - :code:`a.sp(b)`
    * - Left-contraction
      - $a \\rfloor b$
-     - :code:`a << b`
+     -
      - :code:`a.lc(b)`
    * - Right-contraction
      - $a \\lfloor b$
-     - :code:`a >> b`
+     -
      - :code:`a.rc(b)`
    * - Outer (Exterior)
      - $a \\wedge b$
@@ -149,7 +149,7 @@ Operators
      - :code:`a.rp(b)`
    * - Conjugate :code:`b` by :code:`a`
      - $a b \\widetilde{a}$
-     -
+     - :code:`a >> b`
      - :code:`a.sw(b)`
    * - Project :code:`a` onto :code:`b`
      - $(a \\cdot b) b^{-1}$
