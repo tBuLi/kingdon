@@ -3,6 +3,7 @@ from functools import partial
 from collections import Counter
 from dataclasses import dataclass, field, fields
 import json
+from collections.abc import Mapping
 try:
     from functools import cached_property
 except ImportError:
@@ -96,7 +97,7 @@ class Algebra:
 
     signs: dict = field(init=False, repr=False, compare=False)
     cayley: dict = field(init=False, repr=False, compare=False)
-    blades: dict = field(init=False, repr=False, compare=False)
+    blades: "BladeDict" = field(init=False, repr=False, compare=False)
     pss: object = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
@@ -119,28 +120,23 @@ class Algebra:
 
         # Setup mapping from binary to canonical string rep and vise versa
         self.bin2canon = {
-            eJ: 'e' + ''.join(str(num + self.start_index - 1) for ei in range(0, self.d) if (num := (eJ & 2**ei).bit_length()))
+            eJ: 'e' + ''.join(hex(num + self.start_index - 1)[2:] for ei in range(0, self.d) if (num := (eJ & 2**ei).bit_length()))
             for eJ in range(2 ** self.d)
         }
         self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
         def pretty_blade(blade):
             if blade == 'e':
                 return '1'
-            for old, new in tuple(zip("e0123456789", "𝐞₀₁₂₃₄₅₆₇₈₉")):
+            blade = '𝐞' + blade[1:]
+            for old, new in tuple(zip("0123456789abcde", "⁰¹²³⁴⁵⁶⁷⁸⁹ᵃᵇᶜᵈᵉ")):
                 blade = blade.replace(old, new)
             return blade
         self._bin2canon_prettystr = {k: pretty_blade(v) for k, v in self.bin2canon.items()}
 
         self.swaps, self.signs, self.cayley = self._prepare_signs_and_cayley()
 
-        if self.graded:
-            # Make the basis blades gradewise dense.
-            self.blades = {self.bin2canon[v]: self.multivector(values=[int(v == i) for i in indices], grades=(g,))
-                           for g, indices in self.indices_for_grade.items() for v in indices}
-        else:
-            # Maximal sparseness, just set the key that was asked for.
-            self.blades = {k: MultiVector.fromkeysvalues(self, keys=(v,), values=(1,))
-                           for k, v in self.canon2bin.items()}
+        # Blades are not precomputed for algebras larger than 6D.
+        self.blades = BladeDict(algebra=self, lazy=self.d > 6)
 
         self.pss = self.blades[self.bin2canon[2 ** self.d - 1]]
 
@@ -191,7 +187,7 @@ class Algebra:
 
     def _prepare_signs_and_cayley(self):
         """
-        Prepares two dicts whose keys are two basis-blades in (binary rep) and the result is either
+        Prepares two dicts whose keys are two basis-blades (in binary rep) and the result is either
         just the sign (1, -1, 0) of the corresponding multiplication, or the full result.
         The full result is essentially the Cayley table, if printed as a table.
 
@@ -202,20 +198,9 @@ class Algebra:
         swaps_arr = np.zeros((len(self), len(self)), dtype=int)
         # swap_dict = {}
         for eI, eJ in product(self.canon2bin, repeat=2):
-            prod = eI[1:] + eJ[1:]
             # Compute the number of swaps of orthogonal vectors needed to order the basis vectors.
-            swaps = 0
-            if len(prod) > 1:
-                prev_swap = 0
-                while True:
-                    for i in range(len(prod) - 1):
-                        if prod[i] > prod[i + 1]:
-                            swaps += 1
-                            prod = prod[:i] + prod[i + 1] + prod[i] + prod[i+2:]
-                    if prev_swap == swaps:
-                        break
-                    else:
-                        prev_swap = swaps
+            prod = list(eI[1:] + eJ[1:])
+            swaps = _sort_product(prod) if len(prod) else 0
             swaps_arr[self.canon2bin[eI], self.canon2bin[eJ]] = swaps
 
             # Remove even powers of basis-vectors.
@@ -223,7 +208,7 @@ class Algebra:
             count = Counter(prod)
             for key, value in count.items():
                 if value // 2:
-                    sign *= self.signature[int(key) - self.start_index]
+                    sign *= self.signature[int(key, base=16) - self.start_index]
                 count[key] = value % 2
             signs[self.canon2bin[eI], self.canon2bin[eJ]] = sign
 
@@ -360,3 +345,55 @@ class Algebra:
         }})
         """
         display(Javascript(src))
+
+
+def _sort_product(prod):
+    """
+    Compute the number of swaps of orthogonal vectors needed to order the basis vectors. E.g. in
+    ['1', '2', '3', '1', '2'] we need 3 swaps to get to ['1', '1', '2', '2', '3'].
+
+    Changes the input list! This is by design.
+    """
+    swaps = 0
+    if len(prod) > 1:
+        prev_swap = 0
+        while True:
+            for i in range(len(prod) - 1):
+                if prod[i] > prod[i + 1]:
+                    swaps += 1
+                    prod[i], prod[i + 1] = prod[i + 1], prod[i]
+            if prev_swap == swaps:
+                break
+            else:
+                prev_swap = swaps
+    return swaps
+
+
+@dataclass
+class BladeDict(Mapping):
+    algebra: Algebra
+    lazy: bool = field(default=False)
+    blades: dict = field(default_factory=dict, init=False, repr=False, compare=False)
+
+    def __post_init__(self):
+        if not self.lazy:
+            # If not lazy, retrieve all blades once to force initiation.
+            for blade in self.algebra.canon2bin: self[blade]
+
+    def __getitem__(self, blade):
+        """ Blade must be in canonical form, e.g. 'e12'. """
+        if blade not in self.blades:
+            bin_blade = self.algebra.canon2bin[blade]
+            if self.algebra.graded:
+                g = format(bin_blade, 'b').count('1')
+                indices = self.algebra.indices_for_grade[g]
+                self.blades[blade] = self.algebra.multivector(values=[int(bin_blade == i) for i in indices], grades=(g,))
+            else:
+                self.blades[blade] = MultiVector.fromkeysvalues(self.algebra, keys=(bin_blade,), values=(1,))
+        return self.blades[blade]
+
+    def __len__(self):
+        return len(self.blades)
+
+    def __iter__(self):
+        return iter(self.blades)
