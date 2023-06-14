@@ -2,7 +2,7 @@
 Basic Usage
 ===========
 
-The most important object in all of :mod:`kingdon` is :code:`Algebra`::
+The most important object in all of :code:`kingdon` is :code:`Algebra`::
 
     from kingdon import Algebra
 
@@ -46,17 +46,17 @@ For example, let us create two symbolic vectors :code:`u` and :code:`v` in this 
     >>> v
     (v1) * e1 + (v2) * e2
 
-The return type of :code:`Algebra.multivector` is an instance of :class:`~kingdon.MultiVector`.
+The return type of :code:`Algebra.multivector` is an instance of :class:`~kingdon.multivector.MultiVector`.
 
 .. note::
     :code:`kingdon` offers convenience methods for common types of multivectors, such as the vectors above.
     For example, the vectors above can also be created using :code:`u = alg.vector(name='u')`.
-    Moreover, a scalar is created by :meth:`~kingdon.Algebra.scalar`, a bivector by :meth:`~kingdon.Algebra.bivector`,
-    a pseudoscalar by :meth:`~kingdon.Algebra.pseudoscalar`, and so on.
+    Moreover, a scalar is created by :meth:`~kingdon.algebra.Algebra.scalar`, a bivector by :meth:`~kingdon.algebra.Algebra.bivector`,
+    a pseudoscalar by :meth:`~kingdon.algebra.Algebra.pseudoscalar`, and so on.
     However, all of these merely add the corresponding :code:`grades` argument to your input and
     then call :code:`alg.multivector`, so :code:`alg.multivector` is what we need to understand.
 
-:class:`~kingdon.MultiVector`'s support common math operators:
+:class:`~kingdon.multivector.MultiVector`'s support common math operators:
 
 .. code-block::
 
@@ -87,7 +87,7 @@ line :code:`v` in the line :code:`u` by using conjugation:
 
 we see that the result is again a vector, as it should be.
 
-These examples should show that the symbolic multivectors of :mod:`kingdon`
+These examples should show that the symbolic multivectors of :code:`kingdon`
 make it easy to do symbolic computations. Moreover, we can also use :mod:`sympy` expressions
 as values for the multivector:
 
@@ -132,8 +132,8 @@ For example, to repeat some of the examples above with numerical values, we coul
     (0.1541) + (0.0886) * e12
 
 A big performance bottleneck that we suffer from in Python, is that arrays over objects are very slow.
-So while we could make a numpy array filled with :code:`~kingdon.MultiVector`'s, this would tank our performance.
-:mod:`kingdon` gets around this problem by instead accepting numpy arrays as input. So to make a collection of
+So while we could make a numpy array filled with :code:`~kingdon.multivector.MultiVector`'s, this would tank our performance.
+:code:`kingdon` gets around this problem by instead accepting numpy arrays as input. So to make a collection of
 3 lines, we do
 
 .. code-block::
@@ -145,7 +145,7 @@ So while we could make a numpy array filled with :code:`~kingdon.MultiVector`'s,
     ([0.82499172 0.71181276 0.98052928]) * e1 + ([0.53395072 0.07312351 0.42464341]) * e2
 
 what is important here is that the first dimension of the array has to have the expected length: 2 for a vector.
-All other dimensions are not used by :mod:`kingdon`. Now we can reflect this multivector in the :code:`e1` line:
+All other dimensions are not used by :code:`kingdon`. Now we can reflect this multivector in the :code:`e1` line:
 
 .. code-block::
 
@@ -159,7 +159,7 @@ and with only minor performance penalties.
 Operators
 ---------
 
-Instances of :mod:`~kingdon.MultiVector` overload all common Geometric Algebra operators.
+Instances of :mod:`~kingdon.multivector.MultiVector` overload all common Geometric Algebra operators.
 Below is an overview:
 
 .. list-table:: Operators
@@ -243,7 +243,7 @@ when codegen is performed for the given input, which is why this isn't the defau
 Graphing using :code:`ganja.js`
 -------------------------------
 
-:mod:`kingdon` supports the :code:`ganja.js` graphing syntax. For those already familiar with
+:code:`kingdon` supports the :code:`ganja.js` graphing syntax. For those already familiar with
 :code:`ganja.js`, the API will feel very similar:
 
 .. code-block::
@@ -255,7 +255,7 @@ elements to graph, whereas keyword arguments are passed to :code:`ganja.js` as o
 Hence, the example above will graph the line :code:`u` with :code:`lineWidth = 3`,
 and will attach the label "u" to it, and all of this will be red.
 Identical to :code:`ganja.js`, valid inputs to :code:`alg.graph` are (lists of) instances
-of :class:`~kingdon.MultiVector`, strings, and hexadecimal numbers to indicate colors.
+of :class:`~kingdon.multivector.MultiVector`, strings, and hexadecimal numbers to indicate colors.
 These strings can be simple labels, or valid SVG syntax.
 
 .. note::
@@ -265,10 +265,10 @@ These strings can be simple labels, or valid SVG syntax.
 
 Performance
 -----------
-Because :mod:`kingdon` attempts to symbolically optimize expressions
+Because :code:`kingdon` attempts to symbolically optimize expressions
 using :mod:`sympy` the first time they are called, the first call to any operation is always slow,
 whereas subsequent calls have extremely good performance.
-This is because :mod:`kingdon` first leverages the sparseness of the input,
+This is because :code:`kingdon` first leverages the sparseness of the input,
 *and* subsequently uses symbolic optimization to eliminate any terms that are always zero
 regardless of the input.
 For example, the product :math:`\mathbf{e}_{1} \mathbf{e}_{12}` of the vector :math:`\mathbf{e}_1`
@@ -277,7 +277,7 @@ and the bivector :math:`\mathbf{e}_{12}` in :math:`\mathbb{R}_{2+p',q,r}` always
 In :code:`kingdon`, it will also be equally fast to compute this product in all of these algebras,
 regardless of the total dimension.
 
-Because the precomputation can get expensive, :mod:`kingdon` predefines all the popular algebras
+Because the precomputation can get expensive, :code:`kingdon` predefines all the popular algebras
 of :math:`d = p+q+r < 6`.
 For example, a precomputed version of 3DPGA can be imported as
 

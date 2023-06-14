@@ -82,13 +82,13 @@ class TermTuple(NamedTuple):
     :param key_out: is the basis blade to which this monomial belongs.
     :param keys_in: are the input basis blades in this monomial.
     :param sign: Sign of the monomial.
-    :param values_in: Input values. Typically, tuple of :class:`~sympy.core.Symbol`.
+    :param values_in: Input values. Typically, tuple of :class:`sympy.core.symbol.Symbol`.
     :param termstr: The string representation of this monomial, e.g. '-x*y'.
     """
     key_out: int
     keys_in: Tuple[int]
     sign: int
-    values_in: Tuple[Symbol]
+    values_in: Tuple["sympy.core.symbol.Symbol"]
     termstr: str
 
 
@@ -310,32 +310,35 @@ Tuple representing a fraction.
 def codegen_inv(y, x=None, symbolic=False):
     alg = y.algebra
     # As preprocessing we invert y*~y since y^{-1} = ~y / (y*~y)
-    ynormsq = y.normsq()
-
-    if ynormsq.grades == tuple():
-        raise ZeroDivisionError
-    elif ynormsq.grades == (0,):
-        adj_y, denom_y = ~y if x is None else x * ~y, ynormsq[0]
+    if len(y) == 1 and y.grades == (0,):
+        adj_y, denom_y = x or 1, y.e
     else:
-        # Make a mv with the same components as ynormsq, and invert that instead.
-        # Although this requires some more bookkeeping, it is much more performant.
-        z = alg.multivector(name='z', keys=ynormsq.keys())
-        adj_z, denom_z = codegen_shirokov_inv(z, symbolic=True)
+        ynormsq = y.normsq()
 
-        # Same trick, make a mv that mimicks adj_z and multiply it with ~y.
-        A_z = alg.multivector(name='A_z', keys=adj_z.keys())
-        # Faster to this `manually` instead of with ~a * A_z
-        res = codegen_product(~y, A_z, symbolic=True)
-        A_y = res if x is None else x * res
+        if ynormsq.grades == tuple():
+            raise ZeroDivisionError
+        elif ynormsq.grades == (0,):
+            adj_y, denom_y = ~y if x is None else x * ~y, ynormsq.e
+        else:
+            # Make a mv with the same components as ynormsq, and invert that instead.
+            # Although this requires some more bookkeeping, it is much more performant.
+            z = alg.multivector(name='z', keys=ynormsq.keys())
+            adj_z, denom_z = codegen_shirokov_inv(z, symbolic=True)
 
-        # Replace all the dummy A_z symbols by the expressions in adj_z.
-        subs_dict = dict(zip(A_z.values(), adj_z.values()))
-        adj_y = A_y.subs(subs_dict)
-        # Replace all the dummy b symbols by the expressions in anormsq to
-        # recover the actual adjoint of a and corresponding denominator.
-        subs_dict = dict(zip(z.values(), ynormsq.values()))
-        denom_y = denom_z.subs(subs_dict)
-        adj_y = adj_y.subs(subs_dict)
+            # Same trick, make a mv that mimicks adj_z and multiply it with ~y.
+            A_z = alg.multivector(name='A_z', keys=adj_z.keys())
+            # Faster to this `manually` instead of with ~a * A_z
+            res = codegen_product(~y, A_z, symbolic=True)
+            A_y = res if x is None else x * res
+
+            # Replace all the dummy A_z symbols by the expressions in adj_z.
+            subs_dict = dict(zip(A_z.values(), adj_z.values()))
+            adj_y = A_y.subs(subs_dict)
+            # Replace all the dummy b symbols by the expressions in anormsq to
+            # recover the actual adjoint of a and corresponding denominator.
+            subs_dict = dict(zip(z.values(), ynormsq.values()))
+            denom_y = denom_z.subs(subs_dict)
+            adj_y = adj_y.subs(subs_dict)
 
     if symbolic:
         return Fraction(adj_y, denom_y)
@@ -476,8 +479,8 @@ def _lambdify_mv(free_symbols, mv):
 def do_codegen(codegen, *mvs) -> CodegenOutput:
     """
     :param codegen: callable that performs codegen for the given :code:`mvs`. This can be any callable
-        that returns either a :class:`MultiVector`, a dictionary, or an instance of :class:`CodegenOutput`.
-    :param *mvs: Any remaining positional arguments are taken to be symbolic :class:`Multivector`'s.
+        that returns either a :class:`~kingdon.multivector.MultiVector`, a dictionary, or an instance of :class:`CodegenOutput`.
+    :param mvs: Any remaining positional arguments are taken to be symbolic :class:`~kingdon.multivector.MultiVector`'s.
     :return: Instance of :class:`CodegenOutput`.
     """
     res = codegen(*mvs)
@@ -495,7 +498,7 @@ def do_codegen(codegen, *mvs) -> CodegenOutput:
 def lambdify(args: dict, exprs: tuple, funcname: str, dependencies: tuple = None, printer=NumPyPrinter, dummify=False, cse=False):
     """
     Function that turns symbolic expressions into Python functions. Heavily inspired by
-    :mod:`sympy`'s function by the same name, but adapted for the needs of :mod:`kingdon`.
+    :mod:`sympy`'s function by the same name, but adapted for the needs of :code:`kingdon`.
 
     Particularly, this version gives us more control over the names of the function and its
     arguments, and is more performant, particularly when the given expressions are strings.
@@ -532,7 +535,7 @@ def lambdify(args: dict, exprs: tuple, funcname: str, dependencies: tuple = None
         included in the CSE process.
     :param cse: If :code:`True` (default), CSE is applied to the expressions and dependencies.
         This typically greatly improves performance and reduces numba's initialization time.
-    return: Function that represents that can be used to calculate the values of exprs.
+    :return: Function that represents that can be used to calculate the values of exprs.
     """
     if printer is NumPyPrinter:
         printer = NumPyPrinter(
@@ -561,6 +564,8 @@ def lambdify(args: dict, exprs: tuple, funcname: str, dependencies: tuple = None
     else:
         cses, _exprs = list(zip(flatten(lhsides), flatten(rhsides))), exprs
 
+    if not any(_exprs):
+        _exprs = tuple('0' for expr in _exprs)
     funcstr = funcprinter.doprint(funcname, iterable_args, names, _exprs, cses=cses)
 
     # Provide lambda expression with builtins, and compatible implementation of range
