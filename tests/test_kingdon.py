@@ -588,3 +588,28 @@ def test_graded():
     with pytest.raises(ValueError):
         # In graded mode, the keys have to be correct.
         x = alg.multivector(name='x', keys=(1,))
+
+
+def test_blade_dict():
+    alg = Algebra(2)
+    assert not alg.blades.lazy
+    assert len(alg.blades) == len(alg)
+    locals().update(**alg.blades)
+
+    alg = Algebra(2, graded=True)
+    assert not alg.blades.lazy
+    assert len(alg.blades) == len(alg)
+    assert len(alg.blades['e1']) == 2
+
+    # In algebras larger than 6, lazy is the default.
+    alg = Algebra(7)
+    assert alg.blades.lazy
+    assert len(alg.blades) == 1  # PSS is calculated by default
+    assert len(alg.blades['e12']) == 1
+    assert len(alg.blades) == 2
+
+    alg = Algebra(7, graded=True)
+    assert alg.blades.lazy
+    assert len(alg.blades) == 1  # PSS is calculated by default
+    assert len(alg.blades['e12']) == len(alg.indices_for_grade[2])
+    assert len(alg.blades) == 2
