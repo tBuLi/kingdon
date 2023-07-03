@@ -326,7 +326,7 @@ class Algebra:
         metric = json.dumps(list(self.signature), cls=MultiVectorEncoder)
 
         src = f"""
-        fetch("https://enki.ws/ganja.js/ganja.js")
+        fetch("https://cdn.jsdelivr.net/gh/enkimute/ganja.js/ganja.js")
         .then(x=>x.text())
         .then(ganja=>{{
 
@@ -339,7 +339,8 @@ class Algebra:
               var data = {json_subjects}.map(x=>x.length=={len(self)}?new Element(x):x);
               return this.graph(data, {options})
           }})
-
+          canvas.style.width = '100%';
+          canvas.style.background = 'white';
           element.append(canvas)
 
         }})
@@ -371,6 +372,16 @@ def _sort_product(prod):
 
 @dataclass
 class BladeDict(Mapping):
+    """
+    Dictionary of basis blades. Use getitem to retrieve a basis blade from this dict, e.g.
+
+    alg = Algebra(3, 0, 1)
+    blade_dict = BladeDict(alg, lazy=True)
+    blade_dict['e03']
+
+    When `lazy=True`, the basis blade is only initiated when requested.
+    This is done for performance in higher dimensional algebras.
+    """
     algebra: Algebra
     lazy: bool = field(default=False)
     blades: dict = field(default_factory=dict, init=False, repr=False, compare=False)
