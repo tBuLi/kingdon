@@ -157,9 +157,8 @@ class Algebra:
 
             {0: (0,), 1: (1, 2), 2: (3,)}
         """
-        key = lambda i: bin(i).count('1')
-        sorted_inds = sorted(range(len(self)), key=key)
-        return {grade: tuple(inds) for grade, inds in groupby(sorted_inds, key=key)}
+        return {length - 1: tuple(self.canon2bin[blade] for blade in blades)
+                for length, blades in groupby(self.canon2bin, key=len)}
 
     @cached_property
     def indices_for_grades(self):
@@ -277,7 +276,7 @@ class Algebra:
     def pseudoquadvector(self, *args, **kwargs) -> MultiVector:
         return self.purevector(*args, grade=self.d - 4, **kwargs)
 
-    def graph(self, *subjects, **options):
+    def graph(self, *subjects, js_source=False, **options):
         """
         The graph function outputs :code:`ganja.js` renders and is meant
         for use in jupyter notebooks. The syntax of the graph function will feel
@@ -307,6 +306,8 @@ class Algebra:
 
         :param `*subjects`: Subjects to be graphed.
             Can be strings, hexadecimal colors, (lists of) MultiVector.
+        :param js_source: If True, return the javascript source code. If False (default)
+            a :class:`IPython.core.display.Javascript` instance is returned.
         :param `**options`: Options passed to :code:`ganja.js`'s :code:`Algebra.graph`.
         """
         # Flatten multidimensional multivectors
@@ -336,7 +337,7 @@ class Algebra:
           var Algebra = module.exports;
 
           var canvas = Algebra({{metric:{metric}, Cayley:{cayley_table}}},()=>{{
-              var data = {json_subjects}.map(x=>x.length=={len(self)}?new Element(x):x);
+              var data = {json_subjects}.map(x=>typeof x === 'object' && 'mv' in x?new Element(x['mv']):x).map(x=>Array.isArray(x)?x.map(y=>typeof y === 'object' && 'mv' in y?new Element(y['mv']):y):x);
               return this.graph(data, {options})
           }})
           canvas.style.width = '100%';
@@ -345,7 +346,10 @@ class Algebra:
 
         }})
         """
-        display(Javascript(src))
+        if not js_source:
+            display(Javascript(src))
+        else:
+            return src
 
 
 def _sort_product(prod):
