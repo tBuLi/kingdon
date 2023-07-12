@@ -613,3 +613,18 @@ def test_blade_dict():
     assert len(alg.blades) == 1  # PSS is calculated by default
     assert len(alg.blades['e12']) == len(alg.indices_for_grade[2])
     assert len(alg.blades) == 2
+
+def test_25():
+    from kingdon import Algebra
+    alg = Algebra(3, 0, 1)
+    e0 = alg.blades['e0']
+    e1 = alg.blades['e1']
+    e2 = alg.blades['e2']
+    e02 = alg.blades['e02']
+    e12 = alg.blades['e12']
+
+    x = e12
+    y = (0 * e2 + e0).dual()
+    z = e1.dual()
+    ans = ((x * y) | z)
+    assert ans == e02
