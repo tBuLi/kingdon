@@ -167,25 +167,33 @@ class MultiVector:
         return any(isinstance(v, Expr) for v in self.values())
 
     def __neg__(self):
-        try:
-            values = - self.values()
-        except TypeError:
-            values = tuple(-v for v in self.values())
-        return self.fromkeysvalues(self.algebra, self.keys(), values)
+        return self.algebra.neg(self)
 
-    def __invert__(self):  # reversion
-        values = tuple(- v if k in self.algebra._reverse_keys else v for k, v in self.items())
-        return self.fromkeysvalues(self.algebra, self.keys(), values)
+    def __invert__(self):
+        """ Reversion """
+        return self.algebra.reverse(self)
+
+    def reverse(self):
+        """ Reversion """
+        return self.algebra.reverse(self)
+
+    def involute(self):
+        """ Main grade involution. """
+        return self.algebra.involute(self)
+
+    def conjugate(self):
+        """ Clifford conjugation: involution and reversion combined. """
+        return self.algebra.conjugate(self)
+
+    def sqrt(self):
+        return self.algebra.sqrt(self)
 
     def normsq(self):
         return self.algebra.normsq(self)
 
     def norm(self):
         normsq = self.normsq()
-        if normsq.grades == (0,):
-            return normsq.values()[0] ** 0.5
-        else:
-            raise NotImplementedError
+        return normsq.sqrt()
 
     def normalized(self):
         """ Normalized version of this multivector. """
@@ -196,20 +204,12 @@ class MultiVector:
         return self.algebra.inv(self)
 
     def __add__(self, other):
-        if not isinstance(other, MultiVector):
-            other = self.fromkeysvalues(self.algebra, (0,), (other,))
-        vals = dict(self.items())
-        for k, v in other.items():
-            if k in vals:
-                vals[k] += v
-            else:
-                vals[k] = v
-        return self.fromkeysvalues(self.algebra, tuple(vals.keys()), tuple(vals.values()))
+        return self.algebra.add(self, other)
 
     __radd__ = __add__
 
     def __sub__(self, other):
-        return self + (-other)
+        return self.algebra.sub(self, other)
 
     def __rsub__(self, other):
         return other + (-self)
@@ -397,10 +397,13 @@ class MultiVector:
 
     def __pow__(self, power, modulo=None):
         # TODO: this should also be taken care of via codegen, but for now this workaround is ok.
-        if power == 2:
-            return self.algebra.gp(self, self)
-        else:
-            raise NotImplementedError
+        if power == 0:
+            return self.algebra.scalar((1,))
+
+        res = self
+        for i in range(1, power):
+            res = res.gp(self)
+        return res
 
     def outerexp(self):
         return self.algebra.outerexp(self)
@@ -430,12 +433,9 @@ class MultiVector:
             use :code:`kind='hodge'`.
         """
         if kind == 'polarity' or kind == 'auto' and self.algebra.r == 0:
-            return self / self.algebra.pss
+            return self.algebra.polarity(self)
         elif kind == 'hodge' or kind == 'auto' and self.algebra.r == 1:
-            return self.algebra.multivector(
-                {len(self.algebra) - 1 - eI: self.algebra.signs[eI, len(self.algebra) - 1 - eI] * val
-                 for eI, val in self.items()}
-            )
+            return self.algebra.hodge(self)
         elif kind == 'auto':
             raise Exception('Cannot select a suitable dual in auto mode for this algebra.')
         else:
@@ -446,12 +446,9 @@ class MultiVector:
         Compute the undual of `self`. See :class:`~kingdon.multivector.MultiVector.dual` for more information.
         """
         if kind == 'polarity' or kind == 'auto' and self.algebra.r == 0:
-            return self * self.algebra.pss
+            return self.algebra.unpolarity(self)
         elif kind == 'hodge' or kind == 'auto' and self.algebra.r == 1:
-            return self.algebra.multivector(
-                {len(self.algebra) - 1 - eI: self.algebra.signs[len(self.algebra) - 1 - eI, eI] * val
-                 for eI, val in self.items()}
-            )
+            return self.algebra.unhodge(self)
         elif kind == 'auto':
             raise Exception('Cannot select a suitable undual in auto mode for this algebra.')
         else:

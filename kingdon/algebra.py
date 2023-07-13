@@ -18,8 +18,10 @@ from IPython.display import Javascript, display
 from kingdon.codegen import (
     codegen_gp, codegen_sw, codegen_cp, codegen_ip, codegen_op, codegen_div,
     codegen_rp, codegen_acp, codegen_proj, codegen_sp, codegen_lc, codegen_inv,
-    codegen_rc, codegen_normsq,
+    codegen_rc, codegen_normsq, codegen_add, codegen_neg, codegen_reverse,
+    codegen_involute, codegen_conjugate, codegen_sub, codegen_sqrt,
     codegen_outerexp, codegen_outersin, codegen_outercos, codegen_outertan,
+    codegen_polarity, codegen_unpolarity, codegen_hodge, codegen_unhodge
 )
 from kingdon.operator_dict import OperatorDict, UnaryOperatorDict
 from kingdon.matrixreps import matrix_rep
@@ -76,8 +78,20 @@ class Algebra:
     op: OperatorDict = operation_field(metadata={'codegen': codegen_op})  # exterior product
     rp: OperatorDict = operation_field(metadata={'codegen': codegen_rp})  # regressive product
     proj: OperatorDict = operation_field(metadata={'codegen': codegen_proj})  # projection
+    add: OperatorDict = operation_field(metadata={'codegen': codegen_add})  # add
+    sub: OperatorDict = operation_field(metadata={'codegen': codegen_sub})  # sub
     div: OperatorDict = operation_field(metadata={'codegen': codegen_div})  # division
+    # Unary operators
     inv: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_inv})  # inverse
+    neg: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_neg})  # negate
+    reverse: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_reverse})  # reverse
+    involute: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_involute})  # grade involution
+    conjugate: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_conjugate})  # clifford conjugate
+    sqrt: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_sqrt})  # Square root
+    polarity: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_polarity})
+    unpolarity: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_unpolarity})
+    hodge: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_hodge})
+    unhodge: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_unhodge})
     normsq: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_normsq})  # norm squared
     outerexp: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outerexp})
     outersin: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outersin})
@@ -174,11 +188,6 @@ class Algebra:
         all_grade_combs = chain(*(combinations(range(0, self.d + 1), r=j) for j in range(1, len(self) + 1)))
         return {comb: sum((self.indices_for_grade[grade] for grade in comb), ())
                 for comb in all_grade_combs}
-
-    @cached_property
-    def _reverse_keys(self):
-        """ Keys that should change sign upon reversion. """
-        return tuple(chain(*(keys for grade, keys in self.indices_for_grade.items() if (grade // 2) % 2)))
 
     @cached_property
     def matrix_basis(self):

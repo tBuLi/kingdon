@@ -503,15 +503,38 @@ def test_indexing():
     np.testing.assert_allclose(B[:, 0, 0], bvals[:, 0, 0])
 
 
+def test_sqrt():
+    alg = Algebra(3, 0, 1)
+    uvals = np.random.random(4)
+    vvals = np.random.random(4)
+    u = alg.vector(uvals)
+    v = alg.vector(vvals)
+    R = u * v
+    Rsqrt = R.sqrt()
+    diff = Rsqrt*Rsqrt - R
+    np.testing.assert_almost_equal(diff.values(), np.zeros(len(alg) // 2))
+
+
+def test_clifford_involutions():
+    alg = Algebra(8)
+    x = alg.multivector(name='x')
+    assert (x - x.reverse()).grades == (2, 3, 6, 7)
+    assert (x - x.involute()).grades == (1, 3, 5, 7)
+    assert (x - x.conjugate()).grades == (1, 2, 5, 6)
+    assert (x.conjugate() == x.reverse().involute())
+
+
 def test_normalization(pga3d):
     vvals = np.random.random(len(pga3d.indices_for_grade[1]))
     v = pga3d.vector(vvals).normalized()
-    assert (v*v).values()[0] == pytest.approx(1.0)
-    np.testing.assert_allclose((v*v).values()[0], 1.0)
+    assert (v*v).e == pytest.approx(1.0)
 
+    # Normalizing a non-simple bivector makes it simple!
     bvals = np.random.random(len(pga3d.indices_for_grade[2]))
-    with pytest.raises(NotImplementedError):
-        B = pga3d.bivector(bvals).normalized()
+    B = pga3d.bivector(bvals)
+    Bnormalized = B.normalized()
+    assert Bnormalized.normsq().e == pytest.approx(1.0)
+    assert Bnormalized.normsq().e1234 == pytest.approx(0.0)
 
 
 def test_itermv():

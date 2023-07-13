@@ -471,6 +471,100 @@ def codegen_outertan(x):
     return outertan
 
 
+def codegen_add(x, y, sign="+"):
+    vals = {k: v.name for k, v in x.items()}
+    for k, v in y.items():
+        if k in vals:
+            vals[k] = f"{vals[k]}{sign}{v.name}"
+        else:
+            vals[k] = v.name
+    return vals
+
+
+def codegen_sub(x, y):
+    return codegen_add(x, y, sign="-")
+
+def codegen_neg(x):
+    return {k: f"-{v.name}" for k, v in x.items()}
+
+
+def codegen_involutions(x, invert_grades=(2, 3)):
+    """
+    Codegen for the involutions of Clifford algebras:
+    reverse, grade involute, and Clifford involution.
+
+    :param invert_grades: The grades that flip sign under this involution mod 4, e.g. (2, 3) for reversion.
+    """
+    return {k: f"-{v.name}" if bin(k).count('1') % 4 in invert_grades else v.name
+            for k, v in x.items()}
+
+
+def codegen_reverse(x):
+    return codegen_involutions(x, invert_grades=(2, 3))
+
+
+def codegen_involute(x):
+    return codegen_involutions(x, invert_grades=(1, 3))
+
+
+def codegen_conjugate(x):
+    return codegen_involutions(x, invert_grades=(1, 2))
+
+
+def codegen_sqrt(x):
+    """
+    Take the square root using the study number approach as described in
+    https://doi.org/10.1002/mma.8639
+    """
+    if x.grades == (0,):
+        return {0: x.e**0.5}
+    a, bI = x.grade(0), x - x.grade(0)
+    has_solution = len(x.grades) <= 2 and 0 in x.grades
+    if not has_solution:
+        raise NotImplementedError("No closed form solution for sqrt is known.")
+
+    bI_sq = bI * bI
+    if not bI_sq:
+        cp = a.e ** 0.5
+    else:
+        normS = (a * a - bI * bI).e
+        cp = (0.5 * (a.e + normS ** 0.5)) ** 0.5
+    dI = bI / (2 * cp)
+    return cp + dI
+
+
+def codegen_polarity(x, undual=False):
+    if undual:
+        return x * x.algebra.pss
+    sign = x.algebra.signs[-1, -1]
+    if sign == 1:
+        return x * x.algebra.pss
+    if sign == -1:
+        return x * (-x.algebra.pss)
+    if sign == 0:
+        raise ZeroDivisionError
+
+
+def codegen_unpolarity(x):
+    return codegen_polarity(x, undual=True)
+
+
+def codegen_hodge(x, undual=False):
+    if undual:
+        return x.algebra.multivector(
+            {len(x.algebra) - 1 - eI: x.algebra.signs[len(x.algebra) - 1 - eI, eI] * val
+             for eI, val in x.items()}
+        )
+    return x.algebra.multivector(
+        {len(x.algebra) - 1 - eI: x.algebra.signs[eI, len(x.algebra) - 1 - eI] * val
+         for eI, val in x.items()}
+    )
+
+
+def codegen_unhodge(x):
+    return codegen_hodge(x, undual=True)
+
+
 def _lambdify_mv(free_symbols, mv):
     func = lambdify(free_symbols, mv.values(), funcname=f'custom_{mv:keys_binary}', cse=mv.algebra.cse)
     return CodegenOutput(tuple(mv.keys()), func)
@@ -488,7 +582,11 @@ def do_codegen(codegen, *mvs) -> CodegenOutput:
         return res
     funcname = f'{codegen.__name__}_' + '_x_'.join(f"{mv:keys_binary}" for mv in mvs)
     args = {arg_name: arg.values() for arg_name, arg in zip(string.ascii_uppercase, mvs)}
-    exprs = tuple(res.values())
+    # Sort the keys in binary order
+    if len(res) > 1:
+        keys, exprs = zip(*((k, res[k]) for k in mvs[0].algebra.canon2bin.values() if k in res.keys()))
+    else:
+        keys, exprs = tuple(res.keys()), tuple(res.values())
     return CodegenOutput(
         tuple(res.keys()),
         lambdify(args, exprs, funcname=funcname, cse=mvs[0].algebra.cse)

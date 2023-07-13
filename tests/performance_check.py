@@ -15,6 +15,7 @@ if __name__ == "__main__":
     cliff = True
     king = True
     king_profile = False
+    alg_creation = True
 
     # shape_b = (comb(d, 2), num_rows) if num_rows != 1 else comb(d, 2)
     # shape_v = (comb(d, 1), num_rows) if num_rows != 1 else comb(d, 1)
@@ -28,11 +29,20 @@ if __name__ == "__main__":
             'b.cp(v)',
             'b >> v',
             'b @ v',
-            'b^v', 'b|v', 'b+v', 'b-v',
-            'b.inv()',
-            'alg.inv(b)',
+            'b^v',
+            'b|v',
+            'b+v',
+            'b-v',
             'b / v',
-            '~b'
+            'R.sqrt()',
+            'b.norm()',
+            'b.inv()',
+            '-b',
+            '~b',
+            'b.involute()',
+            'b.conjugate()',
+            'b.dual()',
+            'b.undual()',
         ]
         times = defaultdict(list)
         for operation in operations:
@@ -46,6 +56,8 @@ if __name__ == "__main__":
                 # v = alg.vector(vvals)
                 b = alg.multivector(bvals)
                 v = alg.multivector(vvals)
+                if operation == 'R.sqrt()':
+                    R = alg.evenmv(bvals[::2])
                 # prepare, does cse and jit.
                 init = timeit.timeit(operation, number=1, globals=globals())
                 # init = float('inf')
@@ -83,9 +95,12 @@ if __name__ == "__main__":
         init = timeit.timeit(operation, number=1, globals=globals())
         print('init', init)
         # alg.nonop(b)
-        filename = 'restats6'
+        filename = 'stats_sw_py'
         prof = cProfile.run(f'for _ in range({num_iter}): {operation}', filename)
 
         ps = pstats.Stats(filename).sort_stats('tottime')
         ps.print_stats()
 
+    if alg_creation:
+        t = timeit.timeit(f"Algebra({d})", number=num_iter, globals=globals())
+        print(f"Algebra creation took {t/num_iter=:.2e}")
