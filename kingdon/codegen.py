@@ -15,7 +15,7 @@ import keyword
 
 from sympy import simplify, sympify, Add, Mul, Symbol, expand
 from sympy.utilities.iterables import iterable, flatten
-from sympy.printing.numpy import NumPyPrinter
+from sympy.printing.lambdarepr import LambdaPrinter
 
 
 @dataclass
@@ -477,7 +477,7 @@ def codegen_add(x, y, sign="+"):
         if k in vals:
             vals[k] = f"{vals[k]}{sign}{v.name}"
         else:
-            vals[k] = v.name
+            vals[k] = v.name if sign == "+" else f"{sign}{v.name}"
     return vals
 
 
@@ -635,8 +635,8 @@ def lambdify(args: dict, exprs: tuple, funcname: str, dependencies: tuple = None
         This typically greatly improves performance and reduces numba's initialization time.
     :return: Function that represents that can be used to calculate the values of exprs.
     """
-    if printer is NumPyPrinter:
-        printer = NumPyPrinter(
+    if printer is LambdaPrinter:
+        printer = LambdaPrinter(
             {'fully_qualified_modules': False, 'inline': True,
              'allow_unknown_functions': True,
              'user_functions': {}}
