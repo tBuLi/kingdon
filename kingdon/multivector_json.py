@@ -8,7 +8,7 @@ class MultiVectorEncoder(json.JSONEncoder):
         from kingdon import MultiVector
         if isinstance(item, MultiVector):
             item = item.asdensemv()
-            return list(item.values())
+            return {'mv': list(item.values())}
 
         if isinstance(item, np.integer):
             return int(item)
