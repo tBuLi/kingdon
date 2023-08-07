@@ -23,7 +23,7 @@ from kingdon.codegen import (
     codegen_outerexp, codegen_outersin, codegen_outercos, codegen_outertan,
     codegen_polarity, codegen_unpolarity, codegen_hodge, codegen_unhodge
 )
-from kingdon.operator_dict import OperatorDict, UnaryOperatorDict
+from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry
 from kingdon.matrixreps import matrix_rep
 from kingdon.multivector_json import MultiVectorEncoder
 from kingdon.multivector import MultiVector
@@ -97,6 +97,8 @@ class Algebra:
     outersin: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outersin})
     outercos: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outercos})
     outertan: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outertan})
+    registry: dict = field(default_factory=dict, repr=False, compare=False)  # Dict of all operator dicts. Should be extended using Algebra.register
+    numspace: dict = field(default_factory=dict, repr=False, compare=False)  # Namespace for numerical functions
 
     # Mappings from binary to canonical reps. e.g. 0b01 = 1 <-> 'e1', 0b11 = 3 <-> 'e12'.
     canon2bin: dict = field(init=False, repr=False, compare=False)
@@ -155,9 +157,10 @@ class Algebra:
         self.pss = self.blades[self.bin2canon[2 ** self.d - 1]]
 
         # Prepare OperatorDict's
-        operators = (f for f in fields(self) if 'codegen' in f.metadata)
-        for f in operators:
-            setattr(self, f.name, f.type(name=f.name, codegen=f.metadata['codegen'], algebra=self))
+        self.registry = {f.name: f.type(name=f.name, codegen=f.metadata['codegen'], algebra=self)
+                         for f in fields(self) if 'codegen' in f.metadata}
+        for name, operator_dict in self.registry.items():
+            setattr(self, name, operator_dict)
 
     def __len__(self):
         return 2 ** self.d
@@ -228,6 +231,59 @@ class Algebra:
             else:
                 cayley[eI, eJ] = f'0'
         return swaps_arr, signs, cayley
+
+    def register(self, expr=None, /, *, name=None, symbolic=False):
+        """
+        Register a function with the algebra to optimize its execution times.
+
+        The function must be a valid GA expression, not an arbitrary python function.
+
+        Example:
+
+            .. code-block ::
+
+            @alg.register
+            def myexpr(a, b):
+                return a @ b
+
+            @alg.register(symbolic=True)
+            def myexpr(a, b):
+                return a @ b
+
+        With default settings, the decorator will ensure that every GA unary or binary
+        operator is replaced by the corresponding numerical function, and produces
+        numerically much more performant code. The speed up is particularly notible when
+        `alg.numba=True`, because then the cost for all the python glue surrounding
+        the actual computation has to be paid only once.
+
+        When `symbolic=True` the expression is symbolically optimized before being turned
+        into a numerical function. Beware that symbolic optimization of longer expressions
+        (currently) takes exorbitant amounts of time, and often isn't worth it if the end
+        goal is numerical computation.
+
+        :param expr: Python function of a valid kingdon GA expression.
+        :param name: (optional) name by which the function will be known to the algebra.
+            By default, this is the `expr.__name__`.
+        :param symbolic: (optional) If true, the expression is symbolically optimized.
+            By default this is False, given the cost of optimizing large expressions.
+        """
+        def wrap(expr, name=None, symbolic=False):
+            if name is None:
+                name = expr.__name__
+
+            if not symbolic:
+                self.registry[expr] = Registry(name, codegen=expr, algebra=self)
+            else:
+                self.registry[expr] = OperatorDict(name, codegen=expr, algebra=self)
+            return self.registry[expr]
+
+        # See if we are being called as @register or @register()
+        if expr is None:
+            # Called as @register()
+            return partial(wrap, name=name, symbolic=symbolic)
+
+        # Called as @register
+        return wrap(expr)
 
     def multivector(self, *args, **kwargs) -> MultiVector:
         """ Create a new :class:`~kingdon.multivector.MultiVector`. """

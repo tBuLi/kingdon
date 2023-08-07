@@ -9,6 +9,7 @@ import numpy as np
 from sympy import Symbol, simplify, factor, expand, collect, sympify, cos, sin
 from kingdon import Algebra, MultiVector, symbols
 from kingdon.multivector_json import MultiVectorEncoder
+from kingdon.operator_dict import UnaryOperatorDict
 
 import timeit
 
@@ -591,7 +592,7 @@ def test_json():
     xvals = np.array([2, 3, 4])
     x = alg.vector(xvals)
     xjson = json.dumps(x, cls=MultiVectorEncoder)
-    assert xjson == "[0, 2, 3, 4, 0, 0, 0, 0]"
+    assert xjson == '{"mv": [0, 2, 3, 4, 0, 0, 0, 0]}'
 
 
 def test_type():
@@ -636,3 +637,97 @@ def test_blade_dict():
     assert len(alg.blades) == 1  # PSS is calculated by default
     assert len(alg.blades['e12']) == len(alg.indices_for_grade[2])
     assert len(alg.blades) == 2
+
+
+def test_numregister_operator_existence():
+    """ Test if all battery-included GA operators can be used in custum functions."""
+    alg = Algebra(2, 0, 0, numba=False)
+    uvals = np.random.random(len(alg))
+    vvals = np.random.random(len(alg))
+    u = alg.multivector(uvals).grade((0, 2))
+    v = alg.multivector(vvals)
+
+    operators = alg.registry.copy()
+    for op_name, op_dict in operators.items():
+        if isinstance(op_dict, UnaryOperatorDict):
+            def myfunc(x):
+                return getattr(x, op_name)()
+
+            myfunc_compiled = alg.register(myfunc)
+            assert myfunc_compiled(u) == myfunc(u)
+
+        else:
+            def myfunc(x, y):
+                return getattr(x, op_name)(y)
+            myfunc_compiled = alg.register(myfunc)
+            assert myfunc_compiled(u, v) == myfunc(u, v)
+
+
+def test_numregister_basics():
+    alg = Algebra(3, 0, 1, numba=False)
+    uvals = np.random.random(len(alg))
+    vvals = np.random.random(len(alg))
+    u = alg.multivector(uvals)
+    v = alg.multivector(vvals)
+
+    @alg.register
+    def square(x):
+        return x * x
+
+    @alg.register
+    def double(x):
+        return 2 * x
+
+    @alg.register
+    def add(x, y):
+        return x + y
+
+    @alg.register
+    def grade_select(x):
+        return x.grade((1, 2))
+
+    # Test if we can nest registered expressions.
+    @alg.register
+    def coupled(u, v):
+        uv = add(u, v)
+        return square(uv) + double(u)
+
+    assert square(u) == square.codegen(u)
+    assert double(u) == double.codegen(u)
+    assert add(u, v) == add.codegen(u, v)
+    assert grade_select(u) == u.grade((1, 2))
+    assert coupled(u, v) == (u + v)**2 + 2 * u
+
+
+def test_symregister_basics():
+    alg = Algebra(3, 0, 1, numba=False)
+    u = alg.multivector(name='u')
+    v = alg.multivector(name='v')
+
+    @alg.register(symbolic=True)
+    def square(x):
+        return x * x
+
+    @alg.register(symbolic=True)
+    def double(x):
+        return 2 * x
+
+    @alg.register(symbolic=True)
+    def add(x, y):
+        return x + y
+
+    @alg.register(symbolic=True)
+    def grade_select(x):
+        return x.grade((1, 2))
+
+    # Test if we can nest registered expressions.
+    @alg.register(symbolic=True)
+    def coupled(u, v):
+        uv = add(u, v)
+        return square(uv) + double(u)
+
+    assert square(u) == square.codegen(u)
+    assert double(u) == double.codegen(u)
+    assert add(u, v) == add.codegen(u, v)
+    assert grade_select(u) == u.grade((1, 2))
+    assert coupled(u, v) == (u + v) ** 2 + 2 * u

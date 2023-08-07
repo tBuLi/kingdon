@@ -7,7 +7,8 @@ from numba import njit
 from sympy import Symbol, Expr, simplify
 
 from kingdon.multivector import MultiVector
-from kingdon.codegen import do_codegen
+from kingdon.codegen import do_codegen, do_compile
+from kingdon.taperecorder import TapeRecorder
 
 
 class AlgebraError(Exception):
@@ -41,7 +42,8 @@ class OperatorDict(Mapping):
             mvs = [self.algebra.multivector(name=name, keys=keys)
                    for name, keys in zip(string.ascii_lowercase, keys_in)]
             keys_out, func = do_codegen(self.codegen, *mvs)
-            self.operator_dict[keys_in] = (keys_out, func, njit(func))
+            self.algebra.numspace[func.__name__] = njit(func) if self.algebra.numba else func
+            self.operator_dict[keys_in] = (keys_out, func)
         return self.operator_dict[keys_in]
 
     def __contains__(self, keys_in: Tuple[Tuple[int]]):
@@ -70,12 +72,12 @@ class OperatorDict(Mapping):
 
         keys_in = tuple(mv.keys() for mv in mvs)
         values_in = tuple(mv.values() for mv in mvs)
-        keys_out, func, numba_func = self[keys_in]
+        keys_out, func = self[keys_in]
         issymbolic = any(mv.issymbolic for mv in mvs)
         if issymbolic or not mvs[0].algebra.numba:
             values_out = func(*values_in)
         else:
-            values_out = numba_func(*values_in)
+            values_out = self.algebra.numspace[func.__name__](*values_in)
 
         if issymbolic and self.algebra.simplify:
             keys_out, values_out = self.filter(keys_out, values_out)
@@ -91,14 +93,14 @@ class OperatorDict(Mapping):
         if not (mv1.algebra is mv2.algebra or mv1.algebra == mv2.algebra):
             raise AlgebraError("Cannot multiply elements of different algebra's.")
 
-        keys_out, func, numba_func = self[mv1.keys(), mv2.keys()]
+        keys_out, func = self[mv1.keys(), mv2.keys()]
         issymbolic = (mv1.issymbolic or mv2.issymbolic)
         if not keys_out:
             values_out = tuple()
         elif issymbolic or not mv1.algebra.numba:
             values_out = func(mv1.values(), mv2.values())
         else:
-            values_out = numba_func(mv1.values(), mv2.values())
+            values_out = self.algebra.numspace[func.__name__](mv1.values(), mv2.values())
 
         if issymbolic and self.algebra.simplify:
             keys_out, values_out = self.filter(keys_out, values_out)
@@ -117,19 +119,55 @@ class UnaryOperatorDict(OperatorDict):
             vals = tuple(Symbol(f'a{self.algebra.bin2canon[ek][1:]}') for ek in keys_in)
             mv = MultiVector.fromkeysvalues(self.algebra, keys=keys_in, values=vals)
             keys_out, func = do_codegen(self.codegen, mv)
-            self.operator_dict[keys_in] = (keys_out, func, njit(func))
+            self.algebra.numspace[func.__name__] = njit(func) if self.algebra.numba else func
+            self.operator_dict[keys_in] = (keys_out, func)
         return self.operator_dict[keys_in]
 
     def __call__(self, mv):
-        keys_out, func, numba_func = self[mv.keys()]
+        keys_out, func = self[mv.keys()]
 
         issymbolic = mv.issymbolic
         if issymbolic or not mv.algebra.numba:
             values_out = func(mv.values())
         else:
-            values_out = numba_func(mv.values())
+            values_out = self.algebra.numspace[func.__name__](mv.values())
 
         if issymbolic and self.algebra.simplify:
             keys_out, values_out = self.filter(keys_out, values_out)
+
+        return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)
+
+class Registry(OperatorDict):
+    def __getitem__(self, keys_in: Tuple[Tuple[int]]):
+        if keys_in not in self.operator_dict:
+            # Make symbolic multivectors for each set of keys and generate the code.
+            tapes = [TapeRecorder(algebra=self.algebra, expr=name, keys=keys)
+                     for name, keys in zip(string.ascii_lowercase, keys_in)]
+            keys_out, func = do_compile(self.codegen, *tapes)
+            self.algebra.numspace[func.__name__] = njit(func) if self.algebra.numba else func
+            self.operator_dict[keys_in] = (keys_out, func)
+        return self.operator_dict[keys_in]
+
+    def __call__(self, *mvs):
+        if all(isinstance(mv, TapeRecorder) for mv in mvs):
+            keys_in = tuple(mv.keys() for mv in mvs)
+            keys_out, func = self[keys_in]
+            expr = f"{func.__name__}({', '.join(mv.expr for mv in mvs)})"
+            return TapeRecorder(self.algebra, keys=keys_out, expr=expr)
+
+        # Make sure all inputs are multivectors. If an input is not, assume its scalar.
+        mvs = [mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), (mv,))
+               for mv in mvs]
+        if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
+            raise AlgebraError("Cannot multiply elements of different algebra's.")
+
+        keys_in = tuple(mv.keys() for mv in mvs)
+        values_in = tuple(mv.values() for mv in mvs)
+        keys_out, func = self[keys_in]
+
+        if not mvs[0].algebra.numba:
+            values_out = func(*values_in)
+        else:
+            values_out = self.algebra.numspace[func.__name__](*values_in)
 
         return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)

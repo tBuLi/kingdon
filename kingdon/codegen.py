@@ -577,23 +577,51 @@ def do_codegen(codegen, *mvs) -> CodegenOutput:
     :param mvs: Any remaining positional arguments are taken to be symbolic :class:`~kingdon.multivector.MultiVector`'s.
     :return: Instance of :class:`CodegenOutput`.
     """
+    algebra = mvs[0].algebra
+    namespace = algebra.numspace
+
     res = codegen(*mvs)
     if isinstance(res, CodegenOutput):
         return res
-    funcname = f'{codegen.__name__}_' + '_x_'.join(f"{mv:keys_binary}" for mv in mvs)
+    funcname = f'{codegen.__name__}_' + '_x_'.join(f"{mv.type_number}" for mv in mvs)
     args = {arg_name: arg.values() for arg_name, arg in zip(string.ascii_uppercase, mvs)}
     # Sort the keys in binary order
     if len(res) > 1:
         keys, exprs = zip(*((k, res[k]) for k in mvs[0].algebra.canon2bin.values() if k in res.keys()))
     else:
         keys, exprs = tuple(res.keys()), tuple(res.values())
+
+    func = lambdify(args, exprs, funcname=funcname, cse=mvs[0].algebra.cse)
     return CodegenOutput(
-        tuple(res.keys()),
-        lambdify(args, exprs, funcname=funcname, cse=mvs[0].algebra.cse)
+        keys, func
+    )
+
+def do_compile(codegen, *tapes):
+    algebra = tapes[0].algebra
+    namespace = algebra.numspace
+
+    res = codegen(*tapes)
+    funcname = f'{codegen.__name__}_' + '_x_'.join(f"{tape.type_number}" for tape in tapes)
+    funcstr = f"def {funcname}({', '.join(t.expr for t in tapes)}):"
+    if not isinstance(res, str):
+        funcstr += f"    return {res.expr}"
+    else:
+        funcstr += f"    return ({res},)"
+
+    funclocals = {}
+    filename = f'<{funcname}>'
+    c = compile(funcstr, filename, 'exec')
+    exec(c, namespace, funclocals)
+    # mtime has to be None or else linecache.checkcache will remove it
+    linecache.cache[filename] = (len(funcstr), None, funcstr.splitlines(True), filename) # type: ignore
+
+    func = funclocals[funcname]
+    return CodegenOutput(
+        res.keys() if not isinstance(res, str) else (0,), func
     )
 
 
-def lambdify(args: dict, exprs: tuple, funcname: str, dependencies: tuple = None, printer=NumPyPrinter, dummify=False, cse=False):
+def lambdify(args: dict, exprs: tuple, funcname: str, dependencies: tuple = None, printer=LambdaPrinter, dummify=False, cse=False):
     """
     Function that turns symbolic expressions into Python functions. Heavily inspired by
     :mod:`sympy`'s function by the same name, but adapted for the needs of :code:`kingdon`.

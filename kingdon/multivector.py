@@ -110,6 +110,11 @@ class MultiVector:
     def __len__(self):
         return len(self._values)
 
+    @cached_property
+    def type_number(self) -> int:
+        return int(''.join('1' if i in self.keys() else '0' for i in reversed(self.algebra.canon2bin.values())), 2)
+
+
     def itermv(self, axis=None) -> Generator["MultiVector", None, None]:
         """
         Returns an iterator over the multivectors within this multivector.
@@ -158,16 +163,14 @@ class MultiVector:
         return self.fromkeysvalues(self.algebra, tuple(vals.keys()), tuple(vals.values()))
 
     @cached_property
-    def type_number(self) -> int:
-        return int(''.join('1' if i in self.keys() else '0' for i in reversed(self.algebra.canon2bin.values())), 2)
-
-    @cached_property
     def issymbolic(self):
         """ True if this mv contains Symbols, False otherwise. """
         return any(isinstance(v, Expr) for v in self.values())
 
-    def __neg__(self):
+    def neg(self):
         return self.algebra.neg(self)
+
+    __neg__ = neg
 
     def __invert__(self):
         """ Reversion """
@@ -203,19 +206,23 @@ class MultiVector:
         """ Inverse of this multivector. """
         return self.algebra.inv(self)
 
-    def __add__(self, other):
+    def add(self, other):
         return self.algebra.add(self, other)
 
-    __radd__ = __add__
+    __radd__ = __add__ = add
 
-    def __sub__(self, other):
+    def sub(self, other):
         return self.algebra.sub(self, other)
+
+    __sub__ = sub
 
     def __rsub__(self, other):
         return other + (-self)
 
-    def __truediv__(self, other):
+    def div(self, other):
         return self.algebra.div(self, other)
+
+    __truediv__ = div
 
     def __str__(self):
         if not len(self.values()):
@@ -232,11 +239,10 @@ class MultiVector:
             else:
                 return f'{val}'
 
-        canon_vals = {self.algebra._bin2canon_prettystr[key]: val for key, val in self.items()}
-        canon_sorted_vals = sorted(canon_vals.items(), key=lambda x: (len(x[0]), x[0]))
+        canon_sorted_vals = {self.algebra._bin2canon_prettystr[key]: val for key, val in self.items()}
         str_repr = ' + '.join(
             [f'{print_value(val)} {blade}' if blade != '1' else f'{print_value(val)}'
-             for blade, val in canon_sorted_vals if (val.any() if hasattr(val, 'any') else val)]
+             for blade, val in canon_sorted_vals.items() if (val.any() if hasattr(val, 'any') else val)]
         )
         return str_repr
 
@@ -417,6 +423,18 @@ class MultiVector:
     def outertan(self):
         return self.algebra.outertan(self)
 
+    def polarity(self):
+        return self.algebra.polarity(self)
+
+    def unpolarity(self):
+        return self.algebra.unpolarity(self)
+
+    def hodge(self):
+        return self.algebra.hodge(self)
+
+    def unhodge(self):
+        return self.algebra.unhodge(self)
+
     def dual(self, kind='auto'):
         """
         Compute the dual of `self`. There are three different kinds of duality in common usage.
@@ -433,9 +451,9 @@ class MultiVector:
             use :code:`kind='hodge'`.
         """
         if kind == 'polarity' or kind == 'auto' and self.algebra.r == 0:
-            return self.algebra.polarity(self)
+            return self.polarity()
         elif kind == 'hodge' or kind == 'auto' and self.algebra.r == 1:
-            return self.algebra.hodge(self)
+            return self.hodge()
         elif kind == 'auto':
             raise Exception('Cannot select a suitable dual in auto mode for this algebra.')
         else:
@@ -446,9 +464,9 @@ class MultiVector:
         Compute the undual of `self`. See :class:`~kingdon.multivector.MultiVector.dual` for more information.
         """
         if kind == 'polarity' or kind == 'auto' and self.algebra.r == 0:
-            return self.algebra.unpolarity(self)
+            return self.unpolarity()
         elif kind == 'hodge' or kind == 'auto' and self.algebra.r == 1:
-            return self.algebra.unhodge(self)
+            return self.unhodge()
         elif kind == 'auto':
             raise Exception('Cannot select a suitable undual in auto mode for this algebra.')
         else:
