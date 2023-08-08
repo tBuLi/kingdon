@@ -144,7 +144,7 @@ class Algebra:
             if blade == 'e':
                 return '1'
             blade = '𝐞' + blade[1:]
-            for old, new in tuple(zip("0123456789abcde", "⁰¹²³⁴⁵⁶⁷⁸⁹ᵃᵇᶜᵈᵉ")):
+            for old, new in tuple(zip("0123456789", "₀₁₂₃₄₅₆₇₈₉")):
                 blade = blade.replace(old, new)
             return blade
         self._bin2canon_prettystr = {k: pretty_blade(v) for k, v in self.bin2canon.items()}
@@ -283,7 +283,7 @@ class Algebra:
             return partial(wrap, name=name, symbolic=symbolic)
 
         # Called as @register
-        return wrap(expr)
+        return wrap(expr, name=name, symbolic=symbolic)
 
     def multivector(self, *args, **kwargs) -> MultiVector:
         """ Create a new :class:`~kingdon.multivector.MultiVector`. """
