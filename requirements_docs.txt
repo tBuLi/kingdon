@@ -4,3 +4,4 @@ nbsphinx
 ipykernel
 symfit
 matplotlib
+clifford
