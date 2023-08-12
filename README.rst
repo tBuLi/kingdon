@@ -161,6 +161,34 @@ Overview of Operators
      - $\\tfrac{1}{2} \\{a, b\\}$
      -
      - :code:`a.acp(b)`
+   * - Sum of :code:`a` and :code:`b`
+     - :math:`a + b`
+     - :code:`a + b`
+     - :code:`a.add(b)`
+   * - Difference of :code:`a` and :code:`b`
+     - :math:`a - b`
+     - :code:`a - b`
+     - :code:`a.sub(b)`
+   * - Reverse of :code:`a`
+     - :math:`\\widetilde{a}`
+     - :code:`~a`
+     - :code:`a.reverse()`
+   * - Squared norm of :code:`a`
+     - :math:`a \\widetilde{a}`
+     -
+     - :code:`a.normsq()`
+   * - Norm of :code:`a`
+     - :math:`\\sqrt{a \\widetilde{a}}`
+     -
+     - :code:`a.norm()`
+   * - Normalize :code:`a`
+     - :math:`a / \\sqrt{a \\widetilde{a}}`
+     -
+     - :code:`a.normalized()`
+   * - Square root of :code:`a`
+     - :math:`\\sqrt{a}`
+     -
+     - :code:`a.sqrt()`
 
 Credits
 -------
