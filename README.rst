@@ -39,7 +39,7 @@ In bullet points:
 - Symbolically optimized.
 - Leverage sparseness of input.
 - :code:`numba` enabled for numerical computations.
-- :mod:`sympy` support for symbolic computations.
+- :code:`sympy` support for symbolic computations.
 - :code:`ganja.js` enabled graphics in jupyter notebooks.
 - Automatic broadcasting, such that transformations can be applied to e.g. point-clouds.
 
