@@ -124,14 +124,12 @@ def term_tuple(items, sign_func, keyout_func=operator.xor):
                      termstr=f'{"+" if sign > 0 else "-"}{"*".join(v.name for v in values_in)}')
 
 
-def codegen_product(*mvs, filter_func=lambda tt: tt.sign, sign_func=None, keyout_func=operator.xor, symbolic=False):
+def codegen_product(*mvs, filter_func=None, sign_func=None, keyout_func=operator.xor, symbolic=False):
     """
     Helper function for the codegen of all product-type functions.
 
     :param mvs: Positional-argument :class:`~kingdon.multivector.MultiVector`.
     :param filter_func: A condition which should be true in the preprocessing of terms.
-        For example, for the geometric product we filter out all values for which
-        ei*ej = 0 since these do not have to be considered anyway.
         Input is a TermTuple.
     :param sign_func: function to compute sign between terms. E.g. algebra.signs[ei, ej]
         for metric dependent products. Input: 2-tuple of blade indices, e.g. (ei, ej).
@@ -142,8 +140,11 @@ def codegen_product(*mvs, filter_func=lambda tt: tt.sign, sign_func=None, keyout
     if sign_func is None:
         sign_func = lambda pair: algebra.signs[pair]
 
-    terms = filter(filter_func, (term_tuple(items, sign_func, keyout_func=keyout_func)
-                                 for items in product(*(mv.items() for mv in mvs))))
+    # If sign == 0, then the term should be disregarded since it is zero
+    terms = filter(lambda tt: tt.sign, (term_tuple(items, sign_func, keyout_func=keyout_func)
+                                        for items in product(*(mv.items() for mv in mvs))))
+    if filter_func is not None:
+        terms = filter(filter_func, terms)
     # TODO: Can we loop over the basis blades in such a way that no sort is needed?
     sorted_terms = sorted(terms, key=sortfunc)
     if not symbolic:

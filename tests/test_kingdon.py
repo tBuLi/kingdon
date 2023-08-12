@@ -731,3 +731,19 @@ def test_symregister_basics():
     assert add(u, v) == add.codegen(u, v)
     assert grade_select(u) == u.grade((1, 2))
     assert coupled(u, v) == (u + v) ** 2 + 2 * u
+
+
+def test_25():
+    from kingdon import Algebra
+    alg = Algebra(3, 0, 1)
+    e0 = alg.blades['e0']
+    e1 = alg.blades['e1']
+    e2 = alg.blades['e2']
+    e02 = alg.blades['e02']
+    e12 = alg.blades['e12']
+
+    x = e12
+    y = (0 * e2 + e0).dual()
+    z = e1.dual()
+    ans = ((x * y) | z)
+    assert ans == e02
