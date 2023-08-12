@@ -565,7 +565,7 @@ def test_start_index():
         assert fi**2 == ei**2
 
 
-def test_asdensemv():
+def test_asfullmv():
     alg = Algebra(2, 0, 1)
     xvals = np.random.random(3)
     x = alg.vector(xvals)
@@ -573,16 +573,16 @@ def test_asdensemv():
     x_densevals = np.zeros(len(alg))
     x_densevals[np.array([1, 2, 4])] = xvals
     x_dense = alg.multivector(x_densevals, keys=tuple(range(8)))
-    # Compare to asdensemv method.
-    y = x.asdensemv(canonical=False)
+    # Compare to asfullmv method.
+    y = x.asfullmv(canonical=False)
     assert y.keys() == x_dense.keys()
     np.testing.assert_equal(y.values(), x_dense.values())
 
     # Manually make the expected dense x in canonical ordering
     x_densevals = np.zeros(len(alg))
     x_densevals[np.array([1, 2, 3])] = xvals
-    # Compare to asdensemv method.
-    y = x.asdensemv()
+    # Compare to asfullmv method.
+    y = x.asfullmv()
     np.testing.assert_equal(y.values(), x_densevals)
 
 

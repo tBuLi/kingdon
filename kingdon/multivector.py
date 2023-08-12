@@ -325,9 +325,9 @@ class MultiVector:
         """ Returns a matrix representation of this multivector. """
         return sum(v * self.algebra.matrix_basis[k] for k, v in self.items())
 
-    def asdensemv(self, canonical=True):
+    def asfullmv(self, canonical=True):
         """
-        Returns a dense version of the same multivector.
+        Returns a full version of the same multivector.
 
         :param canonical: If True (default) the values are in canonical order,
           even if the mutivector was already dense.
