@@ -107,8 +107,8 @@ for a specific value of :code:`b12`, simply call :code:`w`::
     (-10) * e2 + (-3) * e4
 
 
-Operators
-=========
+Overview of Operators
+=====================
 .. list-table:: Operators
    :widths: 50 25 25 25
    :header-rows: 1
