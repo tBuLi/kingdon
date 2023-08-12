@@ -53,7 +53,7 @@ def vga3d():
 def test_MultiVector(pga1d):
     with pytest.raises(TypeError):
         # If starting from a sequence, it must be of length len(algebra)
-        X = MultiVector(algebra=pga1d, vals=[1, 2])
+        X = MultiVector(algebra=pga1d, values=[1, 2])
     with pytest.raises(TypeError):
         # vals must be iterable (sequence)
         X = MultiVector(algebra=pga1d, values=2)

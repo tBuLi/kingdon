@@ -35,7 +35,7 @@ class MultiVector:
             :code:`MultiVector(alg, e12=1)`. Mutually exclusive with `values` and `keys`.
         """
         if items and keys is None and values is None:
-            keys, values = zip(*((blade, val) for blade in algebra.canon2bin if (val := items.get(blade, 0))))
+            keys, values = zip(*((blade, items[blade]) for blade in algebra.canon2bin if blade in items))
 
         # Sanitize input
         values = values if values is not None else tuple()
