@@ -16,7 +16,7 @@ class MultiVector:
     _values: tuple = field(default_factory=tuple)
     _keys: tuple = field(default_factory=tuple)
 
-    def __new__(cls, algebra, values=None, keys=None, *, name=None, grades=None, symbolcls=Symbol):
+    def __new__(cls, algebra: "Algebra", values=None, keys=None, *, name=None, grades=None, symbolcls=Symbol, **items):
         """
         :param algebra: Instance of :class:`~kingdon.algebra.Algebra`.
         :param keys: Keys corresponding to the basis blades in either binary rep or as strings, e.g. :code:'"e12"'.
@@ -31,10 +31,14 @@ class MultiVector:
         :param symbolcls: Optional, class to be used for symbol creation. This is a :class:`sympy.Symbol` by default,
             but could be e.g. :class:`symfit.Variable` or :class:`symfit.Parameter` when the goal is to use this
             multivector in a fitting problem.
+        :param items: keyword arguments can be used to initiate multivectors as well, e.g.
+            :code:`MultiVector(alg, e12=1)`. Mutually exclusive with `values` and `keys`.
         """
+        if items and keys is None and values is None:
+            keys, values = zip(*((blade, val) for blade in algebra.canon2bin if (val := items.get(blade, 0))))
+
         # Sanitize input
         values = values if values is not None else tuple()
-        name = name if name is not None else ''
         keys = keys if keys is not None else tuple()
         if not all(isinstance(k, int) for k in keys):
             keys = tuple(k if k in algebra.bin2canon else algebra.canon2bin[k] for k in keys)

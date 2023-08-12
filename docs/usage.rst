@@ -221,22 +221,18 @@ and because in practice :math:`b` will often by either a rotor satisfying
 :math:`b \widetilde{b} = 1` or a blade satisfying :math:`b^2 = b \cdot b`,
 and thus the inverse is identical to the reverse (up to sign).
 
-If you want to replace these operators by their proper definitions, that is as easy as setting
+If you want to replace these operators by their proper definitions, you can use the register decorator to
+overwrite the default operator (use at your own risk):
+
 
 .. code-block::
 
-    >>> alg.conj.codegen = lambda x, y: x * y / y
-    >>> alg.proj.codegen = lambda x, y: (x | y) / y
-
-However, this comes with a huge performance cost for the first evaluation,
-when codegen is performed for the given input, which is why this isn't the default.
-
-.. warning::
-    The syntax above for overwriting the codegen function might still be
-    subject to change in the future, and is not guaranteed. However, the ability
-    to customize the behavior of various operators, is guaranteed.
-    The reason this might still change is because we want to add the ability to
-    register any expression for codegen, not just unary and binary operators.
+    >>> @alg.register(name='sw')
+    >>> def sw(x, y):
+    >>>     return x * y / y
+    >>> @alg.register(name='proj')
+    >>> def proj(x, y):
+    >>>     return (x | y) / y
 
 
 Graphing using :code:`ganja.js`

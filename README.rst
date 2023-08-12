@@ -89,18 +89,16 @@ It is also possible to define some coefficients to be symbolic by inputting a st
 
     >>> from kingdon import Algebra, symbols
     >>> alg = Algebra(3, 0, 1)
-    >>> b = alg.bivector({'e12': 'b12', 'e34': 3})
+    >>> b = alg.bivector(e12='b12', e34=3)
     >>> b
     (b12) * e12 + (3) * e34
-    >>> v = alg.vector({0b0001: 1, 0b0100: 1})
+    >>> v = alg.vector(e1=1, e3=1)
     >>> v
     (1) * e1 + (1) * e3
     >>> w = b.cp(v)
     >>> w
     (-b12) * e2 + (-3) * e4
 
-This also demonstrates the two possible types of keys for basis blades if the input to a multivector is a dict:
-they can be integers or strings corresponding to the basis blades.
 
 A :code:`kingdon` MultiVector with symbols is callable. So in order to evaluate :code:`w` from the previous example,
 for a specific value of :code:`b12`, simply call :code:`w`::
@@ -152,7 +150,7 @@ Operators
      - :code:`a >> b`
      - :code:`a.sw(b)`
    * - Project :code:`a` onto :code:`b`
-     - $(a \\cdot b) b^{-1}$
+     - $(a \\cdot b) \\widetilde{b}$
      - :code:`a @ b`
      - :code:`a.proj(b)`
    * - Commutator of :code:`a` and :code:`b`

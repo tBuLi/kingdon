@@ -73,9 +73,9 @@ def test_anticommutation(pga1d, vga11, vga2d):
         assert X*Y == -Y*X
 
 def test_gp(pga1d):
-    # Multiply two multivectors
+    # Multiply two multivectors. Also tests two different MV creation API's
     X = MultiVector(values={'e': 2, 'e12': 3}, algebra=pga1d)
-    Y = MultiVector(values={'e': 7, 'e12': 5}, algebra=pga1d)
+    Y = MultiVector(e=7, e12=5, algebra=pga1d)
     Z = X * Y
     assert dict(Z.items()) == {0: 2*7, 3: 2*5 + 3*7}
 
@@ -352,7 +352,7 @@ def test_inv_div(pga2d):
 
 
 def test_mixed_symbolic(vga2d):
-    x = vga2d.evenmv({0: 2.2, 3: 's'})
+    x = vga2d.evenmv(e=2.2, e12='s')
     assert x[3] == Symbol('s')
     assert x[0] == 2.2
     assert x.issymbolic
