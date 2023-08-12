@@ -34,7 +34,7 @@ Symbolic Multivectors
 ---------------------
 
 In order to create symbolical multivectors in an algebra, we can call
-:code:`Algebra.multivector` and explicitly pass a :code:`name` argument.
+:class:`~kingdon.algebra.Algebra.multivector` and explicitly pass a :code:`name` argument.
 For example, let us create two symbolic vectors :code:`u` and :code:`v` in this algebra:
 
 .. code-block::
@@ -46,7 +46,7 @@ For example, let us create two symbolic vectors :code:`u` and :code:`v` in this 
     >>> v
     (v1) * e1 + (v2) * e2
 
-The return type of :code:`Algebra.multivector` is an instance of :class:`~kingdon.multivector.MultiVector`.
+The return type of :class:`~kingdon.algebra.Algebra.Algebra.multivector` is an instance of :class:`~kingdon.multivector.MultiVector`.
 
 .. note::
     :code:`kingdon` offers convenience methods for common types of multivectors, such as the vectors above.
@@ -54,7 +54,7 @@ The return type of :code:`Algebra.multivector` is an instance of :class:`~kingdo
     Moreover, a scalar is created by :meth:`~kingdon.algebra.Algebra.scalar`, a bivector by :meth:`~kingdon.algebra.Algebra.bivector`,
     a pseudoscalar by :meth:`~kingdon.algebra.Algebra.pseudoscalar`, and so on.
     However, all of these merely add the corresponding :code:`grades` argument to your input and
-    then call :code:`alg.multivector`, so :code:`alg.multivector` is what we need to understand.
+    then call :class:`~kingdon.algebra.Algebra.multivector`, so :class:`~kingdon.algebra.Algebra.multivector` is what we need to understand.
 
 :class:`~kingdon.multivector.MultiVector`'s support common math operators:
 
@@ -74,8 +74,7 @@ We also have the inner and exterior "products":
     >>> u ^ v
     (u1*v2 - u2*v1) * e12
 
-We see that *in the case of vectors* the product is equal to the sum of the inner and exterior,
-but this is **not the definition of the product**.
+We see that *in the case of vectors* the product is equal to the sum of the inner and exterior.
 
 Since vectors in 2DVGA represent reflections in lines through the origin, we can reflect the
 line :code:`v` in the line :code:`u` by using conjugation:
@@ -107,12 +106,12 @@ but with specific blades, we can do so by providing the :code:`keys` argument.
 
 .. code-block::
 
-    >>> x = alg.multivector(name='x', keys=(0b01, 0b11))
+    >>> x = alg.multivector(name='x', keys=('e1', 'e12'))
     >>> (x1) * e1 + (x12) * e12
 
-This can be done either by providing a tuple of integers which indicate which basis-vectors should be present,
-or by passing them as strings, i.e. :code:`keys=('e1', 'e12')` is equivalent to the example above.
-Internally however, :code:`kingdon` uses the binary representation.
+This can be done either by providing a tuple of strings which indicate which basis-vectors should be present,
+or by passing them as integers, i.e. :code:`keys=(0b01, 0b11)` is equivalent to the example above.
+Internally, :code:`kingdon` uses the binary representation.
 
 Numerical Multivectors
 ----------------------
@@ -263,39 +262,47 @@ These strings can be simple labels, or valid SVG syntax.
     and only static graphs are supported. In native :code:`ganja.js` lambda functions
     are evaluated every frame; this feature is currently not supported.
 
-Performance
------------
+Performance Tips
+----------------
 Because :code:`kingdon` attempts to symbolically optimize expressions
-using :mod:`sympy` the first time they are called, the first call to any operation is always slow,
-whereas subsequent calls have extremely good performance.
-This is because :code:`kingdon` first leverages the sparseness of the input,
-*and* subsequently uses symbolic optimization to eliminate any terms that are always zero
-regardless of the input.
-For example, the product :math:`\mathbf{e}_{1} \mathbf{e}_{12}` of the vector :math:`\mathbf{e}_1`
-and the bivector :math:`\mathbf{e}_{12}` in :math:`\mathbb{R}_{2+p',q,r}` always returns
-:math:`\mathbf{e}_2` for any :math:`p',q,r`.
-In :code:`kingdon`, it will also be equally fast to compute this product in all of these algebras,
-regardless of the total dimension.
+using :mod:`sympy` the first time they are called, the first call to any operation is comparatively slow,
+whereas subsequent calls have very good performance.
 
-Because the precomputation can get expensive, :code:`kingdon` predefines all the popular algebras
-of :math:`d = p+q+r < 6`.
-For example, a precomputed version of 3DPGA can be imported as
+There are however several things to be aware of to ensure good performance.
+
+Graded
+~~~~~~
+The first time :code:`kingdon` is asked to perform an operation it hasn't seen before, it performs code generation
+for that particular request. Because codegen is the most expensive step, it is beneficial to reduce the number of
+times it is needed. An easy way to achieve this is to initiate the :class:`~kingdon.algebra.Algebra` with `graded=True`.
+This enforces that :code:`kingdon` does not specialize codegen down to the individual basis blades, but rather only
+per grade. This means there are far less combinations that have to be considered and generated.
+
+Numba
+~~~~~
+We can enable numba just-in-time compilation by initiating an :class:`~kingdon.algebra.Algebra` with `numba=True`.
+This comes with a significant cost the first time any operator is called, but subsequent calls to the same operator are
+significantly faster. It is worth mentioning that when dealing with :ref:`Numerical Multivectors` over numpy arrays,
+the benefit of using `numba` actually reduces rapidly as the numpy arrays become larger, since then most of the time
+is spend in numpy routines anyway.
+
+Register Expressions
+~~~~~~~~~~~~~~~~~~~~
+To make it easy to optimize larger expressions, :code:`kingdon` offers the :func:`~kingdon.algebra.Algebra.register`
+decorator.
 
 .. code-block::
 
-    from kingdon.ga301 import ga301
+    >>> alg = Algebra(3, 0, 1)
+    >>>
+    >>> @alg.register
+    >>> def myfunc(u, v):
+    >>>      return u * (u + v)
+    >>>
+    >>> x = alg.vector(np.random.random(4))
+    >>> y = alg.vector(np.random.random(4))
+    >>> myfunc(x, y)
 
-It is also possible to cache the results of your script to your disk, such that subsequent runs of
-the same script will not need to recompute products, but can instead load them from disk. This is
-as easy as using the :code:`savecache` contextmanager around your script:
-
-.. code-block::
-
-    from kingdon import Algebra, savecache
-
-    alg = Algebra(6)
-    with savecache(alg) as alg:
-        u = alg.vector(name='u')
-
-By default this will store in the same location as the script, for more options
-see the :code:`savecache`.
+Calling the decorated :code:`myfunc` has the benefit that all the numerical computation is done in one single call,
+instead of doing each binary operation individually. This has the benefit that all the (expensive) python boilerplate
+code is called only once.

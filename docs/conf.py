@@ -36,6 +36,7 @@ extensions = [
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
     'sphinx.ext.intersphinx',
+    'sphinx.ext.autosectionlabel',
     'nbsphinx',
 ]
 
@@ -179,4 +180,4 @@ texinfo_documents = [
 ]
 
 # Always re-execute notebooks when building the docs
-nbsphinx_execute = 'always'
+nbsphinx_execute = 'auto'
