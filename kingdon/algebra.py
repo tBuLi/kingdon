@@ -50,7 +50,7 @@ class Algebra:
     :param r:  number of null dimensions.
     :param cse: If :code:`True` (default), attempt Common Subexpression Elimination (CSE)
         on symbolically optimized expressions.
-    :param numba: If :code:`True` (default), use numba.njit to just-in-time compile expressions.
+    :param numba: If :code:`True` (default is :code:`False`), use numba.njit to just-in-time compile expressions.
     :param graded: If :code:`True` (default is :code:`False`), perform binary and unary operations on a graded basis.
         This will still be more sparse than computing with a full multivector, but not as sparse as possible.
         It does however, vastly reduce the number of possible expressions that have to be symbolically optimized.
@@ -240,7 +240,7 @@ class Algebra:
 
         Example:
 
-            .. code-block ::
+        .. code-block ::
 
             @alg.register
             def myexpr(a, b):
@@ -392,7 +392,7 @@ class Algebra:
         metric = json.dumps(list(self.signature), cls=MultiVectorEncoder)
 
         src = f"""
-        fetch("https://cdn.jsdelivr.net/gh/enkimute/ganja.js/ganja.js")
+        fetch("https://enkimute.github.io/ganja.js/ganja.js")
         .then(x=>x.text())
         .then(ganja=>{{
 
