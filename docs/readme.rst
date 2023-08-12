@@ -118,47 +118,47 @@ Overview of Operators
      - Infix
      - Inline
    * - Geometric product
-     -  $ab$
+     - :math:`ab`
      - :code:`a*b`
      - :code:`a.gp(b)`
    * - Inner
-     - $a \\cdot b$
+     - :math:`a \cdot b`
      - :code:`a|b`
      - :code:`a.ip(b)`
    * - Scalar product
-     - $\\langle a \\cdot b \\rangle_0$
-     -
+     - :math:`\langle a \cdot b \rangle_0`
+     - :code:`(a|b).grade(0)`
      - :code:`a.sp(b)`
    * - Left-contraction
-     - $a \\rfloor b$
+     - :math:`a \rfloor b`
      -
      - :code:`a.lc(b)`
    * - Right-contraction
-     - $a \\lfloor b$
+     - :math:`a \lfloor b`
      -
      - :code:`a.rc(b)`
    * - Outer (Exterior)
-     - $a \\wedge b$
+     - :math:`a \wedge b`
      - :code:`a ^ b`
      - :code:`a.op(b)`
    * - Regressive
-     - $a \\vee b$
+     - :math:`a \vee b`
      - :code:`a & b`
      - :code:`a.rp(b)`
-   * - Conjugate :code:`b` by :code:`a`
-     - $a b \\widetilde{a}$
-     - :code:`a >> b`
-     - :code:`a.sw(b)`
+   * - Conjugate :code:`a` by :code:`b`
+     - :math:`b a \widetilde{b}`
+     - :code:`b >> a`
+     - :code:`b.sw(a)`
    * - Project :code:`a` onto :code:`b`
-     - $(a \\cdot b) \\widetilde{b}$
+     - :math:`(a \cdot b) \widetilde{b}`
      - :code:`a @ b`
      - :code:`a.proj(b)`
    * - Commutator of :code:`a` and :code:`b`
-     - $a \\times b = \\tfrac{1}{2} [a, b]$
+     - :math:`a \times b = \tfrac{1}{2} [a, b]`
      -
      - :code:`a.cp(b)`
    * - Anti-commutator of :code:`a` and :code:`b`
-     - $\\tfrac{1}{2} \\{a, b\\}$
+     - :math:`\tfrac{1}{2} \{a, b\}`
      -
      - :code:`a.acp(b)`
    * - Sum of :code:`a` and :code:`b`
@@ -170,23 +170,23 @@ Overview of Operators
      - :code:`a - b`
      - :code:`a.sub(b)`
    * - Reverse of :code:`a`
-     - :math:`\\widetilde{a}`
+     - :math:`\widetilde{a}`
      - :code:`~a`
      - :code:`a.reverse()`
    * - Squared norm of :code:`a`
-     - :math:`a \\widetilde{a}`
+     - :math:`a \widetilde{a}`
      -
      - :code:`a.normsq()`
    * - Norm of :code:`a`
-     - :math:`\\sqrt{a \\widetilde{a}}`
+     - :math:`\sqrt{a \widetilde{a}}`
      -
      - :code:`a.norm()`
    * - Normalize :code:`a`
-     - :math:`a / \\sqrt{a \\widetilde{a}}`
+     - :math:`a / \sqrt{a \widetilde{a}}`
      -
      - :code:`a.normalized()`
    * - Square root of :code:`a`
-     - :math:`\\sqrt{a}`
+     - :math:`\sqrt{a}`
      -
      - :code:`a.sqrt()`
 
