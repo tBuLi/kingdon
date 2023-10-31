@@ -32,7 +32,8 @@ def ordering_matrix(Rs):
     :param Rs: sequence of matrix reps for all the basis blades of an algebra.
     :return: The similarity transform to beat all similarity transforms.
     """
-    return np.array([[Ri[j, 0] for Ri in Rs] for j in range(len(Rs[0]))])
+    columns = [Ri[:, 0] for Ri in Rs]
+    return np.vstack(columns)
 
 
 def matrix_rep(p=0, q=0, r=0):
@@ -47,7 +48,7 @@ def matrix_rep(p=0, q=0, r=0):
     :param r: number of null dimensions.
     :return: sequence of matrix reps for the basis-blades.
     """
-    d = p+q+r
+    d = p + q + r
     I = I2
     P = P2
     Z = Z2
@@ -78,7 +79,7 @@ def matrix_rep(p=0, q=0, r=0):
         Rs.extend(Rs_grade_i)
 
     O = ordering_matrix(Rs)
-    return [O@Ri@O.T for Ri in Rs]
+    return [O @ Ri @ O.T for Ri in Rs]
 
 
 def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
