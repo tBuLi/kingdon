@@ -98,7 +98,7 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
 
     :expr: Callable representing a valid GA expression. Can also be a :class:`~kingdon.operator_dict.OperatorDict`.
     :inputs: All positional arguments are consider symbolic input arguments to `expr`. The last of these is assumed to
-        represent the vector `x` in `y = Ax`. 
+        represent the vector `x` in `y = Ax`.
     :res_like: optional multivector corresponding to the desired output. If None, then the full output is returned.
         However, if only a subsegment of the output is desired, provide a multivector with the desired shape.
         In the example above setting, `res_like = alg.vector(e1=1)` would mean only the e1 component of the matrix
@@ -110,11 +110,11 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
     y = expr(*inputs)
     alg = x.algebra
     if res_like is not None:
-        y = alg.multivector({k: y[k] for k in res_like.keys()})
+        y = alg.multivector({k: sympy.sympify(y[k]) for k in res_like.keys()})
 
     A = sympy.zeros(len(y), len(x))
     for i, (blade_y, yi) in enumerate(y.items()):
-        cv = sympy.collect(yi, x.values())
+        cv = sympy.collect(yi.expand(), x.values())
         for j, (blade_x, xj) in enumerate(x.items()):
             A[i, j] = cv.coeff(xj)
     rows = [alg.bin2canon[k] for k in y.keys()]
