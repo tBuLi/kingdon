@@ -8,3 +8,4 @@ from sympy import symbols
 
 from kingdon.algebra import Algebra
 from kingdon.multivector import MultiVector
+from kingdon.matrixreps import expr_as_matrix
