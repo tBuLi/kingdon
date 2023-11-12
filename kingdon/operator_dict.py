@@ -95,9 +95,7 @@ class OperatorDict(Mapping):
 
         keys_out, func = self[mv1.keys(), mv2.keys()]
         issymbolic = (mv1.issymbolic or mv2.issymbolic)
-        if not keys_out:
-            values_out = tuple()
-        elif issymbolic or not mv1.algebra.numba:
+        if issymbolic or not mv1.algebra.numba:
             values_out = func(mv1.values(), mv2.values())
         else:
             values_out = self.algebra.numspace[func.__name__](mv1.values(), mv2.values())

@@ -185,10 +185,10 @@ class Algebra:
 
         .. code-block ::
 
-            {(0,): (0,), (1,): (1, 2), (2,): (3,), (0, 1): (0, 1, 2),
+            {(): (), (0,): (0,), (1,): (1, 2), (2,): (3,), (0, 1): (0, 1, 2),
              (0, 2): (0, 3), (1, 2): (1, 2, 3), (0, 1, 2): (0, 1, 2, 3)}
         """
-        all_grade_combs = chain(*(combinations(range(0, self.d + 1), r=j) for j in range(1, len(self) + 1)))
+        all_grade_combs = chain(*(combinations(range(0, self.d + 1), r=j) for j in range(0, len(self) + 1)))
         return {comb: sum((self.indices_for_grade[grade] for grade in comb), ())
                 for comb in all_grade_combs}
 

@@ -747,3 +747,13 @@ def test_25():
     z = e1.dual()
     ans = ((x * y) | z)
     assert ans == e02
+
+def test_value_31():
+    alg = Algebra(2)
+    B = alg.bivector(name='B')
+    res = 2 * (B ^ B)
+    # res is not just zero, but an empty mv.
+    empty = alg.multivector(e=0)
+    assert res == empty
+    zero = alg.multivector(e=0)
+    assert res != zero
