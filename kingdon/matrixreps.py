@@ -90,7 +90,7 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
         alg = Algebra(3, 0, 1)
         R = alg.evenmv(name='R')
         x = alg.vector(name='x')
-        A, rows, columns = expr_as_matrix(lambda R, x: R >> x, R, x)
+        A, y = expr_as_matrix(lambda R, x: R >> x, R, x)
 
     In order to build the matrix rep the input `expr` is evaluated, so make sure the inputs
     to the expression are given in the correct order.
@@ -103,8 +103,7 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
         However, if only a subsegment of the output is desired, provide a multivector with the desired shape.
         In the example above setting, `res_like = alg.vector(e1=1)` would mean only the e1 component of the matrix
         is returned. This does not have to be a symbolic multivector, only the keys are checked.
-    :return: This function returns the matrix representation, and the names of the basis blades corresponding to the
-        rows and columns of the matrix. The columns correspond to `x`, while the rows correspond to `y`.
+    :return: This function returns the matrix representation, and the result of applying the expression to the input.
     """
     x = inputs[-1]
     y = expr(*inputs)
@@ -117,6 +116,4 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
         cv = sympy.collect(yi.expand(), x.values())
         for j, (blade_x, xj) in enumerate(x.items()):
             A[i, j] = cv.coeff(xj)
-    rows = [alg.bin2canon[k] for k in y.keys()]
-    columns = [alg.bin2canon[k] for k in x.keys()]
-    return A, rows, columns
+    return A, y
