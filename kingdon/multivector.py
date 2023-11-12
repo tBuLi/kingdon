@@ -315,6 +315,19 @@ class MultiVector:
                      for v in self.values())
         return self.fromkeysvalues(self.algebra, keys=self.keys(), values=vals)
 
+    def map(self, func) -> "MultiVector":
+        """ Returns a new multivector where `func` has been applied to all the values."""
+        vals = tuple(func(v) for v in self.values())
+        return self.fromkeysvalues(self.algebra, keys=self.keys(), values=vals)
+
+    def filter(self, func) -> "MultiVector":
+        """ Returns a new multivector containing only those elements for which `func` was true-ish. """
+        keysvalues = tuple((k, v) for k, v in self.items() if func(v))
+        if not keysvalues:
+            return self.fromkeysvalues(self.algebra, keys=tuple(), values=tuple())
+        keys, values = zip(*keysvalues)
+        return self.fromkeysvalues(self.algebra, keys=keys, values=values)
+
     @cached_property
     def _callable(self):
         """ Return the callable function for this MV. """
