@@ -162,31 +162,31 @@ Overview of Operators
      -
      - :code:`a.acp(b)`
    * - Sum of :code:`a` and :code:`b`
-     - :math:`a + b`
+     - $a + b$
      - :code:`a + b`
      - :code:`a.add(b)`
    * - Difference of :code:`a` and :code:`b`
-     - :math:`a - b`
+     - $a - b$
      - :code:`a - b`
      - :code:`a.sub(b)`
    * - Reverse of :code:`a`
-     - :math:`\\widetilde{a}`
+     - $\\widetilde{a}$
      - :code:`~a`
      - :code:`a.reverse()`
    * - Squared norm of :code:`a`
-     - :math:`a \\widetilde{a}`
+     - $a \\widetilde{a}$
      -
      - :code:`a.normsq()`
    * - Norm of :code:`a`
-     - :math:`\\sqrt{a \\widetilde{a}}`
+     - $\\sqrt{a \\widetilde{a}}$
      -
      - :code:`a.norm()`
    * - Normalize :code:`a`
-     - :math:`a / \\sqrt{a \\widetilde{a}}`
+     - $a / \\sqrt{a \\widetilde{a}}$
      -
      - :code:`a.normalized()`
    * - Square root of :code:`a`
-     - :math:`\\sqrt{a}`
+     - $\\sqrt{a}$
      -
      - :code:`a.sqrt()`
 
