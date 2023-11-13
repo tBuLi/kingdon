@@ -121,7 +121,7 @@ def term_tuple(items, sign_func, keyout_func=operator.xor):
                      keys_in=keys_in,
                      sign=sign,
                      values_in=values_in,
-                     termstr=f'{"+" if sign > 0 else "-"}{"*".join(v.name for v in values_in)}')
+                     termstr=f'{"+" if sign > 0 else "-"}{"*".join(str(v) for v in values_in)}')
 
 
 def codegen_product(*mvs, filter_func=None, sign_func=None, keyout_func=operator.xor, symbolic=False):
@@ -133,7 +133,7 @@ def codegen_product(*mvs, filter_func=None, sign_func=None, keyout_func=operator
         Input is a TermTuple.
     :param sign_func: function to compute sign between terms. E.g. algebra.signs[ei, ej]
         for metric dependent products. Input: 2-tuple of blade indices, e.g. (ei, ej).
-    :param asdict: If true, return the dict of strings before converting to a function.
+    :param keyout_func:
     """
     sortfunc = lambda x: x.key_out
     algebra = mvs[0].algebra
@@ -146,6 +146,7 @@ def codegen_product(*mvs, filter_func=None, sign_func=None, keyout_func=operator
     if filter_func is not None:
         terms = filter(filter_func, terms)
     # TODO: Can we loop over the basis blades in such a way that no sort is needed?
+    # TODO: perhaps a simple res = {} is faster than sort and groupby?
     sorted_terms = sorted(terms, key=sortfunc)
     if not symbolic:
         return {k: "".join(term.termstr for term in group)
@@ -157,34 +158,29 @@ def codegen_product(*mvs, filter_func=None, sign_func=None, keyout_func=operator
         return algebra.multivector(res)
 
 
-def codegen_gp(x, y, symbolic=False):
+def codegen_gp(x, y):
     """
     Generate the geometric product between :code:`x` and :code:`y`.
 
     :param x: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
     :param y: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
-    :param symbolic: If true, return a symbolic :class:`~kingdon.multivector.MultiVector` instead of a lambda function.
     :return: tuple with integers indicating the basis blades present in the
         product in binary convention, and a lambda function that perform the product.
     """
-    return codegen_product(x, y, symbolic=symbolic)
+    return codegen_product(x, y)
 
 
 def codegen_sw(x, y):
     """
-    Generate the projection of :code:`x` onto :code:`y`: :math:`x y \widetilde{x}`.
+    Generate the conjugation of :code:`y` by :code:`x`: :math:`x y \widetilde{x}`.
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    if x.algebra.simplify:
-        res = codegen_product(x, y, ~x, symbolic=True)
-        res = {k: str(simp_expr) for k, expr in res.items() if (simp_expr := expand(expr))}
-    else:
-        res = codegen_product(x, y, ~x, symbolic=False)
+    res = codegen_product(x, y, ~x)
     return res
 
 
-def codegen_cp(x, y, symbolic=False):
+def codegen_cp(x, y):
     """
     Generate the commutator product of :code:`x` and :code:`y`: :code:`x.cp(y) = 0.5*(x*y-y*x)`.
 
@@ -192,10 +188,10 @@ def codegen_cp(x, y, symbolic=False):
     """
     algebra = x.algebra
     filter_func = lambda tt: (algebra.signs[tt.keys_in] - algebra.signs[tt.keys_in[::-1]])
-    return codegen_product(x, y, filter_func=filter_func, symbolic=symbolic)
+    return codegen_product(x, y, filter_func=filter_func)
 
 
-def codegen_acp(x, y, symbolic=False):
+def codegen_acp(x, y):
     """
     Generate the anti-commutator product of :code:`x` and :code:`y`: :code:`x.acp(y) = 0.5*(x*y+y*x)`.
 
@@ -203,10 +199,10 @@ def codegen_acp(x, y, symbolic=False):
     """
     algebra = x.algebra
     filter_func = lambda tt: (algebra.signs[tt.keys_in] + algebra.signs[tt.keys_in[::-1]])
-    return codegen_product(x, y, filter_func=filter_func, symbolic=symbolic)
+    return codegen_product(x, y, filter_func=filter_func)
 
 
-def codegen_ip(x, y, diff_func=abs, symbolic=False):
+def codegen_ip(x, y, diff_func=abs):
     """
     Generate the inner product of :code:`x` and :code:`y`.
 
@@ -217,7 +213,7 @@ def codegen_ip(x, y, diff_func=abs, symbolic=False):
     """
     algebra = x.algebra
     filter_func = lambda tt: tt.key_out == diff_func(tt.keys_in[0] - tt.keys_in[1])
-    return codegen_product(x, y, filter_func=filter_func, symbolic=symbolic)
+    return codegen_product(x, y, filter_func=filter_func)
 
 
 def codegen_lc(x, y):
@@ -254,13 +250,10 @@ def codegen_proj(x, y):
     :return: tuple of keys in binary representation and a lambda function.
     """
     filter_func = lambda tt: tt.key_out == abs(tt.keys_in[0] - tt.keys_in[1]) ^ tt.keys_in[2]
-    if x.algebra.simplify:
-        res = codegen_product(x, y, ~y, filter_func=filter_func, symbolic=True)
-        return {k: str(simp_expr) for k, expr in res.items() if (simp_expr := expand(expr))}
-    return codegen_product(x, y, ~y, filter_func=filter_func, symbolic=False)
+    return codegen_product(x, y, ~y, filter_func=filter_func)
 
 
-def codegen_op(x, y, symbolic=False):
+def codegen_op(x, y):
     """
     Generate the outer product of :code:`x` and :code:`y`: :code:`x.op(y) = x ^ y`.
 
@@ -272,7 +265,7 @@ def codegen_op(x, y, symbolic=False):
     algebra = x.algebra
     filter_func = lambda tt: tt.key_out == sum(tt.keys_in)
     sign_func = lambda pair: (-1)**algebra.swaps[pair]
-    return codegen_product(x, y, filter_func=filter_func, sign_func=sign_func, symbolic=symbolic)
+    return codegen_product(x, y, filter_func=filter_func, sign_func=sign_func)
 
 
 def codegen_rp(x, y):
@@ -310,51 +303,23 @@ Tuple representing a fraction.
 
 def codegen_inv(y, x=None, symbolic=False):
     alg = y.algebra
-    # As preprocessing we invert y*~y since y^{-1} = ~y / (y*~y)
-    if len(y) == 1 and y.grades == (0,):
-        adj_y, denom_y = x or 1, y.e
-    else:
-        ynormsq = y.normsq()
-
-        if ynormsq.grades == tuple():
-            raise ZeroDivisionError
-        elif ynormsq.grades == (0,):
-            adj_y, denom_y = ~y if x is None else x * ~y, ynormsq.e
-        else:
-            # Make a mv with the same components as ynormsq, and invert that instead.
-            # Although this requires some more bookkeeping, it is much more performant.
-            z = alg.multivector(name='z', keys=ynormsq.keys())
-            adj_z, denom_z = codegen_shirokov_inv(z, symbolic=True)
-
-            # Same trick, make a mv that mimicks adj_z and multiply it with ~y.
-            A_z = alg.multivector(name='A_z', keys=adj_z.keys())
-            # Faster to this `manually` instead of with ~a * A_z
-            res = codegen_product(~y, A_z, symbolic=True)
-            A_y = res if x is None else x * res
-
-            # Replace all the dummy A_z symbols by the expressions in adj_z.
-            subs_dict = dict(zip(A_z.values(), adj_z.values()))
-            adj_y = A_y.subs(subs_dict)
-            # Replace all the dummy b symbols by the expressions in anormsq to
-            # recover the actual adjoint of a and corresponding denominator.
-            subs_dict = dict(zip(z.values(), ynormsq.values()))
-            denom_y = denom_z.subs(subs_dict)
-            adj_y = adj_y.subs(subs_dict)
+    num, denom = codegen_shirokov_inv(y, symbolic=True)
+    num = num if x is None else x * num
 
     if symbolic:
-        return Fraction(adj_y, denom_y)
+        return Fraction(num, denom)
 
     d = alg.scalar(name='d')
-    denom_y_inv = alg.scalar([1 / denom_y])
-    yinv = alg.multivector({k: Mul(d[0], v, evaluate=False) for k, v in adj_y.items()})
+    denom_inv = alg.scalar([1 / denom])
+    yinv = num * d.e  #TODO: this multiply is to gready, would be better if it didnt distribute, & reinstate CSE
 
     # Prepare all the input for lambdify
     args = {'y': y.values()}
     expr = yinv.values()
-    dependencies = [(d.values(), denom_y_inv.values())]
+    dependencies = list(zip(d.values(), denom_inv.values()))
     return CodegenOutput(
         yinv.keys(),
-        lambdify(args, expr, funcname=f'inv_{y:keys_binary}', dependencies=dependencies, cse=alg.cse)
+        lambdify(args, expr, funcname=f'inv_{y.type_number}', dependencies=dependencies, cse=alg.cse)
     )
 
 
@@ -365,7 +330,7 @@ def codegen_shirokov_inv(x, symbolic=False):
     """
     alg = x.algebra
     n = sympify(2 ** ((alg.d + 1) // 2))  # Sympify ratio to keep the ratios exact and avoid floating point errors.
-    supply = power_supply(x, tuple(range(1, n + 1)))
+    supply = power_supply(x, tuple(range(1, n + 1)))  # Generate powers of x efficiently.
     powers = []
     cs = []
     xs = []
@@ -374,27 +339,21 @@ def codegen_shirokov_inv(x, symbolic=False):
         xi = powers[i - 1]
         for j in range(i - 1):
             power_idx = i - j - 2
-            xi_diff = x.fromkeysvalues(
-                alg, keys=xi.keys(),
-                values=tuple(Mul(cs[j], v) for v in powers[power_idx].values())
-            )
+            xi_diff = powers[power_idx] * cs[j]
             xi = xi - xi_diff
-            xi = alg.multivector(
-                {k: simp_expr for k, expr in xi.items() if (simp_expr := expand(expr))}
-            )
         if xi.grades == (0,):
             break
         xs.append(xi)
-        cs.append((n / i) * xi[0])
+        cs.append((n / i) * xi.e)
 
     if i == 1:
-        adj = alg.scalar([1])
+        adj = alg.blades['e']
     else:
         adj = xs[-1] - cs[-1]
 
     if symbolic:
-        return Fraction(adj, xi[0])
-    return alg.multivector({k: v / xi[0] for k, v in adj.items()})
+        return Fraction(adj, xi.e)
+    return alg.multivector({k: v / xi.e for k, v in adj.items()})
 
 
 def codegen_div(x, y):
@@ -407,26 +366,21 @@ def codegen_div(x, y):
         raise ZeroDivisionError
     d = alg.scalar(name='d')
     denom_inv = alg.scalar([1 / denom])
-    res = alg.multivector({k: Mul(d[0], v, evaluate=False) for k, v in num.items()})
+    res = num * d.e
 
     # Prepare all the input for lambdify
     args = {'x': x.values(), 'y': y.values()}
     expr = res.values()
-    dependencies = [(d.values(), denom_inv.values())]
+    dependencies = list(zip(d.values(), denom_inv.values()))  #[(d.values(), denom_inv.values())]
     return CodegenOutput(
         res.keys(),
-        lambdify(args, expr, funcname=f'inv_{x:keys_binary}_x_{y:keys_binary}',
+        lambdify(args, expr, funcname=f'div_{x.type_number}_x_{y.type_number}',
                  dependencies=dependencies, cse=alg.cse)
     )
 
 
 def codegen_normsq(x):
-    if x.algebra.simplify:
-        res = codegen_product(x, ~x, symbolic=True)
-        res = {k: simp_expr for k, expr in res.items() if (simp_expr := expand(expr))}
-    else:
-        res = codegen_product(x, ~x, symbolic=False)
-    return res
+    return codegen_product(x, ~x)
 
 
 def codegen_outerexp(x, asterms=False):
@@ -472,21 +426,21 @@ def codegen_outertan(x):
     return outertan
 
 
-def codegen_add(x, y, sign="+"):
-    vals = {k: v.name for k, v in x.items()}
+def codegen_add(x, y, sign=operator.add):
+    vals = {k: v for k, v in x.items()}
     for k, v in y.items():
         if k in vals:
-            vals[k] = f"{vals[k]}{sign}{v.name}"
+            vals[k] = sign(vals[k], v)
         else:
-            vals[k] = v.name if sign == "+" else f"{sign}{v.name}"
+            vals[k] = sign(v, 0)
     return vals
 
 
 def codegen_sub(x, y):
-    return codegen_add(x, y, sign="-")
+    return codegen_add(x, y, sign=operator.sub)
 
 def codegen_neg(x):
-    return {k: f"-{v.name}" for k, v in x.items()}
+    return {k: -v for k, v in x.items()}
 
 
 def codegen_involutions(x, invert_grades=(2, 3)):
@@ -496,7 +450,7 @@ def codegen_involutions(x, invert_grades=(2, 3)):
 
     :param invert_grades: The grades that flip sign under this involution mod 4, e.g. (2, 3) for reversion.
     """
-    return {k: f"-{v.name}" if bin(k).count('1') % 4 in invert_grades else v.name
+    return {k: -v if bin(k).count('1') % 4 in invert_grades else v
             for k, v in x.items()}
 
 
@@ -517,21 +471,33 @@ def codegen_sqrt(x):
     Take the square root using the study number approach as described in
     https://doi.org/10.1002/mma.8639
     """
+    alg = x.algebra
     if x.grades == (0,):
-        return {0: x.e**0.5}
+        return {0: f'({str(x.e)}**0.5)'}
     a, bI = x.grade(0), x - x.grade(0)
     has_solution = len(x.grades) <= 2 and 0 in x.grades
     if not has_solution:
-        raise NotImplementedError("No closed form solution for sqrt is known.")
+        warnings.warn("Cannot verify that we really are taking the sqrt of a Study number.", RuntimeWarning)
 
     bI_sq = bI * bI
     if not bI_sq:
-        cp = a.e ** 0.5
+        cp = f'({str(a.e)}**0.5)'
     else:
         normS = (a * a - bI * bI).e
-        cp = (0.5 * (a.e + normS ** 0.5)) ** 0.5
-    dI = bI / (2 * cp)
-    return cp + dI
+        cp = f'(0.5 * ({str(a.e)} + {str(normS)}**0.5)) ** 0.5'
+    c = alg.scalar(name='c')
+    c2_inv = alg.scalar(name='c2_inv')
+    dI = bI * c2_inv
+    res = c + dI
+
+    # Prepare all the input for lambdify
+    args = {'x': x.values()}
+    expr = res.values()
+    dependencies = [*zip(c.values(), [cp]), *zip(c2_inv.values(), [f'0.5 / {cp}'])]
+    return CodegenOutput(
+        res.keys(),
+        lambdify(args, expr, funcname=f'sqrt_{x.type_number}', dependencies=dependencies, cse=alg.cse)
+    )
 
 
 def codegen_polarity(x, undual=False):
@@ -567,7 +533,7 @@ def codegen_unhodge(x):
 
 
 def _lambdify_mv(free_symbols, mv):
-    func = lambdify(free_symbols, mv.values(), funcname=f'custom_{mv:keys_binary}', cse=mv.algebra.cse)
+    func = lambdify(free_symbols, mv.values(), funcname=f'custom_{mv.type_number}', cse=mv.algebra.cse)
     return CodegenOutput(tuple(mv.keys()), func)
 
 
@@ -586,7 +552,7 @@ def do_codegen(codegen, *mvs) -> CodegenOutput:
         return res
     funcname = f'{codegen.__name__}_' + '_x_'.join(f"{mv.type_number}" for mv in mvs)
     args = {arg_name: arg.values() for arg_name, arg in zip(string.ascii_uppercase, mvs)}
-    # Sort the keys in binary order
+    # Sort the keys in canonical order
     if len(res) > 1:
         keys, exprs = zip(*((k, res[k]) for k in mvs[0].algebra.canon2bin.values() if k in res.keys()))
     else:
@@ -671,6 +637,10 @@ def lambdify(args: dict, exprs: tuple, funcname: str, dependencies: tuple = None
              'user_functions': {}}
         )
 
+    exprs = tuple(expr.tosympy() if hasattr(expr, 'tosympy') else expr for expr in exprs)
+    if dependencies is not None:
+        dependencies = [(y, x.tosympy() if hasattr(x, 'tosympy') else x)
+                        for y, x in dependencies]
     names = tuple(arg if isinstance(arg, str) else arg.name for arg in args.keys())
     iterable_args = tuple(args.values())
 
@@ -683,7 +653,7 @@ def lambdify(args: dict, exprs: tuple, funcname: str, dependencies: tuple = None
             from sympy.simplify.cse_main import cse
         if dependencies:
             all_exprs = (*exprs, *rhsides)
-            cses, _all_exprs = cse(all_exprs, list=False)
+            cses, _all_exprs = cse(all_exprs, list=False, order='none', ignore=lhsides)
             _exprs, _rhsides = _all_exprs[:-len(rhsides)], _all_exprs[len(exprs):]
             cses.extend(tuple(zip(flatten(lhsides), flatten(_rhsides))))
         else:
@@ -800,7 +770,7 @@ class KingdonPrinter:
                 s, expr = self._preprocess(arg, expr)
             elif hasattr(arg, 'name'):
                 s = arg.name
-            elif arg.is_symbol:
+            elif hasattr(arg, 'is_symbol') and arg.is_symbol:
                 s = self._argrepr(arg)
             else:
                 s = str(arg)

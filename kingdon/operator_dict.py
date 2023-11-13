@@ -39,7 +39,7 @@ class OperatorDict(Mapping):
     def __getitem__(self, keys_in: Tuple[Tuple[int]]):
         if keys_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
-            mvs = [self.algebra.multivector(name=name, keys=keys)
+            mvs = [self.algebra.multivector(name=name, keys=keys, symbolcls=self.algebra.codegen_symbolcls)
                    for name, keys in zip(string.ascii_lowercase, keys_in)]
             keys_out, func = do_codegen(self.codegen, *mvs)
             self.algebra.numspace[func.__name__] = njit(func) if self.algebra.numba else func
@@ -52,12 +52,9 @@ class OperatorDict(Mapping):
     def __iter__(self):
         return iter(self.operator_dict)
 
-    @staticmethod
-    def filter(keys_out, values_out):
+    def filter(self, keys_out, values_out):
         """ For given keys and values, keep only symbolically non-zero elements. """
-        keysvalues = ((k, v if not isinstance(v, Expr) else simplify(v))
-                      for k, v in zip(keys_out, values_out))
-        keysvalues = tuple((k, v) for k, v in keysvalues if not isinstance(v, Expr) or v)
+        keysvalues = tuple((k, simpv) for k, v in zip(keys_out, values_out) if (simpv := self.algebra.simp_func(v)))
         return zip(*keysvalues) if keysvalues else (tuple(), tuple())
 
     def __call__(self, *mvs):
@@ -79,7 +76,7 @@ class OperatorDict(Mapping):
         else:
             values_out = self.algebra.numspace[func.__name__](*values_in)
 
-        if issymbolic and self.algebra.simplify:
+        if issymbolic and self.algebra.simp_func:
             keys_out, values_out = self.filter(keys_out, values_out)
 
         return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)
@@ -102,7 +99,7 @@ class OperatorDict(Mapping):
         else:
             values_out = self.algebra.numspace[func.__name__](mv1.values(), mv2.values())
 
-        if issymbolic and self.algebra.simplify:
+        if issymbolic and self.algebra.simp_func:
             keys_out, values_out = self.filter(keys_out, values_out)
 
         return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)
@@ -116,8 +113,7 @@ class UnaryOperatorDict(OperatorDict):
     """
     def __getitem__(self, keys_in: Tuple[Tuple[int]]):
         if keys_in not in self.operator_dict:
-            vals = tuple(Symbol(f'a{self.algebra.bin2canon[ek][1:]}') for ek in keys_in)
-            mv = MultiVector.fromkeysvalues(self.algebra, keys=keys_in, values=vals)
+            mv = self.algebra.multivector(name='a', keys=keys_in, symbolcls=self.algebra.codegen_symbolcls)
             keys_out, func = do_codegen(self.codegen, mv)
             self.algebra.numspace[func.__name__] = njit(func) if self.algebra.numba else func
             self.operator_dict[keys_in] = (keys_out, func)
@@ -132,7 +128,7 @@ class UnaryOperatorDict(OperatorDict):
         else:
             values_out = self.algebra.numspace[func.__name__](mv.values())
 
-        if issymbolic and self.algebra.simplify:
+        if issymbolic and self.algebra.simp_func:
             keys_out, values_out = self.filter(keys_out, values_out)
 
         return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)

@@ -5,9 +5,10 @@ from functools import reduce, cached_property
 from typing import Generator
 from itertools import product
 
-from sympy import Symbol, Expr, sympify
+from sympy import Expr, Symbol, sympify
 
 from kingdon.codegen import _lambdify_mv
+from kingdon.polynomial import RationalPolynomial
 
 
 @dataclass(init=False)
@@ -169,7 +170,11 @@ class MultiVector:
     @cached_property
     def issymbolic(self):
         """ True if this mv contains Symbols, False otherwise. """
-        return any(isinstance(v, Expr) for v in self.values())
+        # Allowed symbol classes. codegen_symbolcls might refer to a constructor (method): get the class instead.
+        symbol_classes = (Expr, self.algebra.codegen_symbolcls.__self__
+                                if hasattr(self.algebra.codegen_symbolcls, '__self__')
+                                else self.algebra.codegen_symbolcls)
+        return any(isinstance(v, symbol_classes) for v in self.values())
 
     def neg(self):
         return self.algebra.neg(self)

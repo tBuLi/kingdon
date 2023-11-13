@@ -517,11 +517,16 @@ def test_sqrt():
     alg = Algebra(3, 0, 1)
     uvals = np.random.random(4)
     vvals = np.random.random(4)
-    u = alg.vector(uvals)
-    v = alg.vector(vvals)
+    u = alg.vector(uvals).normalized()
+    v = alg.vector(vvals).normalized()
     R = u * v
+
     Rsqrt = R.sqrt()
     diff = Rsqrt*Rsqrt - R
+    np.testing.assert_almost_equal(diff.values(), np.zeros(len(alg) // 2))
+
+    Rsqrt_direct = (1 + R).normalized()
+    diff = Rsqrt - Rsqrt_direct
     np.testing.assert_almost_equal(diff.values(), np.zeros(len(alg) // 2))
 
 
