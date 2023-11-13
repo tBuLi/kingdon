@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 
 from sympy import Mul, Add, Symbol, RealNumber
 
+from kingdon.codegen import power_supply
 
 def compare(a, b):
     if a is None: return 1
@@ -76,6 +77,9 @@ class Polynomial:
                 bi += 1
         return self.__class__(res)
 
+    def __radd__(self, other):
+        return self.__add__(other)
+
     def __mul__(self, other):
         if self == 0 or other == 0:
             return self.__class__([])
@@ -118,10 +122,24 @@ class Polynomial:
     def __sub__(self, other):
         return self + (-other)
 
+    def __rsub__(self, other):
+        return other + (-self)
+
+    def __pow__(self, power, modulo=None):
+        *_, last = power_supply(self, power)
+        return last
+
+    def __truediv__(self, other):
+        if isinstance(other, self.__class__):
+            return RationalPolynomial(self, other)
+        # Assume scalar
+        return self * (1 / other)
+
     def __str__(self):
         preprocessed = (monomial if len(monomial) == 1 else monomial[1:] if monomial[0] == 1 else monomial
                         for monomial in self.args)
-        return " + ".join("*".join(str(x) for x in monomial if x != 1) for monomial in preprocessed)
+        return " + ".join("*".join(str(x) for x in monomial if x != 1) if len(monomial) > 1 else str(monomial[0])
+                          for monomial in preprocessed)
 
     def tosympy(self):
         """ Return a sympy version of this Polynomial. """
@@ -132,6 +150,9 @@ class Polynomial:
         terms = (Mul(*monomial, evaluate=True) for monomial in sympified)
         res = Add(*terms, evaluate=True)
         return res
+
+    def __bool__(self):
+        return self.args != []
 
 
 class RationalPolynomial:
@@ -188,6 +209,9 @@ class RationalPolynomial:
         if len(nn) == len(nd) and nn == nd: return RationalPolynomial([[1]])
         return RationalPolynomial(nn, nd)
 
+    def __radd__(self, other):
+        return self.__add__(other)
+
     def __mul__(self, other):
         if not isinstance(other, self.__class__):
             other = self.__class__([[other]])
@@ -243,6 +267,13 @@ class RationalPolynomial:
     def __sub__(self, other):
         return self + (-other)
 
+    def __rsub__(self, other):
+        return other + (-self)
+
+    def __pow__(self, power, modulo=None):
+        *_, last = power_supply(self, power)
+        return last
+
     def __str__(self):
         numer_str = f"({self.numer})" if len(self.numer) > 1 else f"{self.numer}"
         if self.denom.args == [[1]]:
@@ -253,3 +284,6 @@ class RationalPolynomial:
     def tosympy(self):
         """ Return a sympy version of this Polynomial. """
         return self.numer.tosympy() / self.denom.tosympy()
+
+    def __bool__(self):
+        return self.numer.__bool__()
