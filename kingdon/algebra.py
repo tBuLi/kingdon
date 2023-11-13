@@ -3,7 +3,7 @@ from functools import partial
 from collections import Counter
 from dataclasses import dataclass, field, fields
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Callable
 try:
     from functools import cached_property
 except ImportError:
@@ -13,6 +13,7 @@ except ImportError:
         return property(lru_cache()(func))
 
 import numpy as np
+import sympy as sp
 from IPython.display import Javascript, display
 
 from kingdon.codegen import (
@@ -27,6 +28,7 @@ from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry
 from kingdon.matrixreps import matrix_rep
 from kingdon.multivector_json import MultiVectorEncoder
 from kingdon.multivector import MultiVector
+from kingdon.polynomial import RationalPolynomial
 
 # from kingdon.module_builder import predefined_modules
 
@@ -107,9 +109,13 @@ class Algebra:
 
     # Options for the algebra
     cse: bool = field(default=True, repr=False)  # Common Subexpression Elimination (CSE)
-    numba: bool = field(default=False, repr=False)  # Enable numba just-in-time compilation
+    numba: bool = field(default=False, repr=False)  # Enable numba just-in-time compilation TODO: replace by a wrapper function instead, remove numba as a hard dependency?
     graded: bool = field(default=False, repr=False)  # If true, precompute products per grade.
-    simplify: bool = field(default=True, repr=False)  # If true, perform symbolic simplification
+
+    # Codegen & call custimization.
+    codegen_symbolcls: object = field(default=RationalPolynomial.fromname, repr=False, compare=False)
+    # This simplify func is applied to every component after a symbolic expression is called, to simplify and filter by.
+    simp_func: Callable = field(default=lambda v: v if not isinstance(v, sp.Expr) else sp.simplify(sp.expand(v)), repr=False, compare=False)
 
     signs: dict = field(init=False, repr=False, compare=False)
     cayley: dict = field(init=False, repr=False, compare=False)

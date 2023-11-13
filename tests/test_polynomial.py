@@ -96,3 +96,12 @@ def test_inverse(a, res):
 ])
 def test_inverse_mul(a, res):
     assert a * a.inv() == res
+
+@pytest.mark.parametrize("a, n, res", [
+    (Polynomial([[2, 'x']]), 2, Polynomial([[4, 'x', 'x']])),
+    (RationalPolynomial([[2, 'x']]), 2, RationalPolynomial([[4, 'x', 'x']])),
+    (Polynomial([[2, 'x']]), 5, Polynomial([[2**5, 'x', 'x', 'x', 'x', 'x']])),
+    (RationalPolynomial([[2, 'x']]), 5, RationalPolynomial([[2**5, 'x', 'x', 'x', 'x', 'x']])),
+])
+def test_pow(a, n, res):
+    assert a ** n == res
