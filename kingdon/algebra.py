@@ -448,11 +448,12 @@ def _sort_product(prod):
 @dataclass
 class BladeDict(Mapping):
     """
-    Dictionary of basis blades. Use getitem to retrieve a basis blade from this dict, e.g.
+    Dictionary of basis blades. Use getitem or getattr to retrieve a basis blade from this dict, e.g.::
 
-    alg = Algebra(3, 0, 1)
-    blade_dict = BladeDict(alg, lazy=True)
-    blade_dict['e03']
+        alg = Algebra(3, 0, 1)
+        blade_dict = BladeDict(alg, lazy=True)
+        blade_dict['e03']
+        blade_dict.e03
 
     When `lazy=True`, the basis blade is only initiated when requested.
     This is done for performance in higher dimensional algebras.
@@ -477,6 +478,9 @@ class BladeDict(Mapping):
             else:
                 self.blades[blade] = MultiVector.fromkeysvalues(self.algebra, keys=(bin_blade,), values=(1,))
         return self.blades[blade]
+
+    def __getattr__(self, blade):
+        return self[blade]
 
     def __len__(self):
         return len(self.blades)

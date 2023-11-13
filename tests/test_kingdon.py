@@ -187,7 +187,7 @@ def test_cp_symbolic(R6):
 
 def test_norm_euler():
     alg = Algebra(2)
-    e, e12 = alg.blades['e'], alg.blades['e12']
+    e, e12 = alg.blades['e'], alg.blades.e12
     t = Symbol('t')
     R = cos(t) * e + sin(t) * e12
     Rnormsq = R.normsq()
