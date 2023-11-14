@@ -70,7 +70,7 @@ class Algebra:
 
     # Clever dictionaries that cache previously symbolically optimized lambda functions between elements.
     gp: OperatorDict = operation_field(metadata={'codegen': codegen_gp})  # geometric product
-    sw: OperatorDict = operation_field(metadata={'codegen': codegen_sw})  # conjugation
+    sw: Registry = operation_field(metadata={'codegen': codegen_sw})  # conjugation
     cp: OperatorDict = operation_field(metadata={'codegen': codegen_cp})  # commutator product
     acp: OperatorDict = operation_field(metadata={'codegen': codegen_acp})  # anti-commutator product
     ip: OperatorDict = operation_field(metadata={'codegen': codegen_ip})  # inner product
@@ -79,7 +79,7 @@ class Algebra:
     rc: OperatorDict = operation_field(metadata={'codegen': codegen_rc})  # right-contraction
     op: OperatorDict = operation_field(metadata={'codegen': codegen_op})  # exterior product
     rp: OperatorDict = operation_field(metadata={'codegen': codegen_rp})  # regressive product
-    proj: OperatorDict = operation_field(metadata={'codegen': codegen_proj})  # projection
+    proj: Registry = operation_field(metadata={'codegen': codegen_proj})  # projection
     add: OperatorDict = operation_field(metadata={'codegen': codegen_add})  # add
     sub: OperatorDict = operation_field(metadata={'codegen': codegen_sub})  # sub
     div: OperatorDict = operation_field(metadata={'codegen': codegen_div})  # division
