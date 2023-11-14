@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import string
 from itertools import product, combinations, groupby
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 from typing import NamedTuple, Callable, Tuple, Dict
 from functools import reduce, cached_property
 import linecache
@@ -147,15 +147,15 @@ def codegen_product(*mvs, filter_func=None, sign_func=None, keyout_func=operator
         terms = filter(filter_func, terms)
     # TODO: Can we loop over the basis blades in such a way that no sort is needed?
     # TODO: perhaps a simple res = {} is faster than sort and groupby?
-    sorted_terms = sorted(terms, key=sortfunc)
     if not symbolic:
-        return {k: "".join(term.termstr for term in group)
-               for k, group in groupby(sorted_terms, key=sortfunc)}
-    else:
-        res = {k: Add(*(Mul(*(term.values_in if term.sign == 1 else (term.sign, *term.values_in)), evaluate=False)
-                        for term in group), evaluate=False)
-               for k, group in groupby(sorted_terms, key=sortfunc)}
-        return algebra.multivector(res)
+        res = defaultdict(str)
+        for term in terms:
+            res[term.key_out] += term.termstr
+        return res
+    res = defaultdict(int)
+    for term in terms:
+        res[term.key_out] += reduce(operator.mul, term.values_in, term.sign)
+    return res
 
 
 def codegen_gp(x, y):
@@ -176,8 +176,7 @@ def codegen_sw(x, y):
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    res = codegen_product(x, y, ~x)
-    return res
+    return x * y * ~x
 
 
 def codegen_cp(x, y):
@@ -249,8 +248,7 @@ def codegen_proj(x, y):
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    filter_func = lambda tt: tt.key_out == abs(tt.keys_in[0] - tt.keys_in[1]) ^ tt.keys_in[2]
-    return codegen_product(x, y, ~y, filter_func=filter_func)
+    return (x * y) * ~y
 
 
 def codegen_op(x, y):
@@ -426,18 +424,24 @@ def codegen_outertan(x):
     return outertan
 
 
-def codegen_add(x, y, sign=operator.add):
-    vals = {k: v for k, v in x.items()}
+def codegen_add(x, y):
+    vals = dict(x.items())
     for k, v in y.items():
         if k in vals:
-            vals[k] = sign(vals[k], v)
+            vals[k] = vals[k] + v
         else:
-            vals[k] = sign(v, 0)
+            vals[k] = v
     return vals
 
 
 def codegen_sub(x, y):
-    return codegen_add(x, y, sign=operator.sub)
+    vals = dict(x.items())
+    for k, v in y.items():
+        if k in vals:
+            vals[k] = vals[k] - v
+        else:
+            vals[k] = -v
+    return vals
 
 def codegen_neg(x):
     return {k: -v for k, v in x.items()}
