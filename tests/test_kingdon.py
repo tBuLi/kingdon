@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 """Tests for `kingdon` package."""
+import itertools
 from dataclasses import replace
 
 import pytest
@@ -757,3 +758,12 @@ def test_value_31():
     assert res == empty
     zero = alg.multivector(e=0)
     assert res != zero
+
+
+def test_reciprocal_frame():
+    alg = Algebra(1, 3)
+    for (i, ei), (j, Ej) in itertools.product(enumerate(alg.frame), enumerate(alg.reciprocal_frame)):
+        if i == j:
+            assert (ei | Ej).e == 1
+        else:
+            assert (ei | Ej).e == 0
