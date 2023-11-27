@@ -754,7 +754,7 @@ def test_value_31():
     B = alg.bivector(name='B')
     res = 2 * (B ^ B)
     # res is not just zero, but an empty mv.
-    empty = alg.multivector(e=0)
+    empty = alg.multivector()
     assert res == empty
     zero = alg.multivector(e=0)
     assert res != zero
