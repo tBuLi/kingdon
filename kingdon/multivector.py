@@ -308,13 +308,6 @@ class MultiVector:
     def free_symbols(self):
         return reduce(operator.or_, (v.free_symbols for v in self.values() if hasattr(v, "free_symbols")))
 
-    def subs(self, *args, **kwargs) -> "MultiVector":
-        if not self.issymbolic:
-            return self
-        vals = tuple(v.subs(*args, **kwargs) if isinstance(v, Expr) else v
-                     for v in self.values())
-        return self.fromkeysvalues(self.algebra, keys=self.keys(), values=vals)
-
     def map(self, func) -> "MultiVector":
         """ Returns a new multivector where `func` has been applied to all the values."""
         vals = tuple(func(v) for v in self.values())

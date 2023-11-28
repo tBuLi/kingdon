@@ -334,12 +334,12 @@ def codegen_inv(y, x=None, symbolic=False):
 
             # Replace all the dummy A_z symbols by the expressions in adj_z.
             subs_dict = dict(zip(A_z.values(), adj_z.values()))
-            adj_y = A_y.subs(subs_dict)
+            adj_y = A_y.map(lambda v: v.subs(subs_dict))
             # Replace all the dummy b symbols by the expressions in anormsq to
             # recover the actual adjoint of a and corresponding denominator.
             subs_dict = dict(zip(z.values(), ynormsq.values()))
             denom_y = denom_z.subs(subs_dict)
-            adj_y = adj_y.subs(subs_dict)
+            adj_y = adj_y.map(lambda v: v.subs(subs_dict))
 
     if symbolic:
         return Fraction(adj_y, denom_y)
