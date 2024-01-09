@@ -9,29 +9,25 @@ def test_expr_as_matrix():
     B = alg.bivector(name='B')
 
     # Test for the matrix rep of the commutator. (Grade preserving)
-    A, rows, columns = expr_as_matrix(alg.cp, B, x)
+    A, y = expr_as_matrix(alg.cp, B, x)
     B12, B13, B23 = B.values()
     assert A == Matrix([[0, B12, B13], [-B12, 0, B23], [-B13, -B23, 0]])
-    assert rows == columns
-    assert rows == ['e1', 'e2', 'e3']
+    assert [alg.bin2canon[k] for k in y.keys()] == ['e1', 'e2', 'e3']
 
     # Test for the matrix rep of the commutator. (Grade preserving, only some output)
-    y = alg.vector(e1=1, e3=1)
-    A, rows, columns = expr_as_matrix(alg.cp, B, x, res_like=y)
+    X = alg.vector(e1=1, e3=1)
+    A, y = expr_as_matrix(alg.cp, B, x, res_like=X)
     B12, B13, B23 = B.values()
     assert A == Matrix([[0, B12, B13], [-B13, -B23, 0]])
-    assert rows == ['e1', 'e3']
-    assert columns == ['e1', 'e2', 'e3']
+    assert [alg.bin2canon[k] for k in y.keys()] == ['e1', 'e3']
 
     # Test for the matrix rep of the anti-commutator.
-    A, rows, columns = expr_as_matrix(alg.acp, B, x)
+    A, y = expr_as_matrix(alg.acp, B, x)
     assert A == Matrix([[B23, -B13, B12]])
-    assert rows == ['e123']
-    assert columns == ['e1', 'e2', 'e3']
+    assert [alg.bin2canon[k] for k in y.keys()] == ['e123']
 
     # Test for the matrix rep of conjugation of the e3 plane.
     x = alg.vector(name='x', keys=('e3',))
-    A, rows, columns = expr_as_matrix(alg.sw, B, x)
+    A, y = expr_as_matrix(alg.sw, B, x)
     assert A == Matrix([[2*B12*B23], [-2*B12*B13], [B12**2 - B13**2 - B23**2]])
-    assert rows == ['e1', 'e2', 'e3']
-    assert columns == ['e3']
+    assert [alg.bin2canon[k] for k in y.keys()] == ['e1', 'e2', 'e3']

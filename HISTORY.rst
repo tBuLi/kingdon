@@ -6,3 +6,10 @@ History
 ------------------
 
 * First release on PyPI.
+
+0.2.0 (2024-01-09)
+------------------
+
+* Multivectors now have `map` and `filter` methods to apply element-wise operations to the coefficients.
+* Make matrix representations of expressions using `expr_as_matrix`.
+* Bugfixes.
