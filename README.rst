@@ -6,9 +6,6 @@ Kingdon
 .. image:: https://img.shields.io/pypi/v/kingdon.svg
         :target: https://pypi.python.org/pypi/kingdon
 
-.. image:: https://img.shields.io/travis/tbuli/kingdon.svg
-        :target: https://travis-ci.com/tbuli/kingdon
-
 .. image:: https://readthedocs.org/projects/kingdon/badge/?version=latest
         :target: https://kingdon.readthedocs.io/en/latest/?version=latest
         :alt: Documentation Status
