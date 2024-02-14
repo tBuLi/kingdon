@@ -36,9 +36,9 @@ In bullet points:
 - Symbolically optimized.
 - Leverage sparseness of input.
 - :code:`ganja.js` enabled graphics in jupyter notebooks.
-- Agnostic to the input types: work with a GA's over :code:`numpy` arrays, :code:`PyTorch` tensors, :code:`sympy` expressions, etc. Any object that overloads addition, subtraction and multiplication makes for valid multivector coefficients in :code:`kingdon`.
+- Agnostic to the input types: work with GA's over :code:`numpy` arrays, :code:`PyTorch` tensors, :code:`sympy` expressions, etc. Any object that overloads addition, subtraction and multiplication makes for valid multivector coefficients in :code:`kingdon`.
 - Automatic broadcasting, such that transformations can be applied to e.g. point-clouds.
-- :code:`numba` enabled for numerical computations.
+- :code:`numba` enabled to accelerate numerical computations.
 
 Code Example
 ------------
