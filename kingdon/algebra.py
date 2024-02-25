@@ -13,7 +13,7 @@ except ImportError:
         return property(lru_cache()(func))
 
 import numpy as np
-import sympy as sp
+import sympy
 from IPython.display import Javascript, display
 
 from kingdon.codegen import (
@@ -29,8 +29,6 @@ from kingdon.matrixreps import matrix_rep
 from kingdon.multivector_json import MultiVectorEncoder
 from kingdon.multivector import MultiVector
 from kingdon.polynomial import RationalPolynomial
-
-# from kingdon.module_builder import predefined_modules
 
 operation_field = partial(field, default_factory=dict, init=False, repr=False, compare=False)
 
@@ -115,7 +113,7 @@ class Algebra:
     # Codegen & call custimization.
     codegen_symbolcls: object = field(default=RationalPolynomial.fromname, repr=False, compare=False)
     # This simplify func is applied to every component after a symbolic expression is called, to simplify and filter by.
-    simp_func: Callable = field(default=lambda v: v if not isinstance(v, sp.Expr) else sp.simplify(sp.expand(v)), repr=False, compare=False)
+    simp_func: Callable = field(default=lambda v: v if not isinstance(v, sympy.Expr) else sympy.simplify(sympy.expand(v)), repr=False, compare=False)
 
     signs: dict = field(init=False, repr=False, compare=False)
     cayley: dict = field(init=False, repr=False, compare=False)

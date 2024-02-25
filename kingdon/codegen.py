@@ -109,53 +109,43 @@ def term_tuple(items, sign_func, keyout_func=operator.xor):
     Create a single term in a multivector product between the basis blades present in `items`.
     """
     keys_in, values_in = zip(*items)
-    sign = reduce(operator.mul, (sign_func(pair) for pair in combinations(keys_in, r=2)))
-
+    sign = sign_func(keys_in)
     if not sign:
         return TermTuple(key_out=0, keys_in=keys_in, sign=sign, values_in=values_in, termstr='')
-    # Values could also have signs, e.g. -x1. Multiply signs by these.
-    sign_mod, values_in = zip(*(v.args if isinstance(v, Mul) else (1, v) for v in values_in))
-    sign = reduce(operator.mul, sign_mod, sign)
-    key_out = reduce(keyout_func, keys_in)
-    return TermTuple(key_out=key_out,
-                     keys_in=keys_in,
-                     sign=sign,
-                     values_in=values_in,
-                     termstr=f'{"+" if sign > 0 else "-"}{"*".join(str(v) for v in values_in)}')
+    key_out = keyout_func(*keys_in)
+    return TermTuple(key_out, keys_in, sign, values_in,
+                     f'{"+" if sign > 0 else "-"}{"*".join(str(v) for v in values_in)}')
 
 
-def codegen_product(*mvs, filter_func=None, sign_func=None, keyout_func=operator.xor, symbolic=False):
+def codegen_product(x, y, filter_func=None, sign_func=None, keyout_func=operator.xor):
     """
     Helper function for the codegen of all product-type functions.
 
-    :param mvs: Positional-argument :class:`~kingdon.multivector.MultiVector`.
+    :param x: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
+    :param y: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
     :param filter_func: A condition which should be true in the preprocessing of terms.
         Input is a TermTuple.
     :param sign_func: function to compute sign between terms. E.g. algebra.signs[ei, ej]
         for metric dependent products. Input: 2-tuple of blade indices, e.g. (ei, ej).
     :param keyout_func:
     """
-    sortfunc = lambda x: x.key_out
-    algebra = mvs[0].algebra
+    algebra = x.algebra
     if sign_func is None:
         sign_func = lambda pair: algebra.signs[pair]
 
     # If sign == 0, then the term should be disregarded since it is zero
     terms = filter(lambda tt: tt.sign, (term_tuple(items, sign_func, keyout_func=keyout_func)
-                                        for items in product(*(mv.items() for mv in mvs))))
+                                        for items in product(x.items(), y.items())))
     if filter_func is not None:
         terms = filter(filter_func, terms)
-    # TODO: Can we loop over the basis blades in such a way that no sort is needed?
-    # TODO: perhaps a simple res = {} is faster than sort and groupby?
-    if not symbolic:
-        res = defaultdict(str)
-        for term in terms:
-            res[term.key_out] += term.termstr
-        return res
-    res = defaultdict(int)
+
+    res = defaultdict(str)
     for term in terms:
-        res[term.key_out] += reduce(operator.mul, term.values_in, term.sign)
-    return res
+        if term.key_out in res:
+            res[term.key_out] += term.termstr
+        else:
+            res[term.key_out] = term.termstr[1:] if term.termstr[0] == '+' else term.termstr
+    return dict(sorted(res.items()))
 
 
 def codegen_gp(x, y):
@@ -248,7 +238,7 @@ def codegen_proj(x, y):
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    return (x * y) * ~y
+    return (x | y) * ~y
 
 
 def codegen_op(x, y):
@@ -299,27 +289,74 @@ Fraction.__doc__ = """
 Tuple representing a fraction.
 """
 
+
+class LambdifyInput(NamedTuple):
+    """ Strike package for the Lambdify function. """
+    funcname: str
+    args: dict
+    expr_dict: dict
+    dependencies: list
+
+
 def codegen_inv(y, x=None, symbolic=False):
     alg = y.algebra
-    num, denom = codegen_shirokov_inv(y, symbolic=True)
+    if alg.d < 6:
+        num, denom = codegen_hitzer_inv(y, symbolic=True)
+    else:
+        num, denom = codegen_shirokov_inv(y, symbolic=True)
     num = num if x is None else x * num
 
     if symbolic:
         return Fraction(num, denom)
 
-    d = alg.scalar(name='d')
+    d = alg.scalar(name='d', symbolcls=alg.codegen_symbolcls)
     denom_inv = alg.scalar([1 / denom])
-    yinv = num * d.e  #TODO: this multiply is to gready, would be better if it didnt distribute, & reinstate CSE
+    yinv = num * d.e  #TODO: this multiply is too gready, would be better if it didnt distribute, & reinstate CSE
 
     # Prepare all the input for lambdify
     args = {'y': y.values()}
-    expr = yinv.values()
+    expr_dict = dict(yinv.items())
     dependencies = list(zip(d.values(), denom_inv.values()))
-    return CodegenOutput(
-        yinv.keys(),
-        lambdify(args, expr, funcname=f'inv_{y.type_number}', dependencies=dependencies, cse=alg.cse)
+    return LambdifyInput(
+        funcname=f'codegen_inv_{y.type_number}',
+        expr_dict=expr_dict,
+        args=args,
+        dependencies=dependencies,
     )
 
+def codegen_hitzer_inv(x, symbolic=False):
+    """
+    Generate code for the inverse of :code:`x` using the Hitzer inverse,
+    which works up to 5D algebras.
+    """
+    alg = x.algebra
+    d = alg.d
+    if d == 0:
+        num = alg.blades.e
+    elif d == 1:
+        num = x.involute()
+    elif d == 2:
+        num = x.conjugate()
+    elif d == 3:
+        xconj = x.conjugate()
+        num = xconj * ~(x * xconj)
+    elif d == 4:
+        xconj = x.conjugate()
+        x_xconj = x * xconj
+        num = xconj * (x_xconj - 2 * x_xconj.grade(3, 4))
+    elif d == 5:
+        xconj = x.conjugate()
+        x_xconj = x * xconj
+        combo = xconj * ~x_xconj
+        x_combo = x * combo
+        num = combo * (x_combo - 2 * x_combo.grade(1, 4))
+    else:
+        raise NotImplementedError(f"Closed form inverses are not known in {d=} dimensions.")
+    denom = (x * num).e
+
+    if symbolic:
+        return Fraction(num, denom)
+    return alg.multivector({k: v / denum for k, v in num.items()})
 
 def codegen_shirokov_inv(x, symbolic=False):
     """
@@ -327,7 +364,7 @@ def codegen_shirokov_inv(x, symbolic=False):
     which is works in any algebra, but it can be expensive to compute.
     """
     alg = x.algebra
-    n = sympify(2 ** ((alg.d + 1) // 2))  # Sympify ratio to keep the ratios exact and avoid floating point errors.
+    n = 2 ** ((alg.d + 1) // 2)  # Sympify ratio to keep the ratios exact and avoid floating point errors.
     supply = power_supply(x, tuple(range(1, n + 1)))  # Generate powers of x efficiently.
     powers = []
     cs = []
@@ -342,10 +379,10 @@ def codegen_shirokov_inv(x, symbolic=False):
         if xi.grades == (0,):
             break
         xs.append(xi)
-        cs.append((n / i) * xi.e)
+        cs.append(s if (s := xi.e) == 0 else n * s / i)
 
     if i == 1:
-        adj = alg.blades['e']
+        adj = alg.blades.e
     else:
         adj = xs[-1] - cs[-1]
 
@@ -362,23 +399,24 @@ def codegen_div(x, y):
     num, denom = codegen_inv(y, x, symbolic=True)
     if not denom:
         raise ZeroDivisionError
-    d = alg.scalar(name='d')
+    d = alg.scalar(name='d', symbolcls=alg.codegen_symbolcls)
     denom_inv = alg.scalar([1 / denom])
     res = num * d.e
 
     # Prepare all the input for lambdify
     args = {'x': x.values(), 'y': y.values()}
-    expr = res.values()
-    dependencies = list(zip(d.values(), denom_inv.values()))  #[(d.values(), denom_inv.values())]
-    return CodegenOutput(
-        res.keys(),
-        lambdify(args, expr, funcname=f'div_{x.type_number}_x_{y.type_number}',
-                 dependencies=dependencies, cse=alg.cse)
+    expr_dict = dict(res.items())
+    dependencies = list(zip(d.values(), denom_inv.values()))
+    return LambdifyInput(
+        funcname=f'div_{x.type_number}_x_{y.type_number}',
+        expr_dict=expr_dict,
+        args=args,
+        dependencies=dependencies,
     )
 
 
 def codegen_normsq(x):
-    return codegen_product(x, ~x)
+    return x * ~x
 
 
 def codegen_outerexp(x, asterms=False):
@@ -496,11 +534,13 @@ def codegen_sqrt(x):
 
     # Prepare all the input for lambdify
     args = {'x': x.values()}
-    expr = res.values()
+    expr_dict = dict(res.items())
     dependencies = [*zip(c.values(), [cp]), *zip(c2_inv.values(), [f'0.5 / {cp}'])]
-    return CodegenOutput(
-        res.keys(),
-        lambdify(args, expr, funcname=f'sqrt_{x.type_number}', dependencies=dependencies, cse=alg.cse)
+    return LambdifyInput(
+        funcname=f'sqrt_{x.type_number}',
+        expr_dict=expr_dict,
+        args=args,
+        dependencies=dependencies,
     )
 
 
@@ -552,17 +592,29 @@ def do_codegen(codegen, *mvs) -> CodegenOutput:
     namespace = algebra.numspace
 
     res = codegen(*mvs)
+
     if isinstance(res, CodegenOutput):
         return res
-    funcname = f'{codegen.__name__}_' + '_x_'.join(f"{mv.type_number}" for mv in mvs)
-    args = {arg_name: arg.values() for arg_name, arg in zip(string.ascii_uppercase, mvs)}
-    # Sort the keys in canonical order
-    if len(res) > 1:
-        keys, exprs = zip(*((k, res[k]) for k in mvs[0].algebra.canon2bin.values() if k in res.keys()))
-    else:
-        keys, exprs = tuple(res.keys()), tuple(res.values())
 
-    func = lambdify(args, exprs, funcname=funcname, cse=mvs[0].algebra.cse)
+    if isinstance(res, LambdifyInput):
+        funcname = res.funcname
+        args = res.args
+        dependencies = res.dependencies
+        res = res.expr_dict
+    else:
+        funcname = f'{codegen.__name__}_' + '_x_'.join(f"{mv.type_number}" for mv in mvs)
+        args = {arg_name: arg.values() for arg_name, arg in zip(string.ascii_uppercase, mvs)}
+        dependencies = None
+
+    # Sort the keys in canonical order
+    res = {k: res[k] for k in algebra.canon2bin.values() if k in res.keys()}
+
+    if not algebra.cse and any(isinstance(v, str) for v in res.values()):
+        return func_builder(res, *mvs, funcname=funcname)
+
+
+    keys, exprs = tuple(res.keys()), tuple(res.values())
+    func = lambdify(args, exprs, funcname=funcname, cse=algebra.cse, dependencies=dependencies)
     return CodegenOutput(
         keys, func
     )
@@ -590,6 +642,39 @@ def do_compile(codegen, *tapes):
     return CodegenOutput(
         res.keys() if not isinstance(res, str) else (0,), func
     )
+
+
+def func_builder(res_vals: defaultdict, *mvs, funcname: str) -> CodegenOutput:
+    """
+    Build a Python function for the product between given multivectors.
+
+    :param res_vals: Dict to be converted into a function. The keys correspond to the basis blades in binary,
+        while the values are strings to be converted into source code.
+    :param mvs: all the multivectors that the resulting function is a product of.
+    :param funcname: Name of the function. Be aware: if a function by that name already existed, it will be overwritten.
+    :return: tuple of output keys of the callable, and the callable.
+    """
+    args = string.ascii_uppercase[:len(mvs)]
+    header = f'def {funcname}({", ".join(args)}):'
+    if res_vals:
+        body = ''
+        for mv, arg in zip(mvs, args):
+            body += f'    [{", ".join(str(v) for v in mv.values())}] = {arg}\n'
+        return_val = f'    return ({", ".join(res_vals.values())},)'
+    else:
+        body = ''
+        return_val = f'    return tuple()'
+    func_source = f'{header}\n{body}\n{return_val}'
+
+    # Dynamically build a function
+    func_locals = {}
+    c = compile(func_source, funcname, 'exec')
+    exec(c, {}, func_locals)
+
+    # Add the generated code to linecache such that it is inspect-safe.
+    linecache.cache[funcname] = (len(func_source), None, func_source.splitlines(True), funcname)
+    func = func_locals[funcname]
+    return CodegenOutput(tuple(res_vals.keys()), func)
 
 
 def lambdify(args: dict, exprs: tuple, funcname: str, dependencies: tuple = None, printer=LambdaPrinter, dummify=False, cse=False):
@@ -641,10 +726,12 @@ def lambdify(args: dict, exprs: tuple, funcname: str, dependencies: tuple = None
              'user_functions': {}}
         )
 
-    exprs = tuple(expr.tosympy() if hasattr(expr, 'tosympy') else expr for expr in exprs)
+    tosympy = lambda x: x.tosympy() if hasattr(x, 'tosympy') else x
+    args = {name: [tosympy(v) for v in values]
+            for name, values in args.items()}
+    exprs = tuple(tosympy(expr) for expr in exprs)
     if dependencies is not None:
-        dependencies = [(y, x.tosympy() if hasattr(x, 'tosympy') else x)
-                        for y, x in dependencies]
+        dependencies = [(tosympy(y), tosympy(x)) for y, x in dependencies]
     names = tuple(arg if isinstance(arg, str) else arg.name for arg in args.keys())
     iterable_args = tuple(args.values())
 

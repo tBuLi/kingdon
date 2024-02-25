@@ -350,6 +350,12 @@ def test_inv_div(pga2d):
     assert res.grades == (0,)
     assert res[0] == 1
 
+def test_hitzer_inv():
+    for d in range(5): # The d=5 case is excluded becuase the test it too slow.
+        alg = Algebra(d)
+        x = alg.multivector(name='x', symbolcls=alg.codegen_symbolcls)
+        assert x * x.inv() == alg.blades.e
+
 
 def test_mixed_symbolic(vga2d):
     x = vga2d.evenmv(e=2.2, e12='s')
@@ -427,8 +433,8 @@ def test_commutator():
     y = alg.multivector(name='y')
     xcpy = x.cp(y)
     xcpy_expected = ((x*y)-(y*x)) / 2
-    for i in range(len(alg)):
-        assert xcpy[i] - xcpy_expected[i] == 0
+    diff = xcpy_expected - xcpy
+    assert not diff
 
 def test_anticommutator():
     alg = Algebra(2, 1, 1)
@@ -436,8 +442,8 @@ def test_anticommutator():
     y = alg.multivector(name='y')
     xacpy = x.acp(y)
     xacpy_expected = ((x*y)+(y*x)) / 2
-    for i in range(len(alg)):
-        assert xacpy[i] - xacpy_expected[i] == 0
+    diff = xacpy_expected - xacpy
+    assert not diff
 
 
 def test_conjugation():
@@ -445,10 +451,11 @@ def test_conjugation():
     x = alg.multivector(name='x')  # multivector
     y = alg.multivector(name='y')
 
-    xconjy_expected = x * y * (~x)
+    # Check if the built-in conjugation formula is what we expect it to be.
+    xconjy_expected = x * y * ~x
     xconjy = x >> y
-    for i in range(len(alg)):
-        assert expand(xconjy[i]) == expand(xconjy_expected[i])
+    diff = (xconjy_expected - xconjy)
+    assert not diff
 
 
 def test_projection():
@@ -458,8 +465,8 @@ def test_projection():
 
     xprojy_expected = (x | y) * ~y
     xprojy = x @ y
-    for i in range(len(alg)):
-        assert expand(xprojy[i]) == expand(xprojy_expected[i])
+    diff = (xprojy_expected - xprojy)
+    assert not diff
 
 
 def test_outerexp(R6):
@@ -468,15 +475,13 @@ def test_outerexp(R6):
     LB_exact = 1 + B + (B ^ B) / 2 + (B ^ B ^ B) / 6
 
     diff = LB - LB_exact
-    for val in diff.values():
-        assert simplify(val) == 0
+    assert not diff
 
     v = R6.vector(name='v')
     Lv = v.outerexp()
     Lv_exact = 1 + v
     diff = Lv - Lv_exact
-    for val in diff.values():
-        assert val == 0
+    assert not diff
 
 def test_outertrig(R6):
     alg = Algebra(6)
@@ -488,7 +493,7 @@ def test_outertrig(R6):
     cB_exact = sympify(1) + (B ^ B) / sympify(2)
 
     for diff in [sB - sB_exact, cB - cB_exact]:
-        assert all(v == 0 for v in diff.values())
+        assert not diff
 
 
 def test_indexing():
@@ -767,7 +772,68 @@ def test_value_31():
     B = alg.bivector(name='B')
     res = 2 * (B ^ B)
     # res is not just zero, but an empty mv.
-    empty = alg.multivector(e=0)
+    empty = alg.multivector()
     assert res == empty
     zero = alg.multivector(e=0)
     assert res != zero
+
+def test_rat_poly_symbols():
+    from kingdon.polynomial import RationalPolynomial
+
+    # alg = Algebra(2,1)
+    # x = alg.multivector(name='x',)
+    # # x = alg.multivector(name='x', symbolcls=RationalPolynomial.fromname)
+    # # print(x.outerexp())
+    # # assert all(isinstance(v, RationalPolynomial) for v in x.values())
+    # # y = alg.multivector(name='y',)
+    #
+    # # print(x- y)
+    # xinv = x.inv()
+    # xxinv = x * xinv
+    # print(xinv)
+    # print(xxinv)
+
+    import timeit
+    number = 10
+
+    print()
+    sig = "2,1"
+    # sig = "2,1, codegen_symbolcls=Symbol"
+
+    # codegen_call = 'alg.reverse[x.keys()]'
+    # full_call = 'x.reverse()'
+    # codegen_call = 'alg.inv[x.keys()]'
+    # full_call = 'x.inv()'
+    # codegen_call = 'alg.normsq[x.keys()]'
+    # full_call = 'x.normsq()'
+    # codegen_call = 'alg.add[x.keys(), x.keys()]'
+    # full_call = 'x + x'
+    # codegen_call = 'alg.gp[x.keys(), x.keys()]'
+    # full_call = 'x * x'
+    codegen_call = 'alg.sw[x.keys(), x.keys()]'
+    full_call = 'x >> x'
+
+    t = timeit.timeit(f'alg = Algebra({sig}); x = alg.multivector(name="x", symbolcls=RationalPolynomial.fromname)',
+                      number=number,
+                      globals=globals() | locals())
+    print(f"rotpol - init only    : {t / number:.02e}")
+    t = timeit.timeit(f'alg = Algebra({sig}); x = alg.multivector(name="x", symbolcls=RationalPolynomial.fromname); {codegen_call}',
+                      number=number,
+                      globals=globals() | locals())
+    print(f"rotpol - codegen only : {t / number:.02e}")
+    t = timeit.timeit(f'alg = Algebra({sig}); x = alg.multivector(name="x", symbolcls=RationalPolynomial.fromname); {full_call}',
+                      number=number,
+                      globals=globals() | locals())
+    print(f"rotpol - symbolic call: {t / number:.02e}")
+    t = timeit.timeit(f'alg = Algebra({sig}); x = alg.multivector(name="x", symbolcls=Symbol)',
+                      number=number,
+                      globals=globals() | locals())
+    print(f"Symbol - init only    : {t / number:.02e}")
+    t = timeit.timeit(f'alg = Algebra({sig}); x = alg.multivector(name="x", symbolcls=Symbol); {codegen_call}',
+                      number=number,
+                      globals=globals() | locals())
+    print(f"Symbol - codegen only : {t / number:.02e}")
+    t = timeit.timeit(f'alg = Algebra({sig}); x = alg.multivector(name="x", symbolcls=Symbol); {full_call}',
+                      number=number,
+                      globals=globals() | locals())
+    print(f"Symbol - symbolic call: {t / number:.02e}")

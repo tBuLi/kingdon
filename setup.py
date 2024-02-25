@@ -3,6 +3,7 @@
 """The setup script."""
 
 from setuptools import setup, find_packages
+from Cython.Build import cythonize
 
 with open('README.rst') as readme_file:
     readme = readme_file.read()
@@ -27,6 +28,8 @@ setup(
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
     ],
     description="Pythonic Geometric Algebra Package",
     install_requires=requirements,
@@ -41,4 +44,5 @@ setup(
     url='https://github.com/tbuli/kingdon',
     version='0.1.0',
     zip_safe=False,
+    ext_modules = cythonize("kingdon/cpolynomial.py", annotate=True),
 )
