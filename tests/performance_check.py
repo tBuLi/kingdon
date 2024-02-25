@@ -25,17 +25,17 @@ if __name__ == "__main__":
     if king:
         print("Kingdon", end='\n\n')
         operations = [
-            # 'b*v',
-            # 'b.cp(v)',
-            # 'b >> v',
-            # 'b @ v',
-            # 'b^v',
-            # 'b|v',
-            # 'b+v',
-            # 'b-v',
+            'b*v',
+            'b.cp(v)',
+            'b >> v',
+            'b @ v',
+            'b^v',
+            'b|v',
+            'b+v',
+            'b-v',
             'b / v',
-            # 'R.sqrt()',
-            # 'b.norm()',
+            'R.sqrt()',
+            'b.norm()',
             'b.inv()',
             '-b',
             '~b',
@@ -48,9 +48,7 @@ if __name__ == "__main__":
         for operation in operations:
             print(operation)
             for cse, numba in product([False, True], repeat=2):
-                if numba: continue
                 alg = Algebra(d, numba=numba, cse=cse)
-                # print(alg)
                 bvals = np.random.random(shape_b)
                 vvals = np.random.random(shape_v)
                 # b = alg.bivector(bvals)
@@ -61,7 +59,6 @@ if __name__ == "__main__":
                     R = alg.evenmv(bvals[::2])
                 # prepare, does cse and jit.
                 init = timeit.timeit(operation, number=1, globals=globals())
-                # init = float('inf')
                 t = timeit.timeit(operation, number=num_iter, globals=globals())
                 print(f'setup with {cse=} & {numba=} took {init:.2E}. Performed {num_iter} iterations, per iteration: {t/num_iter:.2E} sec')
                 times[operation].append([cse, numba, init, t/num_iter])
@@ -92,15 +89,10 @@ if __name__ == "__main__":
         vvals = np.random.random(shape_v)
         b = alg.multivector(bvals)
         v = alg.multivector(vvals)
-        # print(b.cp(v))
+
         operation = 'b * v'
-        # operation = 'b.sw(v)'
-#         init = timeit.timeit(operation, number=1, globals=globals())
-#         print('init', init)
-        # alg.nonop(b)
-        filename = 'stats_gp_py_v3'
+        filename = 'stats_gp'
         prof = cProfile.run(f'{operation}', filename)
-#         prof = cProfile.run(f'for _ in range({num_iter}): {operation}', filename)
 
         ps = pstats.Stats(filename).sort_stats('tottime')
         ps.print_stats()
