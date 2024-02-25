@@ -190,7 +190,3 @@ Overview of Operators
      -
      - :code:`a.sqrt()`
 
-Credits
--------
-
-This package was inspired by GAmphetamine.js.

@@ -43,7 +43,7 @@ extensions = [
 intersphinx_mapping = {
     'sympy': ('https://docs.sympy.org/latest', None),
     'symfit': ('https://symfit.readthedocs.io/en/stable/', None),
-    'scipy': ('https://docs.scipy.org/doc/scipy/reference/', None),
+    'scipy': ('https://docs.scipy.org/doc/scipy/', None),
     'python': ('https://docs.python.org/3', None),
 }
 

@@ -2,6 +2,8 @@
 Credits
 =======
 
+This package was inspired by GAmphetamine.js.
+
 Development Lead
 ----------------
 
