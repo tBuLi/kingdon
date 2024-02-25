@@ -153,17 +153,15 @@ class MultiVector:
         """ Tuple of the grades present in `self`. """
         return tuple(sorted({bin(ind).count('1') for ind in self.keys()}))
 
-    def grade(self, grades):
+    def grade(self, *grades):
         """
         Returns a new  :class:`~kingdon.multivector.MultiVector` instance with
         only the selected `grades` from `self`.
 
-        :param grades: tuple or int, grades to select.
+        :param grades: tuple or ints, grades to select.
         """
-        if isinstance(grades, int):
-            grades = (grades,)
-        elif not isinstance(grades, tuple):
-            grades = tuple(grades)
+        if len(grades) == 1 and isinstance(grades[0], tuple):
+            grades = grades[0]
 
         vals = {k: self[k]
                 for k in self.algebra.indices_for_grades[grades] if k in self.keys()}
@@ -309,24 +307,25 @@ class MultiVector:
         item = item if item in self.algebra.bin2canon else self.algebra.canon2bin[item]
         return item in self._keys
 
+    def __bool__(self):
+        return bool(self.values())
+
     @cached_property
     def free_symbols(self):
         return reduce(operator.or_, (v.free_symbols for v in self.values() if hasattr(v, "free_symbols")))
-
-    def subs(self, *args, **kwargs) -> "MultiVector":
-        if not self.issymbolic:
-            return self
-        vals = tuple(v.subs(*args, **kwargs) if isinstance(v, Expr) else v
-                     for v in self.values())
-        return self.fromkeysvalues(self.algebra, keys=self.keys(), values=vals)
 
     def map(self, func) -> "MultiVector":
         """ Returns a new multivector where `func` has been applied to all the values."""
         vals = tuple(func(v) for v in self.values())
         return self.fromkeysvalues(self.algebra, keys=self.keys(), values=vals)
 
-    def filter(self, func) -> "MultiVector":
-        """ Returns a new multivector containing only those elements for which `func` was true-ish. """
+    def filter(self, func=None) -> "MultiVector":
+        """
+        Returns a new multivector containing only those elements for which `func` was true-ish.
+        If no function was provided, use the simp_func of the Algebra.
+        """
+        if func is None:
+            func = self.algebra.simp_func
         keysvalues = tuple((k, v) for k, v in self.items() if func(v))
         if not keysvalues:
             return self.fromkeysvalues(self.algebra, keys=tuple(), values=tuple())
