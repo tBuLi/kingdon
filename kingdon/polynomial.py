@@ -44,6 +44,7 @@ class Polynomial:
 
     def __eq__(self, other):
         if other == 0 and (not self.args or self.args == [[0]]): return True
+        if other == 1 and self.args == [[1]]: return True
         if self.__class__ != other.__class__: return False
         return self.args == other.args
 
@@ -152,9 +153,12 @@ class Polynomial:
         return res
 
     def __bool__(self):
-        return self.args != []
+        if len(self.args) == 1:
+            return bool(self.args[0][0])
+        return bool(self.args)
 
 
+@dataclass
 class RationalPolynomial:
     numer: Polynomial = field(init=False)
     denom: Polynomial = field(init=False)
@@ -271,6 +275,9 @@ class RationalPolynomial:
         return other + (-self)
 
     def __pow__(self, power, modulo=None):
+        if power < 0:
+            *_, last = power_supply(self, -power)
+            return 1 / last
         *_, last = power_supply(self, power)
         return last
 
@@ -279,7 +286,7 @@ class RationalPolynomial:
         if self.denom.args == [[1]]:
             return numer_str
         denom_str = f"({self.denom})" if len(self.denom) > 1 else f"{self.denom}"
-        return f"({numer_str} / {denom_str})"
+        return f"(({numer_str}) / ({denom_str}))"
 
     def tosympy(self):
         """ Return a sympy version of this Polynomial. """
