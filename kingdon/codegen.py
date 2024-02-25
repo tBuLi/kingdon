@@ -364,7 +364,7 @@ def codegen_shirokov_inv(x, symbolic=False):
     which is works in any algebra, but it can be expensive to compute.
     """
     alg = x.algebra
-    n = 2 ** ((alg.d + 1) // 2)  # Sympify ratio to keep the ratios exact and avoid floating point errors.
+    n = 2 ** ((alg.d + 1) // 2)
     supply = power_supply(x, tuple(range(1, n + 1)))  # Generate powers of x efficiently.
     powers = []
     cs = []

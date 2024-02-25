@@ -14,6 +14,7 @@ except ImportError:
 
 import numpy as np
 import sympy
+
 from IPython.display import Javascript, display
 
 from kingdon.codegen import (
