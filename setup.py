@@ -3,7 +3,6 @@
 """The setup script."""
 
 from setuptools import setup, find_packages
-from Cython.Build import cythonize
 
 with open('README.rst') as readme_file:
     readme = readme_file.read()
