@@ -201,6 +201,22 @@ class Algebra:
     def matrix_basis(self):
         return matrix_rep(self.p, self.q, self.r)
 
+    @cached_property
+    def frame(self) -> list:
+        """
+        The set of orthogonal basis vectors, :math:`\{ e_i \}`. Note that for a frame linear independence suffices,
+        but we already have orthogonal basis vectors so why not use those?
+        """
+        return [self.blades[self.bin2canon[2**j]] for j in range(0, self.d)]
+
+    @cached_property
+    def reciprocal_frame(self) -> list:
+        """
+        The reciprocal frame is a set of vectors :math:`\{ e^i \}` that satisfies
+        :math:`e^i \cdot e_j = \delta^i_j` with the frame vectors :math:`\{ e_i \}`.
+        """
+        return [v.inv() for v in self.frame]
+
     def _prepare_signs_and_cayley(self):
         """
         Prepares two dicts whose keys are two basis-blades (in binary rep) and the result is either
