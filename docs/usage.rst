@@ -46,12 +46,13 @@ For example, let us create two symbolic vectors :code:`u` and :code:`v` in this 
     >>> v
     (v1) * e1 + (v2) * e2
 
-The return type of :class:`~kingdon.algebra.Algebra.Algebra.multivector` is an instance of :class:`~kingdon.multivector.MultiVector`.
+The return type of :meth:`~kingdon.algebra.Algebra.multivector` is an instance of :class:`~kingdon.multivector.MultiVector`.
 
 .. note::
     :code:`kingdon` offers convenience methods for common types of multivectors, such as the vectors above.
     For example, the vectors above can also be created using :code:`u = alg.vector(name='u')`.
-    Moreover, a scalar is created by :meth:`~kingdon.algebra.Algebra.scalar`, a bivector by :meth:`~kingdon.algebra.Algebra.bivector`,
+    Moreover, a scalar is created by :meth:`~kingdon.algebra.Algebra.scalar`,
+    a bivector by :meth:`~kingdon.algebra.Algebra.bivector`,
     a pseudoscalar by :meth:`~kingdon.algebra.Algebra.pseudoscalar`, and so on.
     However, all of these merely add the corresponding :code:`grades` argument to your input and
     then call :class:`~kingdon.algebra.Algebra.multivector`, so :class:`~kingdon.algebra.Algebra.multivector` is what we need to understand.
@@ -283,7 +284,7 @@ of :class:`~kingdon.multivector.MultiVector`, strings, and hexadecimal numbers t
 These strings can be simple labels, or valid SVG syntax.
 
 .. note::
-    Currently :code:`ganja.js` support is limited to :mod:`jupyter` notebooks,
+    Currently :code:`ganja.js` support is limited to :code:`jupyter` notebooks,
     and only static graphs are supported. In native :code:`ganja.js` lambda functions
     are evaluated every frame; this feature is currently not supported.
 

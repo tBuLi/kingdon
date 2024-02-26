@@ -6,12 +6,14 @@ Algebra
 
 .. automodule:: kingdon.algebra
    :members:
+   :undoc-members:
 
 MultiVector
 -----------
 
 .. automodule:: kingdon.multivector
    :members:
+   :undoc-members:
 
 Codegen
 -------
@@ -30,9 +32,18 @@ the input.
 
 .. automodule:: kingdon.codegen
    :members:
+   :undoc-members:
+
+Operator dicts
+--------------
+
+.. automodule:: kingdon.operator_dict
+   :members:
+   :undoc-members:
 
 Matrix reps
 -----------
 
 .. automodule:: kingdon.matrixreps
    :members:
+   :undoc-members:

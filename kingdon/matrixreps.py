@@ -97,7 +97,8 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
     to the expression are given in the correct order.
     The last of the positional arguments is assumed to be the vector x.
 
-    :expr: Callable representing a valid GA expression. Can also be a :class:`~kingdon.operator_dict.OperatorDict`.
+    :expr: Callable representing a valid GA expression.
+        Can also be a :class:`~kingdon.operator_dict.OperatorDict`.
     :inputs: All positional arguments are consider symbolic input arguments to `expr`. The last of these is assumed to
         represent the vector `x` in `y = Ax`.
     :res_like: optional multivector corresponding to the desired output. If None, then the full output is returned.

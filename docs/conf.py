@@ -44,7 +44,9 @@ intersphinx_mapping = {
     'sympy': ('https://docs.sympy.org/latest', None),
     'symfit': ('https://symfit.readthedocs.io/en/stable/', None),
     'scipy': ('https://docs.scipy.org/doc/scipy/', None),
+    'numpy': ('https://numpy.org/doc/stable/', None),
     'python': ('https://docs.python.org/3', None),
+    'IPython': ('https://ipython.readthedocs.io/en/stable/', None)
 }
 
 nitpick_ignore = [
