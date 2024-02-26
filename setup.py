@@ -43,5 +43,4 @@ setup(
     url='https://github.com/tbuli/kingdon',
     version='0.1.0',
     zip_safe=False,
-    ext_modules = cythonize("kingdon/cpolynomial.py", annotate=True),
 )
