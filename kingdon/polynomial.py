@@ -1,5 +1,6 @@
 import itertools
 from dataclasses import dataclass, field
+from typing import List
 
 from sympy import Mul, Add, Symbol, RealNumber
 
@@ -20,7 +21,7 @@ def compare(a, b):
 
 @dataclass
 class Polynomial:
-    args: list[list] = field(init=False)
+    args: List[list] = field(init=False)
 
     def __init__(self, coeff):
         if isinstance(coeff, self.__class__):
