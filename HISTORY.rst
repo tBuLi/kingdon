@@ -14,7 +14,7 @@ History
 * Make matrix representations of expressions using `expr_as_matrix`.
 * Bugfixes.
 
-0.3.0 (2024-01-09)
+0.3.0 (2024-03-11)
 ------------------
 * Much faster codegen by the introduction of a GAmphetamine.js inspired RationalPolynomial class, which now replaces
   SymPy for codegen. Particularly for inverses this is orders of magnitude faster.
