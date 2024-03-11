@@ -3,7 +3,6 @@ from collections.abc import Mapping
 from typing import Callable, Tuple
 import string
 
-from numba import njit
 from sympy import Symbol, Expr, simplify
 
 from kingdon.multivector import MultiVector
@@ -42,7 +41,7 @@ class OperatorDict(Mapping):
             mvs = [self.algebra.multivector(name=name, keys=keys, symbolcls=self.algebra.codegen_symbolcls)
                    for name, keys in zip(string.ascii_lowercase, keys_in)]
             keys_out, func = do_codegen(self.codegen, *mvs)
-            self.algebra.numspace[func.__name__] = njit(func) if self.algebra.numba else func
+            self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
             self.operator_dict[keys_in] = (keys_out, func)
         return self.operator_dict[keys_in]
 
@@ -71,7 +70,7 @@ class OperatorDict(Mapping):
         values_in = tuple(mv.values() for mv in mvs)
         keys_out, func = self[keys_in]
         issymbolic = any(mv.issymbolic for mv in mvs)
-        if issymbolic or not mvs[0].algebra.numba:
+        if issymbolic or not mvs[0].algebra.wrapper:
             values_out = func(*values_in)
         else:
             values_out = self.algebra.numspace[func.__name__](*values_in)
@@ -92,7 +91,7 @@ class OperatorDict(Mapping):
 
         keys_out, func = self[mv1.keys(), mv2.keys()]
         issymbolic = (mv1.issymbolic or mv2.issymbolic)
-        if issymbolic or not mv1.algebra.numba:
+        if issymbolic or not mv1.algebra.wrapper:
             values_out = func(mv1.values(), mv2.values())
         else:
             values_out = self.algebra.numspace[func.__name__](mv1.values(), mv2.values())
@@ -113,7 +112,7 @@ class UnaryOperatorDict(OperatorDict):
         if keys_in not in self.operator_dict:
             mv = self.algebra.multivector(name='a', keys=keys_in, symbolcls=self.algebra.codegen_symbolcls)
             keys_out, func = do_codegen(self.codegen, mv)
-            self.algebra.numspace[func.__name__] = njit(func) if self.algebra.numba else func
+            self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
             self.operator_dict[keys_in] = (keys_out, func)
         return self.operator_dict[keys_in]
 
@@ -121,7 +120,7 @@ class UnaryOperatorDict(OperatorDict):
         keys_out, func = self[mv.keys()]
 
         issymbolic = mv.issymbolic
-        if issymbolic or not mv.algebra.numba:
+        if issymbolic or not mv.algebra.wrapper:
             values_out = func(mv.values())
         else:
             values_out = self.algebra.numspace[func.__name__](mv.values())
@@ -138,7 +137,7 @@ class Registry(OperatorDict):
             tapes = [TapeRecorder(algebra=self.algebra, expr=name, keys=keys)
                      for name, keys in zip(string.ascii_lowercase, keys_in)]
             keys_out, func = do_compile(self.codegen, *tapes)
-            self.algebra.numspace[func.__name__] = njit(func) if self.algebra.numba else func
+            self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
             self.operator_dict[keys_in] = (keys_out, func)
         return self.operator_dict[keys_in]
 
@@ -159,7 +158,7 @@ class Registry(OperatorDict):
         values_in = tuple(mv.values() for mv in mvs)
         keys_out, func = self[keys_in]
 
-        if not mvs[0].algebra.numba:
+        if not mvs[0].algebra.wrapper:
             values_out = func(*values_in)
         else:
             values_out = self.algebra.numspace[func.__name__](*values_in)

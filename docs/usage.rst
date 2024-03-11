@@ -306,7 +306,7 @@ per grade. This means there are far less combinations that have to be considered
 
 Numba
 ~~~~~
-We can enable numba just-in-time compilation by initiating an :class:`~kingdon.algebra.Algebra` with `numba=True`.
+We can enable numba just-in-time compilation by initiating an :class:`~kingdon.algebra.Algebra` with `wrapper=numba.njit`.
 This comes with a significant cost the first time any operator is called, but subsequent calls to the same operator are
 significantly faster. It is worth mentioning that when dealing with :ref:`Numerical Multivectors` over numpy arrays,
 the benefit of using `numba` actually reduces rapidly as the numpy arrays become larger, since then most of the time

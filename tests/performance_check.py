@@ -6,7 +6,7 @@ from itertools import product, chain
 import clifford as cf
 from collections import defaultdict
 import cProfile, pstats
-from numba import njit, vectorize
+from numba import njit
 
 if __name__ == "__main__":
     num_iter = 1000
@@ -48,7 +48,10 @@ if __name__ == "__main__":
         for operation in operations:
             print(operation)
             for cse, numba in product([False, True], repeat=2):
-                alg = Algebra(d, numba=numba, cse=cse)
+                if numba:
+                    alg = Algebra(d, wrapper=njit, cse=cse)
+                else:
+                    alg = Algebra(d, cse=cse)
                 bvals = np.random.random(shape_b)
                 vvals = np.random.random(shape_v)
                 # b = alg.bivector(bvals)
@@ -84,7 +87,7 @@ if __name__ == "__main__":
             print(f"{operation}. Setup took {init:.2E}. Performed {num_iter} iterations, per iteration: {t/num_iter:.2E}.")
 
     if king_profile:
-        alg = Algebra(d, numba=False, cse=False)
+        alg = Algebra(d, cse=False)
         bvals = np.random.random(shape_b)
         vvals = np.random.random(shape_v)
         b = alg.multivector(bvals)

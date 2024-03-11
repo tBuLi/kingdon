@@ -124,11 +124,12 @@ class MultiVector:
 
     def itermv(self, axis=None) -> Generator["MultiVector", None, None]:
         """
-        Returns an iterator over the multivectors within this multivector.
+        Returns an iterator over the multivectors within this multivector, if it is a multidimensional multivector.
+        For example, if you have a pointcloud of N points, itermv will iterate over these points one at a time.
 
         :param axis: Axis over which to iterate. Default is to iterate over all possible mv.
         """
-        shape = self.shape()[1:]
+        shape = self.shape[1:]
         if not shape:
             return self
         elif axis is None:
@@ -139,6 +140,7 @@ class MultiVector:
         else:
             raise NotImplementedError
 
+    @property
     def shape(self):
         """ Return the shape of the .values() attribute of this multivector. """
         if hasattr(self._values, 'shape'):
