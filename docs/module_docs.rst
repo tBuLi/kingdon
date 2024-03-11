@@ -47,3 +47,10 @@ Matrix reps
 .. automodule:: kingdon.matrixreps
    :members:
    :undoc-members:
+
+Rational Polynomial
+-------------------
+
+.. automodule:: kingdon.polynomial
+   :members:
+   :undoc-members:

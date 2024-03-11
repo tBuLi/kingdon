@@ -402,7 +402,7 @@ def test_matrixreps(vga3d):
 
 
 def test_fromkeysvalues():
-    alg = Algebra(2, numba=False)
+    alg = Algebra(2)
     xvals = symbols('x x1 x2 x12')
     xkeys = tuple(range(4))
     x = alg.multivector(keys=xkeys, values=xvals)
@@ -497,7 +497,7 @@ def test_outertrig(R6):
         assert not diff
 
 
-def test_indexing():
+def test_multidimensional_indexing():
     alg = Algebra(4)
     nrows = 3
     ncolumns = 4
@@ -661,7 +661,7 @@ def test_blade_dict():
 
 def test_numregister_operator_existence():
     """ Test if all battery-included GA operators can be used in custum functions."""
-    alg = Algebra(2, 0, 0, numba=False)
+    alg = Algebra(2, 0, 0)
     uvals = np.random.random(len(alg))
     vvals = np.random.random(len(alg))
     u = alg.multivector(uvals).grade((0, 2))
@@ -684,7 +684,7 @@ def test_numregister_operator_existence():
 
 
 def test_numregister_basics():
-    alg = Algebra(3, 0, 1, numba=False)
+    alg = Algebra(3, 0, 1)
     uvals = np.random.random(len(alg))
     vvals = np.random.random(len(alg))
     u = alg.multivector(uvals)
@@ -720,7 +720,7 @@ def test_numregister_basics():
 
 
 def test_symregister_basics():
-    alg = Algebra(3, 0, 1, numba=False)
+    alg = Algebra(3, 0, 1)
     u = alg.multivector(name='u')
     v = alg.multivector(name='v')
 

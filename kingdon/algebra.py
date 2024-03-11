@@ -40,18 +40,14 @@ class Algebra:
     A Geometric (Clifford) algebra with :code:`p` positive dimensions,
     :code:`q` negative dimensions, and :code:`r` null dimensions.
 
-    The default settings of :code:`numba = cse = simplify = True` actually strike a good balance between
-    initiation times and subsequent code execution times. When dealing with only a limited number of calls
-    then setting :code:`numba = False` will result in a performance gain since the initial jit step can be
-    expensive, but currently there seems to be no case where setting either :code:`cse` or :code:`simplify`
-    to :code:`False` gives a performance improvement.
+    The default settings of :code:`cse = simplify = True` usually strike a good balance between
+    initiation times and subsequent code execution times.
 
     :param p:  number of positive dimensions.
     :param q:  number of negative dimensions.
     :param r:  number of null dimensions.
     :param cse: If :code:`True` (default), attempt Common Subexpression Elimination (CSE)
         on symbolically optimized expressions.
-    :param numba: If :code:`True` (default is :code:`False`), use numba.njit to just-in-time compile expressions.
     :param graded: If :code:`True` (default is :code:`False`), perform binary and unary operations on a graded basis.
         This will still be more sparse than computing with a full multivector, but not as sparse as possible.
         It does however, vastly reduce the number of possible expressions that have to be symbolically optimized.
@@ -59,6 +55,11 @@ class Algebra:
         :code:`False` will reduce the number of calls to simplify. However, it seems that :code:`True` is still faster,
         probably because it keeps sympy expressions from growing too large, which makes both symbolic computations and
         printing into a python function slower.
+    :param wrapper: A function that is always applied to the generated functions as a decorator. For example,
+        using :code:`numba.njit` as a wrapper will ensure that all kingdon code is jitted using numba.
+    :param codegen_symbolcls: The symbol class used during codegen. By default, this is our own fast
+        :class:`~kingdon.polynomial.RationalPolynomial` class.
+    :param simp_func: This function is applied as a filter function to every multivector coefficient.
     """
     p: int = 0
     q: int = 0
@@ -108,10 +109,12 @@ class Algebra:
 
     # Options for the algebra
     cse: bool = field(default=True, repr=False)  # Common Subexpression Elimination (CSE)
-    numba: bool = field(default=False, repr=False)  # Enable numba just-in-time compilation TODO: replace by a wrapper function instead, remove numba as a hard dependency?
     graded: bool = field(default=False, repr=False)  # If true, precompute products per grade.
 
-    # Codegen & call custimization.
+    # Codegen & call customization.
+    # Wrapper function applied to the codegen generated functions.
+    wrapper: Callable = field(default=None, repr=False, compare=False)
+    # The symbol class used in codegen. By default, use our own fast RationalPolynomial class.
     codegen_symbolcls: object = field(default=RationalPolynomial.fromname, repr=False, compare=False)
     # This simplify func is applied to every component after a symbolic expression is called, to simplify and filter by.
     simp_func: Callable = field(default=lambda v: v if not isinstance(v, sympy.Expr) else sympy.simplify(sympy.expand(v)), repr=False, compare=False)
@@ -274,7 +277,7 @@ class Algebra:
         With default settings, the decorator will ensure that every GA unary or binary
         operator is replaced by the corresponding numerical function, and produces
         numerically much more performant code. The speed up is particularly notible when
-        `alg.numba=True`, because then the cost for all the python glue surrounding
+        e.g. `self.wrapper=numba.njit`, because then the cost for all the python glue surrounding
         the actual computation has to be paid only once.
 
         When `symbolic=True` the expression is symbolically optimized before being turned
