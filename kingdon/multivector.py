@@ -337,13 +337,18 @@ class MultiVector:
     @cached_property
     def _callable(self):
         """ Return the callable function for this MV. """
-        return _lambdify_mv({k.name: k for k in sorted(self.free_symbols, key=lambda x: x.name)}, self)
+        return _lambdify_mv(self)
 
     def __call__(self, *args, **kwargs):
+        if args and kwargs:
+            raise Exception('Please provide all input either as positional arguments or as keywords arguments, not both.')
+
         if not self.free_symbols:
             return self
         keys_out, func = self._callable
-        values = func(*args, **kwargs)
+        if kwargs:
+            args = [v for k, v in sorted(kwargs.items(), key=lambda x: x[0])]
+        values = func(args)
         return self.fromkeysvalues(self.algebra, keys_out, values)
 
     def asmatrix(self):

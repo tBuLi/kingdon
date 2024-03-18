@@ -786,3 +786,10 @@ def test_reciprocal_frame():
             assert (ei | Ej).e == 1
         else:
             assert (ei | Ej).e == 0
+
+def test_call_mv():
+    alg = Algebra(3, 0, 1)
+    u = alg.vector(name='u')
+    usq = u * u
+    res = usq(u1=np.cos(np.pi / 3), u2=np.sin(np.pi / 3), u3=0)
+    assert pytest.approx(1.0) == res.e

@@ -576,8 +576,13 @@ def codegen_unhodge(x):
     return codegen_hodge(x, undual=True)
 
 
-def _lambdify_mv(free_symbols, mv):
-    func = lambdify(free_symbols, mv.values(), funcname=f'custom_{mv.type_number}', cse=mv.algebra.cse)
+def _lambdify_mv(mv):
+    func = lambdify(
+        args={'x': sorted(mv.free_symbols, key=lambda x: x.name)},
+        exprs=tuple(mv.values()),
+        funcname=f'custom_{mv.type_number}',
+        cse=mv.algebra.cse
+    )
     return CodegenOutput(tuple(mv.keys()), func)
 
 
