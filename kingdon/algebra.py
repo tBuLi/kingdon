@@ -402,7 +402,7 @@ class Algebra:
         # Flatten multidimensional multivectors
         flat_subjects = []
         for subject in subjects:
-            if isinstance(subject, MultiVector) and len(subject.shape()) > 1:
+            if isinstance(subject, MultiVector) and len(subject.shape) > 1:
                 flat_subjects.extend(subject.itermv())
             else:
                 flat_subjects.append(subject)
