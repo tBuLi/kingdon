@@ -21,3 +21,8 @@ History
 * Performed a numbotomy: numba is no longer a dependency since it actually didn't add much in most cases.
   Instead the user can now provide the Algebra with any wrapper function, which is applied to the generated functions.
   This can be numba.njit, but also any other decorator.
+
+0.3.2 (2024-03-18)
+------------------
+* Fixed a high priority bug in the graph function.
+* Fixed a bug that stopped multivectors from being callable.
