@@ -11,7 +11,10 @@ Examples
 
     ex_symbolic.ipynb
     ex_pointcloud.ipynb
+    ex_2dpga_points_and_lines.ipynb    
     ex_2dpga_project_and_reject.ipynb
+    ex_2dpga_distances_and_angles.ipynb
+    
 
 3DPGA
 -----

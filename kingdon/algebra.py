@@ -30,6 +30,7 @@ from kingdon.matrixreps import matrix_rep
 from kingdon.multivector_json import MultiVectorEncoder
 from kingdon.multivector import MultiVector
 from kingdon.polynomial import RationalPolynomial
+from kingdon.graph import GraphWidget
 
 operation_field = partial(field, default_factory=dict, init=False, repr=False, compare=False)
 
@@ -399,46 +400,16 @@ class Algebra:
             a :class:`IPython.core.display.Javascript` instance is returned.
         :param `**options`: Options passed to :code:`ganja.js`'s :code:`Algebra.graph`.
         """
-        # Flatten multidimensional multivectors
-        flat_subjects = []
-        for subject in subjects:
-            if isinstance(subject, MultiVector) and len(subject.shape) > 1:
-                flat_subjects.extend(subject.itermv())
-            else:
-                flat_subjects.append(subject)
-
-        json_subjects = json.dumps(flat_subjects, cls=MultiVectorEncoder)
-
         cayley_table = [[s if (s := self.cayley[eJ, eI])[-1] != 'e' else f"{s[:-1]}1"
                          for eI in self.canon2bin]
                         for eJ in self.canon2bin]
-        cayley_table = json.dumps(cayley_table)
-        metric = json.dumps(list(self.signature), cls=MultiVectorEncoder)
 
-        src = f"""
-        fetch("https://enkimute.github.io/ganja.js/ganja.js")
-        .then(x=>x.text())
-        .then(ganja=>{{
-
-          var f = new Function("module",ganja);
-          var module = {{exports:{{}}}};
-          f(module);
-          var Algebra = module.exports;
-
-          var canvas = Algebra({{metric:{metric}, Cayley:{cayley_table}}},()=>{{
-              var data = {json_subjects}.map(x=>typeof x === 'object' && 'mv' in x?new Element(x['mv']):x).map(x=>Array.isArray(x)?x.map(y=>typeof y === 'object' && 'mv' in y?new Element(y['mv']):y):x);
-              return this.graph(data, {options})
-          }})
-          canvas.style.width = '100%';
-          canvas.style.background = 'white';
-          element.append(canvas)
-
-        }})
-        """
-        if not js_source:
-            display(Javascript(src))
-        else:
-            return src
+        return GraphWidget(
+            signature=list(self.signature),
+            cayley=cayley_table,
+            raw_subjects=subjects,
+            options=options,
+        )
 
 
 def _sort_product(prod):
