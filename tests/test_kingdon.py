@@ -116,21 +116,21 @@ def test_broadcasting(vga2d):
     Y = vga2d.vector(valsY)
     Z = X * Y
     # test if the scalar and bivector part are what we expect.
-    assert np.all(Z[0] == valsX[0] * valsY[0] + valsX[1] * valsY[1])
-    assert np.all(Z[3] == valsX[0] * valsY[1] - valsX[1] * valsY[0])
+    assert np.all(Z.e == valsX[0] * valsY[0] + valsX[1] * valsY[1])
+    assert np.all(Z.e12 == valsX[0] * valsY[1] - valsX[1] * valsY[0])
     # Test multiplication by a scalar.
     Z = X * 3.0
-    assert np.all(Z[1] == 3.0 * valsX[0])
-    assert np.all(Z[2] == 3.0 * valsX[1])
+    assert np.all(Z.e1 == 3.0 * valsX[0])
+    assert np.all(Z.e2 == 3.0 * valsX[1])
     Z2 = 3.0 * X
-    assert np.all(Z[1] == Z2[1]) and np.all(Z[2] == Z2[2])
+    assert np.all(Z.e1 == Z2.e1) and np.all(Z.e2 == Z2.e2)
 
     # Test broadcasting a rotor across a tensor-valued element
     R = vga2d.multivector({0: np.cos(np.pi / 3), 3: np.sin(np.pi / 3)})
     Z3 = R.sw(X)
     for i, xrow in enumerate(valsX.T):
         Rx = R.sw(vga2d.vector(xrow))
-        assert Rx[1] == Z3[1][i]
+        assert Rx.e1 == Z3.e1[i]
 
 def test_reverse(R6):
     X = R6.multivector(np.arange(0, 2 ** 6))
@@ -138,38 +138,38 @@ def test_reverse(R6):
     assert X.grade((0, 1, 4, 5)) == Xrev.grade((0, 1, 4, 5))
     assert X.grade((2, 3, 6)) == - Xrev.grade((2, 3, 6))
 
-def test_indexing(pga1d):
-    # Test indexing of a mv with canonical and binary indices.
+def test_getattr(pga1d):
     X = pga1d.multivector({0: 2, 'e12': 3})
-    assert X['e'] == 2 and X[3] == 3
+    assert X.e == 2 and X.e12 == 3
+    assert X.e1 == 0 and X.e2 == 0
 
 def test_gp_symbolic(vga2d):
     u = vga2d.vector(name='u')
-    u1, u2 = u[1], u[2]
+    u1, u2 = u.e1, u.e2
     usq = u*u
     # Square of a vector should be purely scalar.
-    assert usq[0] == u1**2 + u2**2
+    assert usq.e == u1**2 + u2**2
     assert len(usq) == 1
     assert 'e12' not in usq
     assert 0 in usq
     # Asking for an element that is not there always returns zero.
     # It does not raise a KeyError, because that might break people's code.
-    assert usq['e12'] == 0
+    assert usq.e12 == 0
 
     # A bireflection should have both a scalar and bivector part however.
     v = vga2d.vector(name='v')
-    v1, v2 = v[1], v[2]
+    v1, v2 = v.e1, v.e2
     R = u*v
-    assert R[0] == u1 * v1 + u2 * v2
-    assert R[3] == u1 * v2 - u2 * v1
+    assert R.e == u1 * v1 + u2 * v2
+    assert R.e12 == u1 * v2 - u2 * v1
 
     # The norm of a bireflection is a scalar.
     Rnormsq = R*~R
-    assert expand(Rnormsq[0] - ((u1*v1 + u2*v2)**2 + (u1*v2 - u2*v1)**2)) == 0
+    assert expand(Rnormsq.e - ((u1*v1 + u2*v2)**2 + (u1*v2 - u2*v1)**2)) == 0
     assert len(Rnormsq) == 1
     assert 'e12' not in Rnormsq
     assert 0 in Rnormsq
-    assert Rnormsq['e12'] == 0
+    assert Rnormsq.e12 == 0
 
 def test_sw_symbolic(vga2d):
     u = vga2d.vector(name='u')
@@ -218,7 +218,7 @@ def test_outer(sta):
     B = sta.bivector(name='B')
     BwB = B ^ B
     assert BwB.grades == (4,)
-    assert BwB[15] == 2*(B['e12']*B['e34'] - B['e13']*B['e24'] + B['e14']*B['e23'])
+    assert BwB.e1234 == 2*(B.e12*B.e34 - B.e13*B.e24 + B.e14*B.e23)
 
 def test_alg_graded(vga2d):
     vga2d_graded = replace(vga2d, graded=True)
@@ -246,18 +246,18 @@ def test_inner_products(vga2d):
     assert bipa + bspa == blca + brca
 
     # Compare to output of GAmphetamine.js
-    assert all([str(bipa[0]).replace(' ', '') == 'a*b+a1*b1-a12*b12+a2*b2',
-                str(bipa[1]).replace(' ', '') == 'a*b1+a1*b-a12*b2+a2*b12',
-                str(bipa[2]).replace(' ', '') == 'a*b2-a1*b12+a12*b1+a2*b',
-                str(bipa[3]).replace(' ', '') == 'a*b12+a12*b'])
-    assert all([str(blca[0]).replace(' ', '') == 'a*b+a1*b1-a12*b12+a2*b2',
-                str(blca[1]).replace(' ', '') == 'a1*b-a12*b2',
-                str(blca[2]).replace(' ', '') == 'a12*b1+a2*b',
-                str(blca[3]).replace(' ', '') == 'a12*b'])
-    assert all([str(brca[0]).replace(' ', '') == 'a*b+a1*b1-a12*b12+a2*b2',
-                str(brca[1]).replace(' ', '') == 'a*b1+a2*b12',
-                str(brca[2]).replace(' ', '') == 'a*b2-a1*b12',
-                str(brca[3]).replace(' ', '') == 'a*b12'])
+    assert all([str(bipa.e).replace(' ', '') == 'a*b+a1*b1-a12*b12+a2*b2',
+                str(bipa.e1).replace(' ', '') == 'a*b1+a1*b-a12*b2+a2*b12',
+                str(bipa.e2).replace(' ', '') == 'a*b2-a1*b12+a12*b1+a2*b',
+                str(bipa.e12).replace(' ', '') == 'a*b12+a12*b'])
+    assert all([str(blca.e).replace(' ', '') == 'a*b+a1*b1-a12*b12+a2*b2',
+                str(blca.e1).replace(' ', '') == 'a1*b-a12*b2',
+                str(blca.e2).replace(' ', '') == 'a12*b1+a2*b',
+                str(blca.e12).replace(' ', '') == 'a12*b'])
+    assert all([str(brca.e).replace(' ', '') == 'a*b+a1*b1-a12*b12+a2*b2',
+                str(brca.e1).replace(' ', '') == 'a*b1+a2*b12',
+                str(brca.e2).replace(' ', '') == 'a*b2-a1*b12',
+                str(brca.e12).replace(' ', '') == 'a*b12'])
 
 def test_hodge_dual(pga2d, pga3d):
     x = pga2d.multivector(name='x')
@@ -265,7 +265,7 @@ def test_hodge_dual(pga2d, pga3d):
         x.dual(kind='polarity')
     y = x.dual()
     # GAmphetamine.js output
-    assert dict(y.items()) == {0: x[7], 1: x[6], 2: -x[5], 4: x[3], 3: x[4], 5: -x[2], 6: x[1], 7: x[0]}
+    assert dict(y.items()) == {0: x.e123, 1: x.e23, 2: -x.e13, 4: x.e12, 3: x.e3, 5: -x.e2, 6: x.e1, 7: x.e}
     z = y.undual()
     assert x == z
     with pytest.raises(ValueError):
@@ -280,11 +280,11 @@ def test_hodge_dual(pga2d, pga3d):
     "x1234 - x234 e₁ + x134 e₂ - x124 e₃ + x123 e₄ + x34 e₁₂ - x24 e₁₃ + x23 e₁₄ + x14 e₂₃ - x13 e₂₄ + x12 e₃₄ " \
     "- x4 e₁₂₃ + x3 e₁₂₄ - x2 e₁₃₄ + x1 e₂₃₄ + x e₁₂₃₄"
     assert dict(y.items()) == {
-        0b0000: x[0b1111],
-        0b0001: -x[0b1110], 0b0010: x[0b1101], 0b0100: -x[0b1011], 0b1000: x[0b0111],
-        0b0011: x[0b1100], 0b0101: -x[0b1010], 0b1001: x[0b0110], 0b0110: x[0b1001], 0b1010: -x[0b0101], 0b1100: x[0b0011],
-        0b0111: -x[0b1000], 0b1011: x[0b0100], 0b1101: -x[0b0010], 0b1110: x[0b0001],
-        0b1111: x[0]
+        0b0000: x.e1234,
+        0b0001: -x.e234, 0b0010: x.e134, 0b0100: -x.e124, 0b1000: x.e123,
+        0b0011: x.e34, 0b0101: -x.e24, 0b1001: x.e23, 0b0110: x.e14, 0b1010: -x.e13, 0b1100: x.e12,
+        0b0111: -x.e4, 0b1011: x.e3, 0b1101: -x.e2, 0b1110: x.e1,
+        0b1111: x.e
     }
     z = y.undual()
     assert z == x
@@ -319,8 +319,7 @@ def test_regressive(pga3d):
     }
     known = pga3d.multivector(known_vals)
     x_regr_y = x & y
-    for i in range(len(pga3d)):
-        assert x_regr_y[i] == known[i]
+    assert x_regr_y == known
 
 
 def test_projection(pga3d):
@@ -343,13 +342,13 @@ def test_inv_div(pga2d):
     # All the null elements will have disappeared from the output,
     # so only four values left to provide.
     u_vals = np.random.random(4)
-    assert res(*u_vals)[0] == pytest.approx(1.0)
+    assert res(*u_vals).e == pytest.approx(1.0)
     assert res.grades == (0,)
     # Division by self is truly the scalar 1.
     res = u / u
-    assert res(*u_vals)[0] == pytest.approx(1.0)
+    assert res(*u_vals).e == pytest.approx(1.0)
     assert res.grades == (0,)
-    assert res[0] == 1
+    assert res.e == 1
 
 def test_hitzer_inv():
     for d in range(5): # The d=5 case is excluded becuase the test it too slow.
@@ -360,8 +359,8 @@ def test_hitzer_inv():
 
 def test_mixed_symbolic(vga2d):
     x = vga2d.evenmv(e=2.2, e12='s')
-    assert x[3] == Symbol('s')
-    assert x[0] == 2.2
+    assert x.e12 == Symbol('s')
+    assert x.e == 2.2
     assert x.issymbolic
 
 
@@ -412,8 +411,8 @@ def test_fromkeysvalues():
 
     # We use sympify, so string that look like equations are also allowed
     y = alg.multivector(['a*b+c', '-15*c'], grades=(1,))
-    assert y[1] == Symbol('a')*Symbol('b') + Symbol('c')
-    assert y[2] == -15 * Symbol('c')
+    assert y.e1 == Symbol('a')*Symbol('b') + Symbol('c')
+    assert y.e2 == -15 * Symbol('c')
 
     yvals = symbols('y y1 y2 y12')
     with pytest.raises(TypeError):
@@ -423,10 +422,10 @@ def test_fromkeysvalues():
     assert y._keys == xkeys
 
     xy = x * y
-    assert xy[0] == sympify("(x*y+x1*y1-x12*y12+x2*y2)")
-    assert xy['e1'] == sympify("(x*y1+x1*y+x12*y2-x2*y12)")
-    assert xy[2] == sympify("(x*y2+x1*y12-x12*y1+x2*y)")
-    assert xy['e12'] == sympify("(x*y12+x1*y2+x12*y-x2*y1)")
+    assert xy.e == sympify("(x*y+x1*y1-x12*y12+x2*y2)")
+    assert xy.e1 == sympify("(x*y1+x1*y+x12*y2-x2*y12)")
+    assert xy.e2 == sympify("(x*y2+x1*y12-x12*y1+x2*y)")
+    assert xy.e12 == sympify("(x*y12+x1*y2+x12*y-x2*y1)")
 
 def test_commutator():
     alg = Algebra(2, 1, 1)
@@ -504,19 +503,19 @@ def test_multidimensional_indexing():
     shape = (len(alg.indices_for_grade[2]), nrows, ncolumns)
     bvals = np.random.random(shape)
     B = alg.bivector(bvals)
-    np.testing.assert_allclose(B[3, 2:4], bvals[0, 2:4])
-    np.testing.assert_allclose(B[3, 2], bvals[0, 2])
-    np.testing.assert_allclose(B[3, :], bvals[0, :])
-    np.testing.assert_allclose(B[:, 0], bvals[:, 0])
-    np.testing.assert_allclose(B[3, 2:4, 0], bvals[0, 2:4, 0])
+    np.testing.assert_allclose(B[2:4].e12, bvals[0, 2:4])
+    np.testing.assert_allclose(B[2].e12, bvals[0, 2])
+    np.testing.assert_allclose(B[:].e12, bvals[0, :])
+    np.testing.assert_allclose(B[0].values(), bvals[:, 0])
+    np.testing.assert_allclose(B[2:4, 0].e12, bvals[0, 2:4, 0])
     # Same tests but without using a numpy array, instead use a tuple of sub np.ndarray.
     B = alg.bivector(tuple(bvals))
-    np.testing.assert_allclose(B[3, 2:4], bvals[0, 2:4])
-    np.testing.assert_allclose(B[3, 2], bvals[0, 2])
-    np.testing.assert_allclose(B[3, :], bvals[0, :])
-    np.testing.assert_allclose(B[:, 0], bvals[:, 0])
-    # np.testing.assert_allclose(B[3, 2:4, 0], bvals[0, 2:4, 0]) # Still fails, fix in the future
-    np.testing.assert_allclose(B[:, 0, 0], bvals[:, 0, 0])
+    np.testing.assert_allclose(B[2:4].e12, bvals[0, 2:4])
+    np.testing.assert_allclose(B[2].e12, bvals[0, 2])
+    np.testing.assert_allclose(B[:].e12, bvals[0, :])
+    np.testing.assert_allclose(B[0].values(), bvals[:, 0])
+    np.testing.assert_allclose(B[2:4, 0].e12, bvals[0, 2:4, 0])
+    np.testing.assert_allclose(B[0, 0].values(), bvals[:, 0, 0])
 
 
 def test_sqrt():
@@ -561,8 +560,7 @@ def test_normalization(pga3d):
 def test_itermv():
     alg = Algebra(4)
     nrows = 3
-    # ncolumns = 5
-    shape = (len(alg.indices_for_grade[2]), nrows)#, ncolumns)
+    shape = (len(alg.indices_for_grade[2]), nrows)
     bvals = np.random.random(shape)
     B = alg.bivector(bvals)
     for i, b in enumerate(B.itermv()):
@@ -704,7 +702,7 @@ def test_numregister_basics():
 
     @alg.register
     def grade_select(x):
-        return x.grade((1, 2))
+        return x.grade(1, 2)
 
     # Test if we can nest registered expressions.
     @alg.register
@@ -715,7 +713,7 @@ def test_numregister_basics():
     assert square(u) == square.codegen(u)
     assert double(u) == double.codegen(u)
     assert add(u, v) == add.codegen(u, v)
-    assert grade_select(u) == u.grade((1, 2))
+    assert grade_select(u) == u.grade(1, 2)
     assert coupled(u, v) == (u + v)**2 + 2 * u
 
 
@@ -793,3 +791,38 @@ def test_call_mv():
     usq = u * u
     res = usq(u1=np.cos(np.pi / 3), u2=np.sin(np.pi / 3), u3=0)
     assert pytest.approx(1.0) == res.e
+
+def test_setitem():
+    alg = Algebra(2, 0, 1)
+    l = 6
+    d = 3 / l
+    point_vals = np.zeros((alg.d, l + 1))
+    point_vals[0] = 1
+    point_vals[1] = np.arange(l + 1) * d - 1.5
+    points = alg.vector(point_vals).dual()
+    points[-1] = points[-2]
+    assert points[-1] == points[-2]
+
+def test_mv_times_func():
+    """If a mv is binaried with a function, we simply call it until it returns a multivector. """
+    alg = Algebra(2, 0, 1)  # Smallest non-Abelian algebra, that property is important.
+    x = alg.multivector(name='x')
+    y = alg.multivector(name='x')
+    yfunc = lambda: lambda: y
+    # See if binary operators have been overloaded correctly!
+    assert x + y == x + yfunc
+    assert y + x == yfunc + x
+    assert x - y == x - yfunc
+    assert y - x == yfunc - x
+    assert x * y == x * yfunc
+    assert y * x == yfunc * x
+    assert x ^ y == x ^ yfunc
+    assert y ^ x == yfunc ^ x
+    assert x & y == x & yfunc
+    assert y & x == yfunc & x
+    assert x | y == x | yfunc
+    assert y | x == yfunc | x
+    assert x @ y == x @ yfunc
+    assert y @ x == yfunc @ x
+    assert x >> y == x >> yfunc
+    assert y >> x == yfunc >> x
