@@ -14,7 +14,7 @@ from kingdon.polynomial import RationalPolynomial
 @dataclass(init=False)
 class MultiVector:
     algebra: "Algebra"
-    _values: tuple = field(default_factory=tuple)
+    _values: list = field(default_factory=list)
     _keys: tuple = field(default_factory=tuple)
 
     def __new__(cls, algebra: "Algebra", values=None, keys=None, *, name=None, grades=None, symbolcls=Symbol, **items):
@@ -37,13 +37,14 @@ class MultiVector:
         """
         if items and keys is None and values is None:
             keys, values = zip(*((blade, items[blade]) for blade in algebra.canon2bin if blade in items))
+            values = list(values)
 
         # Sanitize input
         if keys is not None and not all(isinstance(k, int) for k in keys):
             keys = tuple(k if k in algebra.bin2canon else algebra.canon2bin[k] for k in keys)
         if grades is None and name and keys is not None:
             grades = tuple(sorted({format(k, 'b').count('1') for k in keys}))
-        values = values if values is not None else tuple()
+        values = values if values is not None else list()
         keys = keys if keys is not None else tuple()
 
         if grades is not None:
@@ -61,13 +62,14 @@ class MultiVector:
 
         # Construct a new MV on the basis of the kind of input we received.
         if isinstance(values, Mapping):
-            keys, values = zip(*values.items()) if values else (tuple(), tuple())
+            keys, values = zip(*values.items()) if values else (tuple(), list())
+            values = list(values)
         elif len(values) == len(algebra.indices_for_grades[grades]) and not keys:
             keys = algebra.indices_for_grades[grades]
         elif name and not values:
             # values was not given, but we do have a name. So we are in symbolic mode.
             keys = algebra.indices_for_grades[grades] if not keys else keys
-            values = tuple(symbolcls(f'{name}{algebra.bin2canon[k][1:]}') for k in keys)
+            values = list(symbolcls(f'{name}{algebra.bin2canon[k][1:]}') for k in keys)
         elif len(keys) != len(values):
             raise TypeError(f'Length of `keys` and `values` have to match.')
 
@@ -76,8 +78,8 @@ class MultiVector:
                          for key in keys)
 
         if any(isinstance(v, str) for v in values):
-            values = tuple(val if not isinstance(val, str) else sympify(val)
-                           for val in values)
+            values = list(val if not isinstance(val, str) else sympify(val)
+                          for val in values)
 
         if not set(keys) <= set(algebra.indices_for_grades[grades]):
             raise ValueError(f"All keys should be of grades {grades}.")
@@ -134,7 +136,7 @@ class MultiVector:
             return self
         elif axis is None:
             return (
-                MultiVector.fromkeysvalues(self.algebra, keys=self.keys(), values=self[(slice(None), *indices)])
+                self[indices]
                 for indices in product(*(range(n) for n in shape))
             )
         else:
@@ -165,9 +167,9 @@ class MultiVector:
         if len(grades) == 1 and isinstance(grades[0], tuple):
             grades = grades[0]
 
-        vals = {k: self[k]
+        vals = {k: getattr(self, self.algebra.bin2canon[k])
                 for k in self.algebra.indices_for_grades[grades] if k in self.keys()}
-        return self.fromkeysvalues(self.algebra, tuple(vals.keys()), tuple(vals.values()))
+        return self.fromkeysvalues(self.algebra, tuple(vals.keys()), list(vals.values()))
 
     @cached_property
     def issymbolic(self):
@@ -270,43 +272,43 @@ class MultiVector:
             return iden
 
     def __getitem__(self, item):
-        if isinstance(item, tuple):
-            key, *subslices = item
-        else:
-            key, subslices = item, tuple()
-
-        # TODO: We could turn slices into the valid range in binary rep.
-        #  This is complicated by the fact that the binary keys do not
-        #  form a consecutive range.
-        if not isinstance(key, slice):
-            # Convert key from a basis-blade in binary rep to a valid index in values.
-            key = key if key in self.algebra.bin2canon else self.algebra.canon2bin[key]
-            try:
-                key = self.keys().index(key)
-            except ValueError:
-                return 0
+        if not isinstance(item, tuple):
+            item = (item,)
 
         values = self.values()
         if isinstance(values, (tuple, list)):
-            keys = [key] if key != slice(None) else [self.keys().index(k) for k in self.keys()]
-            return_values = []
-            for key in keys:
-                return_values.append(values[key])
-                for subslice in subslices:
-                    return_values[key] = return_values[key][subslice]
-            if len(keys) == 1:
-                return_values = return_values[0]
+            return_values = values.__class__(value[item] for value in values)
         else:
-            return_values = values[(key, *subslices)]
-        return return_values
+            return_values = values[(slice(None), *item)]
+        return self.__class__.fromkeysvalues(self.algebra, keys=self.keys(), values=return_values)
+
+    def __setitem__(self, indices, values):
+        if isinstance(values, MultiVector):
+            if self.keys() != values.keys():
+                raise ValueError('setitem with a multivector is only possible for equivalent MVs.')
+            values = values.values()
+
+        if not isinstance(indices, tuple):
+            indices = (indices,)
+
+        if isinstance(self.values(), (tuple, list)):
+            for self_values, other_value in zip(self.values(), values):
+                self_values[indices] = other_value
+        else:
+            self.values()[(slice(None), *indices)] = values
 
     def __getattr__(self, basis_blade):
+        # TODO: if this first check is not true, raise hell instead?
         if basis_blade not in self.algebra.canon2bin:
             return 0
-        return self[self.algebra.canon2bin[basis_blade]]
+        try:
+            idx = self.keys().index(self.algebra.canon2bin[basis_blade])
+        except ValueError:
+            return 0
+        return self._values[idx]
 
     def __contains__(self, item):
-        item = item if item in self.algebra.bin2canon else self.algebra.canon2bin[item]
+        item = item if isinstance(item, int) else self.algebra.canon2bin[item]
         return item in self._keys
 
     def __bool__(self):
@@ -318,7 +320,7 @@ class MultiVector:
 
     def map(self, func) -> "MultiVector":
         """ Returns a new multivector where `func` has been applied to all the values."""
-        vals = tuple(func(v) for v in self.values())
+        vals = [func(v) for v in self.values()]
         return self.fromkeysvalues(self.algebra, keys=self.keys(), values=vals)
 
     def filter(self, func=None) -> "MultiVector":
@@ -330,9 +332,9 @@ class MultiVector:
             func = self.algebra.simp_func
         keysvalues = tuple((k, v) for k, v in self.items() if func(v))
         if not keysvalues:
-            return self.fromkeysvalues(self.algebra, keys=tuple(), values=tuple())
+            return self.fromkeysvalues(self.algebra, keys=tuple(), values=list())
         keys, values = zip(*keysvalues)
-        return self.fromkeysvalues(self.algebra, keys=keys, values=values)
+        return self.fromkeysvalues(self.algebra, keys=keys, values=list(values))
 
     @cached_property
     def _callable(self):
@@ -367,13 +369,16 @@ class MultiVector:
             keys = self.algebra.indices_for_grades[tuple(range(self.algebra.d + 1))]
         else:
             keys = tuple(range(len(self.algebra)))
-        values = tuple(self[k] for k in keys)
+        values = [getattr(self, self.algebra.bin2canon[k]) for k in keys]
         return self.fromkeysvalues(self.algebra, keys=keys, values=values)
 
     def gp(self, other):
         return self.algebra.gp(self, other)
 
-    __mul__ = __rmul__ = gp
+    __mul__ = gp
+
+    def __rmul__(self, other):
+        return self.algebra.gp(other, self)
 
     def sw(self, other):
         """
@@ -384,6 +389,9 @@ class MultiVector:
 
     __rshift__ = sw
 
+    def __rrshift__(self, other):
+        return self.algebra.sw(other, self)
+
     def proj(self, other):
         """
         Project :code:`x := self` onto :code:`y := other`: :code:`x @ y = (x | y) * ~y`.
@@ -392,6 +400,9 @@ class MultiVector:
         return self.algebra.proj(self, other)
 
     __matmul__ = proj
+
+    def __rmatmul__(self, other):
+        return self.algebra.proj(other, self)
 
     def cp(self, other):
         """
@@ -412,6 +423,9 @@ class MultiVector:
 
     __or__ = ip
 
+    def __ror__(self, other):
+        return self.algebra.ip(other, self)
+
     def op(self, other):
         return self.algebra.op(self, other)
 
@@ -431,6 +445,9 @@ class MultiVector:
         return self.algebra.rp(self, other)
 
     __and__ = rp
+
+    def __rand__(self, other):
+        return self.algebra.rp(other, self)
 
     def __pow__(self, power, modulo=None):
         # TODO: this should also be taken care of via codegen, but for now this workaround is ok.

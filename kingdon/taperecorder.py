@@ -40,16 +40,14 @@ class TapeRecorder:
                 keys=(self.keys()[idx],)
             )
 
-    def grade(self, grades):
-        if isinstance(grades, int):
-            grades = (grades,)
-        elif not isinstance(grades, tuple):
-            grades = tuple(grades)
+    def grade(self, *grades):
+        if len(grades) == 1 and isinstance(grades[0], tuple):
+            grades = grades[0]
 
         basis_blades = self.algebra.indices_for_grades[grades]
         indices_keys = [(idx, k) for idx, k in enumerate(self.keys()) if k in basis_blades]
         indices, keys = zip(*indices_keys) if indices_keys else (tuple(), tuple())
-        expr = f"tuple({self.expr}[idx] for idx in {indices})"
+        expr = f"[{self.expr}[idx] for idx in {indices}]"
         return self.__class__(
             algebra=self.algebra,
             expr=expr,

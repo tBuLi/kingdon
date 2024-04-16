@@ -54,7 +54,7 @@ class OperatorDict(Mapping):
     def filter(self, keys_out, values_out):
         """ For given keys and values, keep only symbolically non-zero elements. """
         keysvalues = tuple((k, simpv) for k, v in zip(keys_out, values_out) if (simpv := self.algebra.simp_func(v)))
-        keys, values = zip(*keysvalues) if keysvalues else (list(), list())
+        keys, values = zip(*keysvalues) if keysvalues else (tuple(), list())
         return keys, list(values)
 
     def __call__(self, *mvs):
@@ -90,8 +90,8 @@ class OperatorDict(Mapping):
             mv2 = mv2()
 
         # Make sure all inputs are multivectors. If an input is not, assume its scalar.
-        mv1 = mv1 if isinstance(mv1, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), (mv1,))
-        mv2 = mv2 if isinstance(mv2, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), (mv2,))
+        mv1 = mv1 if isinstance(mv1, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv1])
+        mv2 = mv2 if isinstance(mv2, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv2])
         # Check is written to be fast, not readable. Typically, the first check is true.
         if not (mv1.algebra is mv2.algebra or mv1.algebra == mv2.algebra):
             raise AlgebraError("Cannot multiply elements of different algebra's.")

@@ -473,7 +473,7 @@ class BladeDict(Mapping):
                 indices = self.algebra.indices_for_grade[g]
                 self.blades[blade] = self.algebra.multivector(values=[int(bin_blade == i) for i in indices], grades=(g,))
             else:
-                self.blades[blade] = MultiVector.fromkeysvalues(self.algebra, keys=(bin_blade,), values=(1,))
+                self.blades[blade] = MultiVector.fromkeysvalues(self.algebra, keys=(bin_blade,), values=[1])
         return self.blades[blade]
 
     def __getattr__(self, blade):

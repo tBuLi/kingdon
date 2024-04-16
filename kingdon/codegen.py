@@ -356,7 +356,7 @@ def codegen_hitzer_inv(x, symbolic=False):
 
     if symbolic:
         return Fraction(num, denom)
-    return alg.multivector({k: v / denum for k, v in num.items()})
+    return alg.multivector({k: v / denom for k, v in num.items()})
 
 def codegen_shirokov_inv(x, symbolic=False):
     """
@@ -579,7 +579,7 @@ def codegen_unhodge(x):
 def _lambdify_mv(mv):
     func = lambdify(
         args={'x': sorted(mv.free_symbols, key=lambda x: x.name)},
-        exprs=tuple(mv.values()),
+        exprs=list(mv.values()),
         funcname=f'custom_{mv.type_number}',
         cse=mv.algebra.cse
     )
@@ -612,13 +612,14 @@ def do_codegen(codegen, *mvs) -> CodegenOutput:
         dependencies = None
 
     # Sort the keys in canonical order
-    res = {k: res[k] for k in algebra.canon2bin.values() if k in res.keys()}
+    res = {bin: res[bin] if isinstance(res, dict) else getattr(res, canon)
+           for canon, bin in algebra.canon2bin.items() if bin in res.keys()}
 
     if not algebra.cse and any(isinstance(v, str) for v in res.values()):
         return func_builder(res, *mvs, funcname=funcname)
 
 
-    keys, exprs = tuple(res.keys()), tuple(res.values())
+    keys, exprs = tuple(res.keys()), list(res.values())
     func = lambdify(args, exprs, funcname=funcname, cse=algebra.cse, dependencies=dependencies)
     return CodegenOutput(
         keys, func
@@ -665,10 +666,10 @@ def func_builder(res_vals: defaultdict, *mvs, funcname: str) -> CodegenOutput:
         body = ''
         for mv, arg in zip(mvs, args):
             body += f'    [{", ".join(str(v) for v in mv.values())}] = {arg}\n'
-        return_val = f'    return ({", ".join(res_vals.values())},)'
+        return_val = f'    return [{", ".join(res_vals.values())},]'
     else:
         body = ''
-        return_val = f'    return tuple()'
+        return_val = f'    return list()'
     func_source = f'{header}\n{body}\n{return_val}'
 
     # Dynamically build a function
@@ -682,7 +683,7 @@ def func_builder(res_vals: defaultdict, *mvs, funcname: str) -> CodegenOutput:
     return CodegenOutput(tuple(res_vals.keys()), func)
 
 
-def lambdify(args: dict, exprs: tuple, funcname: str, dependencies: tuple = None, printer=LambdaPrinter, dummify=False, cse=False):
+def lambdify(args: dict, exprs: list, funcname: str, dependencies: tuple = None, printer=LambdaPrinter, dummify=False, cse=False):
     """
     Function that turns symbolic expressions into Python functions. Heavily inspired by
     :mod:`sympy`'s function by the same name, but adapted for the needs of :code:`kingdon`.
@@ -734,7 +735,7 @@ def lambdify(args: dict, exprs: tuple, funcname: str, dependencies: tuple = None
     tosympy = lambda x: x.tosympy() if hasattr(x, 'tosympy') else x
     args = {name: [tosympy(v) for v in values]
             for name, values in args.items()}
-    exprs = tuple(tosympy(expr) for expr in exprs)
+    exprs = [tosympy(expr) for expr in exprs]
     if dependencies is not None:
         dependencies = [(tosympy(y), tosympy(x)) for y, x in dependencies]
     names = tuple(arg if isinstance(arg, str) else arg.name for arg in args.keys())
@@ -748,17 +749,17 @@ def lambdify(args: dict, exprs: tuple, funcname: str, dependencies: tuple = None
         if not callable(cse):
             from sympy.simplify.cse_main import cse
         if dependencies:
-            all_exprs = (*exprs, *rhsides)
+            all_exprs = [*exprs, *rhsides]
             cses, _all_exprs = cse(all_exprs, list=False, order='none', ignore=lhsides)
             _exprs, _rhsides = _all_exprs[:-len(rhsides)], _all_exprs[len(exprs):]
-            cses.extend(tuple(zip(flatten(lhsides), flatten(_rhsides))))
+            cses.extend(list(zip(flatten(lhsides), flatten(_rhsides))))
         else:
             cses, _exprs = cse(exprs, list=False)
     else:
         cses, _exprs = list(zip(flatten(lhsides), flatten(rhsides))), exprs
 
     if not any(_exprs):
-        _exprs = tuple('0' for expr in _exprs)
+        _exprs = list('0' for expr in _exprs)
     funcstr = funcprinter.doprint(funcname, iterable_args, names, _exprs, cses=cses)
 
     # Provide lambda expression with builtins, and compatible implementation of range
