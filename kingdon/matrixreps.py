@@ -111,7 +111,7 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
     y = expr(*inputs)
     alg = x.algebra
     if res_like is not None:
-        y = alg.multivector({k: sympy.sympify(y[k]) for k in res_like.keys()})
+        y = alg.multivector({k: sympy.sympify(getattr(y, alg.bin2canon[k])) for k in res_like.keys()})
 
     A = sympy.zeros(len(y), len(x))
     for i, (blade_y, yi) in enumerate(y.items()):
