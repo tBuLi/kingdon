@@ -2,6 +2,7 @@ from collections.abc import Callable
 from functools import cached_property
 from types import GeneratorType
 import timeit
+from typing import List, Tuple
 
 import anywidget
 import traitlets
@@ -134,7 +135,7 @@ class GraphWidget(anywidget.AnyWidget):
             proposal['value']['camera'] = list(encode(proposal['value']['camera']))[0]
         return proposal['value']
 
-    def inplacereplace(self, old_subjects, new_subjects: list[tuple[int, dict]]):
+    def inplacereplace(self, old_subjects, new_subjects: List[Tuple[int, dict]]):
         """
         Given the old and the new subjects, replace the values inplace iff they have changed.
         """
