@@ -390,23 +390,31 @@ class Algebra:
             :scale: 50%
             :align: center
 
-        Not all features of :code:`ganja.js` are supported yet. Most notably,
-        only static graphs can be made. While ganja also accepts functions as
-        input, this syntax is not currently supported in Kingdon.
+        If a function is given to :code:`Algebra.graph` then it is called without arguments.
+        This can be used to make animations in a manner identical to :code:`ganja.js`.
+
+        Example usage:
+
+        .. code-block ::
+            def graph_func():
+                return [
+                    0xD0FFE1, [A,B,C],
+                    0x224488, A, "A", B, "B", C, "C"
+                ]
+
+            alg.graph(
+                graph_func,
+                lineWidth=3, grid=1, labels=1
+            )
 
         :param `*subjects`: Subjects to be graphed.
-            Can be strings, hexadecimal colors, (lists of) MultiVector.
+            Can be strings, hexadecimal colors, (lists of) MultiVector, (lists of) callables.
         :param js_source: If True, return the javascript source code. If False (default)
             a :class:`IPython.core.display.Javascript` instance is returned.
         :param `**options`: Options passed to :code:`ganja.js`'s :code:`Algebra.graph`.
         """
-        cayley_table = [[s if (s := self.cayley[eJ, eI])[-1] != 'e' else f"{s[:-1]}1"
-                         for eI in self.canon2bin]
-                        for eJ in self.canon2bin]
-
         return GraphWidget(
-            signature=list(self.signature),
-            cayley=cayley_table,
+            algebra=self,
             raw_subjects=subjects,
             options=options,
         )
