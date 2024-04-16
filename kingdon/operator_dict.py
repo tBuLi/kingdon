@@ -54,7 +54,8 @@ class OperatorDict(Mapping):
     def filter(self, keys_out, values_out):
         """ For given keys and values, keep only symbolically non-zero elements. """
         keysvalues = tuple((k, simpv) for k, v in zip(keys_out, values_out) if (simpv := self.algebra.simp_func(v)))
-        return zip(*keysvalues) if keysvalues else (tuple(), tuple())
+        keys, values = zip(*keysvalues) if keysvalues else (list(), list())
+        return keys, list(values)
 
     def __call__(self, *mvs):
         if len(mvs) == 2:
@@ -82,6 +83,12 @@ class OperatorDict(Mapping):
 
     def _call_binary(self, mv1, mv2):
         """ Specialization for binary operators. """
+        # Call until no longer callable.
+        while isinstance(mv1, Callable) and not isinstance(mv1, MultiVector):
+            mv1 = mv1()
+        while isinstance(mv2, Callable) and not isinstance(mv2, MultiVector):
+            mv2 = mv2()
+
         # Make sure all inputs are multivectors. If an input is not, assume its scalar.
         mv1 = mv1 if isinstance(mv1, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), (mv1,))
         mv2 = mv2 if isinstance(mv2, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), (mv2,))
@@ -130,6 +137,7 @@ class UnaryOperatorDict(OperatorDict):
 
         return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)
 
+
 class Registry(OperatorDict):
     def __getitem__(self, keys_in: Tuple[Tuple[int]]):
         if keys_in not in self.operator_dict:
@@ -142,6 +150,14 @@ class Registry(OperatorDict):
         return self.operator_dict[keys_in]
 
     def __call__(self, *mvs):
+        mvs = list(mvs)
+        for i in range(len(mvs)):
+            mv = mvs[i]
+            # Call until no longer callable.
+            while isinstance(mv, Callable) and not isinstance(mv, MultiVector):
+                mv = mv()
+            mvs[i] = mv
+
         if all(isinstance(mv, TapeRecorder) for mv in mvs):
             keys_in = tuple(mv.keys() for mv in mvs)
             keys_out, func = self[keys_in]
