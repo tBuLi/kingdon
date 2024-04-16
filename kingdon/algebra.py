@@ -2,7 +2,6 @@ from itertools import combinations, product, chain, groupby
 from functools import partial
 from collections import Counter
 from dataclasses import dataclass, field, fields
-import json
 from collections.abc import Mapping, Callable
 try:
     from functools import cached_property
@@ -14,8 +13,6 @@ except ImportError:
 
 import numpy as np
 import sympy
-
-from IPython.display import Javascript, display
 
 from kingdon.codegen import (
     codegen_gp, codegen_sw, codegen_cp, codegen_ip, codegen_op, codegen_div,
