@@ -2,6 +2,7 @@
 Examples
 ========
 
+`✨ Try kingdon in your browser ✨ <https://tbuli.github.io/teahouse/>`_
 
 2DPGA
 -----

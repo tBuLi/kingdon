@@ -21,10 +21,7 @@ Pythonic Geometric Algebra Package
 * Free software: MIT license
 * Documentation: https://kingdon.readthedocs.io.
 
-✨ Try it in your browser ✨
-----------------------------
-
-➡️ **https://tbuli.github.io/teahouse/**
+`✨ Try kingdon in your browser ✨ <https://tbuli.github.io/teahouse/>`_
 
 Features
 --------
@@ -190,6 +187,18 @@ Overview of Operators
      - $\\sqrt{a}$
      -
      - :code:`a.sqrt()`
+   * - Dual of :code:`a`
+     - $a*$
+     -
+     - :code:`a.dual()`
+   * - Undual of :code:`a`
+     -
+     -
+     - :code:`a.undual()`
+   * - Grade :code:`k` part of :code:`a`
+     - $\\langle a \\rangle_k$
+     -
+     - :code:`a.grade(k)`
 
 Credits
 -------

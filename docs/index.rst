@@ -1,6 +1,8 @@
 Welcome to Kingdon's documentation!
 ======================================
 
+`✨ Try kingdon in your browser ✨ <https://tbuli.github.io/teahouse/>`_
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents:

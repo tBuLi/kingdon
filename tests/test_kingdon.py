@@ -9,7 +9,6 @@ import numpy as np
 
 from sympy import Symbol, simplify, factor, expand, collect, sympify, cos, sin
 from kingdon import Algebra, MultiVector, symbols
-from kingdon.multivector_json import MultiVectorEncoder
 from kingdon.operator_dict import UnaryOperatorDict
 
 import timeit
@@ -602,15 +601,6 @@ def test_asfullmv():
     # Compare to asfullmv method.
     y = x.asfullmv()
     np.testing.assert_equal(y.values(), x_densevals)
-
-
-def test_json():
-    import json
-    alg = Algebra(signature=[0, 1, 1], start_index=0)
-    xvals = np.array([2, 3, 4])
-    x = alg.vector(xvals)
-    xjson = json.dumps(x, cls=MultiVectorEncoder)
-    assert xjson == '{"mv": [0, 2, 3, 4, 0, 0, 0, 0]}'
 
 
 def test_type():

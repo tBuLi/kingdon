@@ -242,6 +242,18 @@ Below is an overview:
      - :math:`\sqrt{a}`
      -
      - :code:`a.sqrt()`
+   * - Dual of :code:`a`
+     - :math:`a*`
+     -
+     - :code:`a.dual()`
+   * - Undual of :code:`a`
+     -
+     -
+     - :code:`a.undual()`
+   * - Grade :code:`k` part of :code:`a`
+     - :math:`\langle a \rangle_k`
+     -
+     - :code:`a.grade(k)`
 
 
 Note that formally conjugation is defined by :math:`ba b^{-1}` and
@@ -304,8 +316,8 @@ times it is needed. An easy way to achieve this is to initiate the :class:`~king
 This enforces that :code:`kingdon` does not specialize codegen down to the individual basis blades, but rather only
 per grade. This means there are far less combinations that have to be considered and generated.
 
-Numba
-~~~~~
+Numba JIT
+~~~~~~~~~
 We can enable numba just-in-time compilation by initiating an :class:`~kingdon.algebra.Algebra` with `wrapper=numba.njit`.
 This comes with a significant cost the first time any operator is called, but subsequent calls to the same operator are
 significantly faster. It is worth mentioning that when dealing with :ref:`Numerical Multivectors` over numpy arrays,

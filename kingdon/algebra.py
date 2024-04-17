@@ -24,7 +24,6 @@ from kingdon.codegen import (
 )
 from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry
 from kingdon.matrixreps import matrix_rep
-from kingdon.multivector_json import MultiVectorEncoder
 from kingdon.multivector import MultiVector
 from kingdon.polynomial import RationalPolynomial
 from kingdon.graph import GraphWidget
@@ -363,7 +362,7 @@ class Algebra:
     def pseudoquadvector(self, *args, **kwargs) -> MultiVector:
         return self.purevector(*args, grade=self.d - 4, **kwargs)
 
-    def graph(self, *subjects, js_source=False, **options):
+    def graph(self, *subjects, **options):
         """
         The graph function outputs :code:`ganja.js` renders and is meant
         for use in jupyter notebooks. The syntax of the graph function will feel
@@ -393,6 +392,7 @@ class Algebra:
         Example usage:
 
         .. code-block ::
+
             def graph_func():
                 return [
                     0xD0FFE1, [A,B,C],
@@ -406,8 +406,6 @@ class Algebra:
 
         :param `*subjects`: Subjects to be graphed.
             Can be strings, hexadecimal colors, (lists of) MultiVector, (lists of) callables.
-        :param js_source: If True, return the javascript source code. If False (default)
-            a :class:`IPython.core.display.Javascript` instance is returned.
         :param `**options`: Options passed to :code:`ganja.js`'s :code:`Algebra.graph`.
         """
         return GraphWidget(

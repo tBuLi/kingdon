@@ -26,3 +26,13 @@ History
 ------------------
 * Fixed a high priority bug in the graph function.
 * Fixed a bug that stopped multivectors from being callable.
+
+1.0.0 (2024-04-17)
+------------------
+* Kingdon now has proper support for ganja.js animations and the graphs are interactive!
+* Indexing a multivector will no longer access coefficients.
+  The whole promise of GA is coordinate independence, so why would you need to access coefficients?
+  Instead, slicing a multivector will pass on that information to the underlying datastructures
+  (e.g. numpy array or pytorch tensor), and will return a new multivector.
+  Moreover, you can use the new slicing syntax to set values as well.
+  If you really still need access to the coefficients, there is always the getattr syntax or the .values() method.

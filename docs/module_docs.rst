@@ -48,6 +48,13 @@ Matrix reps
    :members:
    :undoc-members:
 
+Graph
+-----
+
+.. automodule:: kingdon.graph
+   :members:
+   :undoc-members:
+
 Rational Polynomial
 -------------------
 

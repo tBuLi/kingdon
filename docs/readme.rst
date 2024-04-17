@@ -6,9 +6,6 @@ Kingdon
 .. image:: https://img.shields.io/pypi/v/kingdon.svg
         :target: https://pypi.python.org/pypi/kingdon
 
-.. image:: https://img.shields.io/travis/tbuli/kingdon.svg
-        :target: https://travis-ci.com/tbuli/kingdon
-
 .. image:: https://readthedocs.org/projects/kingdon/badge/?version=latest
         :target: https://kingdon.readthedocs.io/en/latest/?version=latest
         :alt: Documentation Status
@@ -24,6 +21,7 @@ Pythonic Geometric Algebra Package
 * Free software: MIT license
 * Documentation: https://kingdon.readthedocs.io.
 
+`✨ Try kingdon in your browser ✨ <https://tbuli.github.io/teahouse/>`_
 
 Features
 --------
@@ -60,8 +58,8 @@ We can add them to the local namespace by calling :code:`locals().update(alg.bla
     >>> locals().update(alg.blades)
     >>> b = 2 * e12
     >>> v = 3 * e1
-    >>> b.cp(v)
-    (-6) * e2
+    >>> b * v
+    -6 𝐞₂
 
 This example shows that only the :code:`e2` coefficient is calculated, despite the fact that there are
 6 bivector and 4 vector coefficients in 3DPGA. But by exploiting the sparseness of the input and by performing symbolic
@@ -78,33 +76,33 @@ relevant fields with symbols. This allows us to easily perform symbolic computat
     >>> alg = Algebra(3, 0, 1)
     >>> b = alg.bivector(name='b')
     >>> b
-    (b12) * e12 + (b13) * e13 + (b23) * e23 + (b14) * e14 + (b24) * e24 + (b34) * e34
+    b01 𝐞₀₁ + b02 𝐞₀₂ + b03 𝐞₀₃ + b12 𝐞₁₂ + b13 𝐞₁₃ + b23 𝐞₂₃
     >>> v = alg.vector(name='v')
     >>> v
-    (v1) * e1 + (v2) * e2 + (v3) * e3 + (v4) * e4
+    v0 𝐞₀ + v1 𝐞₁ + v2 𝐞₂ + v3 𝐞₃
     >>> b.cp(v)
-    (-b12*v1 + b23*v3) * e2 + (b12*v2 + b13*v3) * e1 + (-b13*v1 - b23*v2) * e3 + (-b14*v1 - b24*v2 - b34*v3) * e4
+    (b01*v1 + b02*v2 + b03*v3) 𝐞₀ + (b12*v2 + b13*v3) 𝐞₁ + (-b12*v1 + b23*v3) 𝐞₂ + (-b13*v1 - b23*v2) 𝐞₃
 
 It is also possible to define some coefficients to be symbolic by inputting a string, while others can be numeric::
 
     >>> from kingdon import Algebra, symbols
     >>> alg = Algebra(3, 0, 1)
-    >>> b = alg.bivector(e12='b12', e34=3)
+    >>> b = alg.bivector(e12='b12', e03=3)
     >>> b
-    (b12) * e12 + (3) * e34
+    3 𝐞₀₃ + b12 𝐞₁₂
     >>> v = alg.vector(e1=1, e3=1)
     >>> v
-    (1) * e1 + (1) * e3
+    1 𝐞₁ + 1 𝐞₃
     >>> w = b.cp(v)
     >>> w
-    (-b12) * e2 + (-3) * e4
+    3 𝐞₀ + (-b12) 𝐞₂
 
 
 A :code:`kingdon` MultiVector with symbols is callable. So in order to evaluate :code:`w` from the previous example,
 for a specific value of :code:`b12`, simply call :code:`w`::
 
     >>> w(b12=10)
-    (-10) * e2 + (-3) * e4
+    3 𝐞₀ + -10 𝐞₂
 
 
 Overview of Operators
@@ -189,4 +187,15 @@ Overview of Operators
      - :math:`\sqrt{a}`
      -
      - :code:`a.sqrt()`
-
+   * - Dual of :code:`a`
+     - :math:`a*`
+     -
+     - :code:`a.dual()`
+   * - Undual of :code:`a`
+     -
+     -
+     - :code:`a.undual()`
+   * - Grade :code:`k` part of :code:`a`
+     - :math:`\langle a \rangle_k`
+     -
+     - :code:`a.grade(k)`
