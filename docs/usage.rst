@@ -292,13 +292,13 @@ elements to graph, whereas keyword arguments are passed to :code:`ganja.js` as o
 Hence, the example above will graph the line :code:`u` with :code:`lineWidth = 3`,
 and will attach the label "u" to it, and all of this will be red.
 Identical to :code:`ganja.js`, valid inputs to :code:`alg.graph` are (lists of) instances
-of :class:`~kingdon.multivector.MultiVector`, strings, and hexadecimal numbers to indicate colors.
-These strings can be simple labels, or valid SVG syntax.
+of :class:`~kingdon.multivector.MultiVector`, strings, and hexadecimal numbers to indicate colors,
+or a function without arguments that returns these things.
+The strings can be simple labels, or valid SVG syntax.
 
 .. note::
-    Currently :code:`ganja.js` support is limited to :code:`jupyter` notebooks,
-    and only static graphs are supported. In native :code:`ganja.js` lambda functions
-    are evaluated every frame; this feature is currently not supported.
+    kingdon supports :code:`ganja.js`'s animation and interactivity in jupyter notebooks,
+    `try kingdon in your browser <https://tbuli.github.io/teahouse/>`_ to give it a go!
 
 Performance Tips
 ----------------
