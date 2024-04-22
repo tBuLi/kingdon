@@ -131,9 +131,10 @@ class GraphWidget(anywidget.AnyWidget):
 
     @traitlets.validate("options")
     def _valid_options(self, proposal):
-        if 'camera' in proposal['value']:
-            proposal['value']['camera'] = list(encode(proposal['value']['camera']))[0]
-        return proposal['value']
+        options = proposal['value']
+        if 'camera' in options:
+            options['camera'] = list(encode(options['camera']))[0]
+        return options
 
     def inplacereplace(self, old_subjects, new_subjects: List[Tuple[int, dict]]):
         """

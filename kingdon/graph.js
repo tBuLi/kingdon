@@ -8,9 +8,7 @@ function render({ model, el }) {
         var key2idx = model.get('key2idx');
         var draggable_points_idxs = model.get('draggable_points_idxs');
         var options = model.get('options');
-        if (options?.camera) {
-            options.camera = toElement(options.camera)
-        }
+
         // Define helper functions.
         var toElement = (o)=>{
             /* convert object to Element */
@@ -22,9 +20,13 @@ function render({ model, el }) {
             }
             return new Element(_values);
         }
-
         var decode = x=>typeof x === 'object' && 'mv' in x?toElement(x):Array.isArray(x)?x.map(decode):x;
         var encode = x=>x instanceof Element?({mv:[...x]}):x.map?x.map(encode):x;
+
+        // Decode camera if provided.
+         if (options?.camera) {
+             options.camera = toElement(options.camera)
+         }
 
         if (options?.animate) {
             var graph_func = ()=>{
@@ -59,9 +61,12 @@ function render({ model, el }) {
         return canvas;
     })(model)
 
-    canvas.style.width = '100%';
-    canvas.style.height = '400px';
+    var options = model.get('options');
+    canvas.style.width = options?.width || `min( 100%, 1024px )`;
+    canvas.style.height = options?.height || 'auto';
+    canvas.style.aspectRatio = '16 / 6';
     canvas.style.background = 'white';
+    canvas.style.marginLeft = `calc( (100% - ${ options?.width??"min(100%, 1024px)" }) / 2 )`;
     el.appendChild(canvas);
 }
 
