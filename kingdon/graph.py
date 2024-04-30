@@ -95,7 +95,7 @@ class GraphWidget(anywidget.AnyWidget):
 
     @traitlets.default('signature')
     def get_signature(self):
-        return list(self.algebra.signature)
+        return [int(s) for s in self.algebra.signature]
 
     @traitlets.default('cayley')
     def get_cayley(self):

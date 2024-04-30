@@ -3,7 +3,7 @@ const Algebra = await fetch("https://enki.ws/ganja.js/ganja.js")
                       .then(x=>{ const ctx = {}; (new Function(x)).apply(ctx); return ctx.Algebra });
 
 function render({ model, el }) {
-    var canvas = Algebra({metric: model.get('signature'), Cayley: model.get('cayley')}).inline((model)=>{
+    var canvas = Algebra({metric: model.get('signature')}).inline((model)=>{
         // Define constants
         var key2idx = model.get('key2idx');
         var draggable_points_idxs = model.get('draggable_points_idxs');

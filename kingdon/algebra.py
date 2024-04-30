@@ -362,7 +362,7 @@ class Algebra:
     def pseudoquadvector(self, *args, **kwargs) -> MultiVector:
         return self.purevector(*args, grade=self.d - 4, **kwargs)
 
-    def graph(self, *subjects, **options):
+    def graph(self, *subjects, graph_widget=GraphWidget, **options):
         """
         The graph function outputs :code:`ganja.js` renders and is meant
         for use in jupyter notebooks. The syntax of the graph function will feel
@@ -408,7 +408,7 @@ class Algebra:
             Can be strings, hexadecimal colors, (lists of) MultiVector, (lists of) callables.
         :param `**options`: Options passed to :code:`ganja.js`'s :code:`Algebra.graph`.
         """
-        return GraphWidget(
+        return graph_widget(
             algebra=self,
             raw_subjects=subjects,
             options=options,
