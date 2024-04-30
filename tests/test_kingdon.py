@@ -816,3 +816,8 @@ def test_mv_times_func():
     assert y @ x == yfunc @ x
     assert x >> y == x >> yfunc
     assert y >> x == yfunc >> x
+
+def test_43():
+    alg = Algebra(2)
+    x = alg.vector(name='x')
+    assert x.inv() == 1 / x

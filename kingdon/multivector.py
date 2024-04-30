@@ -230,12 +230,15 @@ class MultiVector:
     __sub__ = sub
 
     def __rsub__(self, other):
-        return other + (-self)
+        return self.algebra.sub(other, self)
 
     def div(self, other):
         return self.algebra.div(self, other)
 
     __truediv__ = div
+
+    def __rtruediv__(self, other):
+        return self.algebra.div(other, self)
 
     def __str__(self):
         if not len(self.values()):
