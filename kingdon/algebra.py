@@ -479,3 +479,15 @@ class BladeDict(Mapping):
 
     def __iter__(self):
         return iter(self.blades)
+
+    def grade(self, *grades) -> dict:
+        """
+        Return blades of grade `grades`.
+
+        :param grades: tuple or ints, grades to select.
+        """
+        if len(grades) == 1 and isinstance(grades[0], tuple):
+            grades = grades[0]
+
+        return {(blade := self.algebra.bin2canon[k]): self[blade]
+                for k in self.algebra.indices_for_grades[grades]}

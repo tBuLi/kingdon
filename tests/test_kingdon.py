@@ -821,3 +821,11 @@ def test_43():
     alg = Algebra(2)
     x = alg.vector(name='x')
     assert x.inv() == 1 / x
+
+def test_blades_of_grade():
+    alg = Algebra(4)
+    for indices in alg.indices_for_grades:
+        blades_of_grade = alg.blades.grade(*indices)
+        assert isinstance(blades_of_grade, dict)
+        assert all(label in alg.canon2bin and blade.grades[0] in indices
+                   for label, blade in blades_of_grade.items())
