@@ -9,4 +9,4 @@ from sympy import symbols
 from kingdon.algebra import Algebra
 from kingdon.multivector import MultiVector
 from kingdon.matrixreps import expr_as_matrix
-from .style import colormaps
+from kingdon.graph import colormaps

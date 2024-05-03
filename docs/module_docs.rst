@@ -51,6 +51,15 @@ Matrix reps
 Graph
 -----
 
+The GraphWidget enables interactive ganja.js graphing from notebooks.
+This module also contains colormaps for your convenience with graphing.
+
+.. code-block::
+
+    >>> from kingdon import colormaps
+    >>> cm = colormaps['Set2']
+
+
 .. automodule:: kingdon.graph
    :members:
    :undoc-members:
