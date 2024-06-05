@@ -5,14 +5,13 @@ Kingdon
 
 .. image:: https://img.shields.io/pypi/v/kingdon.svg
         :target: https://pypi.python.org/pypi/kingdon
-
+        
 .. image:: https://readthedocs.org/projects/kingdon/badge/?version=latest
         :target: https://kingdon.readthedocs.io/en/latest/?version=latest
-        :alt: Documentation Status
-
+        
 .. image:: https://coveralls.io/repos/github/tBuLi/kingdon/badge.svg?branch=master
         :target: https://coveralls.io/github/tBuLi/kingdon?branch=master
-
+        
 
 
 Pythonic Geometric Algebra Package
@@ -83,7 +82,9 @@ relevant fields with symbols. This allows us to easily perform symbolic computat
     >>> b.cp(v)
     (b01*v1 + b02*v2 + b03*v3) 𝐞₀ + (b12*v2 + b13*v3) 𝐞₁ + (-b12*v1 + b23*v3) 𝐞₂ + (-b13*v1 - b23*v2) 𝐞₃
 
-It is also possible to define some coefficients to be symbolic by inputting a string, while others can be numeric::
+It is also possible to define some coefficients to be symbolic by inputting a string, while others can be numeric:
+
+.. code-block:: python
 
     >>> from kingdon import Algebra, symbols
     >>> alg = Algebra(3, 0, 1)
@@ -99,7 +100,9 @@ It is also possible to define some coefficients to be symbolic by inputting a st
 
 
 A :code:`kingdon` MultiVector with symbols is callable. So in order to evaluate :code:`w` from the previous example,
-for a specific value of :code:`b12`, simply call :code:`w`::
+for a specific value of :code:`b12`, simply call :code:`w`:
+
+.. code-block:: python
 
     >>> w(b12=10)
     3 𝐞₀ + -10 𝐞₂
