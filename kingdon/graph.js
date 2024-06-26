@@ -1,6 +1,6 @@
 const Algebra = await fetch("https://enki.ws/ganja.js/ganja.js")
                       .then(x=>x.text())
-                      .then(x=>{ const ctx = {}; (new Function(x)).apply(ctx); return ctx.Algebra });
+                      .then(x=>{ const ctx = {}; (new Function('const define=1;'+x)).apply(ctx); return ctx.Algebra });
 
 function render({ model, el }) {
     var canvas = Algebra({metric: model.get('signature')}).inline((model)=>{
