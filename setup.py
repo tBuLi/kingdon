@@ -41,6 +41,6 @@ setup(
     test_suite='tests',
     tests_require=test_requirements,
     url='https://github.com/tbuli/kingdon',
-    version='1.0.4',
+    version='1.0.5',
     zip_safe=False,
 )
