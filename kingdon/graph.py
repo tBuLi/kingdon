@@ -31,19 +31,22 @@ def encode(o, tree_types=TREE_TYPES, root=False):
         yield from (encode(value, tree_types) for value in o)
     elif isinstance(o, tree_types):
         yield o.__class__(encode(value, tree_types) for value in o)
-    elif isinstance(o, MultiVector) and len(o.shape) > 1:
-    #     if isinstance(o._values, np.ndarray):
-    #         ovals = o._values.T
-    #         yield {'mvs': ovals.tobytes(), 'shape': ovals.shape}
-    #     else:
-        yield from (encode(value) for value in o.itermv())
     elif isinstance(o, MultiVector):
-        values = o._values.tobytes() if isinstance(o._values, np.ndarray) else o._values.copy()
+        data = {}
+        if isinstance(o._values, np.ndarray):
+            data['mv'] = o._values.tobytes()
+            if len(o._values.shape) > 1:
+                data['shape'] = o._values.shape
+        elif isinstance(o._values[0], np.ndarray):
+            data['mv'] = [v.tobytes() for v in o._values]
+            data['shape'] = o.shape
+        else:
+            data['mv'] = o._values.copy()
         if len(o) != len(o.algebra):
             # If not full mv, also pass the keys and let ganja figure it out.
-            yield {'mv': values, 'keys': o._keys}
-        else:
-            yield {'mv': values}
+            data['keys'] = o._keys
+            
+        yield data
     elif isinstance(o, Callable):
         yield encode(o(), tree_types)
     else:

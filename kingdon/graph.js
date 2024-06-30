@@ -11,7 +11,7 @@ function render({ model, el }) {
 
         // Define helper functions.
         var toElement = (o)=>{
-            /* convert object to Element */
+            /* convert single mv object to Element */
             var _values = o['mv'] instanceof DataView?new Float64Array(o['mv'].buffer):o['mv'];
             if ('keys' in o) {
                 var values = Array(Object.keys(key2idx).length).fill(0);
@@ -20,7 +20,45 @@ function render({ model, el }) {
             }
             return new Element(_values);
         }
-        var decode = x=>typeof x === 'object' && 'mv' in x?toElement(x):Array.isArray(x)?x.map(decode):x;
+        var toArray = (o)=>{
+            /* convert mv object with shape to array of objects representing single mv's. */
+            var shape = o['shape'];
+            if (o['mv'] instanceof DataView) {
+                var _values = new Float64Array(o['mv'].buffer);
+                var objects = [];
+                // TODO: allow higher dimenional shapes.
+                for (let i = 0; i < shape[1]; i++) {
+                    var obj = {'keys': o['keys'], 'mv': []}
+                    for (let j = 0; j < shape[0]; j++) {
+                        obj['mv'].push(_values[j*shape[1] + i]);
+                    }
+                    objects.push(obj);
+                }
+            } else {
+                var _values = o['mv'].map(x=>new Float64Array(x.buffer));
+                var objects = [];
+                for (let i = 0; i < shape[1]; i++) {
+                    objects.push({'mv': _values.map(x=>x[i]), 'keys': o['keys']});
+                }
+            }
+            return objects
+        }
+        var decode = (input)=>{
+            var output = [];
+            for (let i=0; i<input.length; i++) {
+                var x = input[i];
+                if (typeof x === 'object' && 'shape' in x) {
+                    output = [...output, ...(toArray(x).map(toElement))];
+                } else if (typeof x === 'object' && 'mv' in x) {
+                    output.push(toElement(x));
+                } else if (Array.isArray(x)) {
+                    output.push(x.map(toElement));
+                } else {
+                    output.push(x);
+                }
+            }
+            return output;
+        }
         var encode = x=>x instanceof Element?({mv:[...x]}):x.map?x.map(encode):x;
 
         // Decode camera if provided.
