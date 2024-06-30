@@ -829,3 +829,11 @@ def test_blades_of_grade():
         assert isinstance(blades_of_grade, dict)
         assert all(label in alg.canon2bin and blade.grades[0] in indices
                    for label, blade in blades_of_grade.items())
+
+def test_type_preservation(pga2d):
+    vals = np.ones((3, 10))
+    vals[1:] = np.random.random((2, 10))
+    v = pga2d.vector(vals)
+    assert isinstance(v.values(), np.ndarray)
+    p = v.dual()
+    assert isinstance(p.values(), np.ndarray)
