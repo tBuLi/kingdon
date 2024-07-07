@@ -24,7 +24,7 @@ function render({ model, el }) {
         var encode = x=>x instanceof Element?({mv:[...x]}):x?.map?x.map(encode):x;
 
         // Decode camera if provided.
-         if (options?.camera) {
+         if (options?.camera && 'mv' in options.camera) {
              options.camera = toElement(options.camera)
          }
 
