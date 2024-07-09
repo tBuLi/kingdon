@@ -30,7 +30,7 @@ function render({ model, el }) {
 
         if (options?.animate) {
             var graph_func = ()=>{
-                if (canvas?.value) {
+                if (canvas?.value && draggable_points_idxs?.length) {
                     model.set('draggable_points', encode(draggable_points_idxs.map(i=>canvas.value[i])));
                     model.save_changes();
                 }
@@ -41,7 +41,7 @@ function render({ model, el }) {
             }
         } else {
             var graph_func = ()=>{
-                if (canvas?.value) {
+                if (canvas?.value && draggable_points_idxs?.length) {
                     model.set('draggable_points', encode(draggable_points_idxs.map(i=>canvas.value[i])));
                     model.save_changes();
                 }
