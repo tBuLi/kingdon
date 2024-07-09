@@ -21,7 +21,7 @@ function render({ model, el }) {
             return new Element(_values);
         }
         var decode = x=>typeof x === 'object' && 'mv' in x?toElement(x):Array.isArray(x)?x.map(decode):x;
-        var encode = x=>x instanceof Element?({mv:[...x]}):x.map?x.map(encode):x;
+        var encode = x=>x instanceof Element?({mv:[...x]}):x?.map?x.map(encode):x;
 
         // Decode camera if provided.
          if (options?.camera && typeof options.camera === 'object' && 'mv' in options.camera) {
@@ -30,7 +30,7 @@ function render({ model, el }) {
 
         if (options?.animate) {
             var graph_func = ()=>{
-                if (canvas?.value) {
+                if (canvas?.value && draggable_points_idxs?.length) {
                     model.set('draggable_points', encode(draggable_points_idxs.map(i=>canvas.value[i])));
                     model.save_changes();
                 }
@@ -41,7 +41,7 @@ function render({ model, el }) {
             }
         } else {
             var graph_func = ()=>{
-                if (canvas?.value) {
+                if (canvas?.value && draggable_points_idxs?.length) {
                     model.set('draggable_points', encode(draggable_points_idxs.map(i=>canvas.value[i])));
                     model.save_changes();
                 }
