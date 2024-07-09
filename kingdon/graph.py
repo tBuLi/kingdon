@@ -115,12 +115,23 @@ class GraphWidget(anywidget.AnyWidget):
 
     @traitlets.default('draggable_points')
     def get_draggable_points(self):
-        # Extract the draggable points. TODO: pseudovectors only?
-        return walker(encode([s for s in self.pre_subjects if isinstance(s, MultiVector)]))
+        # Extract the draggable points.
+        d = self.algebra.d
+        if self.algebra.r == 1 and (d == 3 or d == 4):  # PGA
+            points = [j for j, s in enumerate(self.pre_subjects)
+                      if isinstance(s, MultiVector) and s.grades == (d,)]
+        else:
+            # TODO: special treatment for CGA as well
+            points = [s for s in self.pre_subjects if isinstance(s, MultiVector)]
+        return walker(encode(points))
 
     @traitlets.default('draggable_points_idxs')
     def get_draggable_points_idxs(self):
-        # Extract the draggable points. TODO: pseudovectors only?
+        # Extract the draggable points. TODO: special treatment for CGA as well
+        d = self.algebra.d
+        if self.algebra.r == 1 and (d == 3 or d == 4):  # PGA
+            return [j for j, s in enumerate(self.pre_subjects)
+                    if isinstance(s, MultiVector) and s.grades == (d,)]
         return [j for j, s in enumerate(self.pre_subjects) if isinstance(s, MultiVector)]
 
     @traitlets.observe('draggable_points')
