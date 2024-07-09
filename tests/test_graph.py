@@ -5,7 +5,8 @@ def test_widget():
     alg = Algebra(2, 0, 1)
     x = alg.vector([1, 1, 1]).dual()
     y = lambda: alg.vector([1, 1, 1]).dual()
-    args = (0xD0FFE1, x, 0x00AA88, y, lambda: x & y)
+    z = alg.vector([1, 1, 1])
+    args = (0xD0FFE1, x, 0x00AA88, y, lambda: x & y, z)
     g = alg.graph(*args)
     assert g.draggable_points_idxs == [1]
     assert g.draggable_points == [[{'keys': x.keys(), 'mv': x.values()}]]
