@@ -830,6 +830,22 @@ def test_blades_of_grade():
         assert all(label in alg.canon2bin and blade.grades[0] in indices
                    for label, blade in blades_of_grade.items())
 
+def test_map_filter():
+    alg = Algebra(4)
+    x = alg.vector([0, 1, 2, 0])
+    xnonzero = x.filter(lambda v: v)
+    xoddidx = x.filter(lambda i, v: i % 2)
+    assert xnonzero.values() == [1, 2]
+    assert xnonzero.keys() == (2, 4)
+    assert xoddidx.values() == [1, 0]
+    assert xoddidx.keys() == (2, 8)
+
+    xmul = x.map(lambda v: 2*v)
+    coeffs = [2, 2, 2, 2]
+    xcoeffmul = x.map(lambda i, v: coeffs[i] * v)
+    assert xmul.values() == [0, 2, 4, 0]
+    assert xcoeffmul.values() == [0, 2, 4, 0]
+
 def test_free_symbols():
     alg = Algebra(3)
     X = alg.multivector()

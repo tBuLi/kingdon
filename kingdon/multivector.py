@@ -331,18 +331,34 @@ class MultiVector:
         return reduce(operator.or_, (v.free_symbols for v in self.values() if hasattr(v, "free_symbols")))
 
     def map(self, func) -> "MultiVector":
-        """ Returns a new multivector where `func` has been applied to all the values."""
-        vals = [func(v) for v in self.values()]
+        """
+        Returns a new multivector where `func` has been applied to all the values.
+        If `func` has one argument, it is called with only the value as an argument.
+        If `func` has two arguments, the function is called with the index of the value
+        and the value as an argument.
+        (I.e. it is applied to enumerate(self.values()) instead of on self.values().)
+        """
+        if func.__code__.co_argcount == 2:
+            vals = [func(i, v) for i, v in enumerate(self.values())]
+        else:
+            vals = [func(v) for v in self.values()]
         return self.fromkeysvalues(self.algebra, keys=self.keys(), values=vals)
 
     def filter(self, func=None) -> "MultiVector":
         """
         Returns a new multivector containing only those elements for which `func` was true-ish.
         If no function was provided, use the simp_func of the Algebra.
+        If `func` has one argument, it is called with only the value as an argument.
+        If `func` has two arguments, the function is called with the index of the value
+        and the value as an argument.
+        (I.e. it is applied to enumerate(self.values()) instead of on self.values().)
         """
         if func is None:
             func = self.algebra.simp_func
-        keysvalues = tuple((k, v) for k, v in self.items() if func(v))
+        if func.__code__.co_argcount == 2:
+            keysvalues = tuple((k, v) for i, (k, v) in enumerate(self.items()) if func(i, v))
+        else:
+            keysvalues = tuple((k, v) for k, v in self.items() if func(v))
         if not keysvalues:
             return self.fromkeysvalues(self.algebra, keys=tuple(), values=list())
         keys, values = zip(*keysvalues)
