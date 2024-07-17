@@ -203,7 +203,7 @@ class Algebra:
 
     @cached_property
     def frame(self) -> list:
-        """
+        r"""
         The set of orthogonal basis vectors, :math:`\{ e_i \}`. Note that for a frame linear independence suffices,
         but we already have orthogonal basis vectors so why not use those?
         """
@@ -211,14 +211,14 @@ class Algebra:
 
     @cached_property
     def reciprocal_frame(self) -> list:
-        """
+        r"""
         The reciprocal frame is a set of vectors :math:`\{ e^i \}` that satisfies
         :math:`e^i \cdot e_j = \delta^i_j` with the frame vectors :math:`\{ e_i \}`.
         """
         return [v.inv() for v in self.frame]
 
     def _prepare_signs_and_cayley(self):
-        """
+        r"""
         Prepares two dicts whose keys are two basis-blades (in binary rep) and the result is either
         just the sign (1, -1, 0) of the corresponding multiplication, or the full result.
         The full result is essentially the Cayley table, if printed as a table.
