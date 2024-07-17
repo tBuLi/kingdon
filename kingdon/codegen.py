@@ -161,7 +161,7 @@ def codegen_gp(x, y):
 
 
 def codegen_sw(x, y):
-    """
+    r"""
     Generate the conjugation of :code:`y` by :code:`x`: :math:`x y \widetilde{x}`.
 
     :return: tuple of keys in binary representation and a lambda function.
@@ -233,7 +233,7 @@ def codegen_sp(x, y):
 
 
 def codegen_proj(x, y):
-    """
+    r"""
     Generate the projection of :code:`x` onto :code:`y`: :math:`(x \cdot y) \widetilde{y}`.
 
     :return: tuple of keys in binary representation and a lambda function.
