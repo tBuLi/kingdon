@@ -466,7 +466,7 @@ class MultiVector:
         return self.algebra.rc(self, other)
 
     def sp(self, other):
-        """ Scalar product: :math:`\langle x \cdot y \rangle`. """
+        r""" Scalar product: :math:`\langle x \cdot y \rangle`. """
         return self.algebra.sp(self, other)
 
     def rp(self, other):
