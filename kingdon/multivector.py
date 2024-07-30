@@ -322,18 +322,32 @@ class MultiVector:
         return reduce(operator.or_, (v.free_symbols for v in self.values() if hasattr(v, "free_symbols")))
 
     def map(self, func) -> "MultiVector":
-        """ Returns a new multivector where `func` has been applied to all the values."""
-        vals = [func(v) for v in self.values()]
+        """
+        Returns a new multivector where `func` has been applied to all the values.
+        If `func` has one argument, it is called on each entry of self.values().
+        If `func` has two arguments, the function is called with the key, value pairs as per
+        self.items() instead.
+        """
+        if func.__code__.co_argcount == 2:
+            vals = [func(k, v) for k, v in self.items()]
+        else:
+            vals = [func(v) for v in self.values()]
         return self.fromkeysvalues(self.algebra, keys=self.keys(), values=vals)
 
     def filter(self, func=None) -> "MultiVector":
         """
         Returns a new multivector containing only those elements for which `func` was true-ish.
         If no function was provided, use the simp_func of the Algebra.
+        If `func` has one argument, it is called on each entry of self.values().
+        If `func` has two arguments, the function is called with the key, value pairs as per
+        self.items() instead.
         """
         if func is None:
             func = self.algebra.simp_func
-        keysvalues = tuple((k, v) for k, v in self.items() if func(v))
+        if func.__code__.co_argcount == 2:
+            keysvalues = tuple((k, v) for k, v in self.items() if func(k, v))
+        else:
+            keysvalues = tuple((k, v) for k, v in self.items() if func(v))
         if not keysvalues:
             return self.fromkeysvalues(self.algebra, keys=tuple(), values=list())
         keys, values = zip(*keysvalues)
@@ -441,7 +455,7 @@ class MultiVector:
         return self.algebra.rc(self, other)
 
     def sp(self, other):
-        """ Scalar product: :math:`\langle x \cdot y \rangle`. """
+        r""" Scalar product: :math:`\langle x \cdot y \rangle`. """
         return self.algebra.sp(self, other)
 
     def rp(self, other):

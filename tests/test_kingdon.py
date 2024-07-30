@@ -829,3 +829,19 @@ def test_blades_of_grade():
         assert isinstance(blades_of_grade, dict)
         assert all(label in alg.canon2bin and blade.grades[0] in indices
                    for label, blade in blades_of_grade.items())
+
+def test_map_filter():
+    alg = Algebra(4)
+    x = alg.vector([0, 1, 2, 0])
+    xnonzero = x.filter(lambda v: v)
+    xoddidx = x.filter(lambda k, v: not k % 2)
+    assert xnonzero.values() == [1, 2]
+    assert xnonzero.keys() == (2, 4)
+    assert xoddidx.values() == [1, 2, 0]
+    assert xoddidx.keys() == (2, 4, 8)
+
+    xmul = x.map(lambda v: 2*v)
+    coeffs = {1: 2, 2: 2, 4: 2, 8: 4}
+    xcoeffmul = x.map(lambda k, v: coeffs[k] * v)
+    assert xmul.values() == [0, 2, 4, 0]
+    assert xcoeffmul.values() == [0, 2, 4, 0]
