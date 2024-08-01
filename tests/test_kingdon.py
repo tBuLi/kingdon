@@ -7,7 +7,7 @@ from dataclasses import replace
 import pytest
 import numpy as np
 
-from sympy import Symbol, simplify, factor, expand, collect, sympify, cos, sin
+from sympy import Symbol, expand, sympify, cos, sin, sinc
 from kingdon import Algebra, MultiVector, symbols
 from kingdon.operator_dict import UnaryOperatorDict
 
@@ -845,6 +845,32 @@ def test_map_filter():
     xcoeffmul = x.map(lambda k, v: coeffs[k] * v)
     assert xmul.values() == [0, 2, 4, 0]
     assert xcoeffmul.values() == [0, 2, 4, 0]
+
+def test_simple_exp():
+    alg = Algebra(2, 0, 1)
+    B = alg.bivector([1, 2, 0])
+    T = B.exp()
+    assert T == 1 + B
+
+    B = alg.bivector([0, 0, 2])
+    R = B.exp()
+    assert R == np.cos(2) + np.sin(2) * B.normalized()
+
+    B = alg.bivector([0, 1, 2])
+    R = B.exp()
+    l = (-(B | B).e) ** 0.5
+    assert R == np.cos(l) + np.sin(l) * B / l
+
+    B = alg.bivector([0, 1 + 2j, 2 - 0.5j])
+    R = B.exp()
+    l = (-(B | B).e) ** 0.5
+    Rexpected = np.cos(l) + np.sin(l) * B / l
+    assert (R - Rexpected).filter(lambda v: np.abs(v) > 1e-15) == alg.multivector()
+
+    B = alg.bivector(name='B')
+    R = B.exp()
+    l = (-(B | B).e) ** 0.5
+    assert R == cos(l) + sinc(l) * B
 
 def test_free_symbols():
     alg = Algebra(3)

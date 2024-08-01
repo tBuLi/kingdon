@@ -13,7 +13,6 @@ import inspect
 import builtins
 import keyword
 
-from sympy import simplify, sympify, Add, Mul, Symbol, expand
 from sympy.utilities.iterables import iterable, flatten
 from sympy.printing.lambdarepr import LambdaPrinter
 
