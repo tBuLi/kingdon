@@ -5,10 +5,9 @@ from functools import reduce, cached_property
 from typing import Generator
 from itertools import product
 
-from sympy import Expr, Symbol, sympify
+from sympy import Expr, Symbol, sympify, sinc, cos
 
 from kingdon.codegen import _lambdify_mv
-from kingdon.polynomial import RationalPolynomial
 
 
 @dataclass(init=False)
@@ -487,6 +486,59 @@ class MultiVector:
 
     def outertan(self):
         return self.algebra.outertan(self)
+
+    def exp(self, cosh=None, sinhc=None, sqrt=None):
+        """
+        Calculate the exponential of simple elements, meaning an element that squares to a scalar.
+        Works for python float, int and complex dtypes, and for symbolic expressions using sympy.
+        For more control, it is possible to explicitly provide a `cosh`, `sinhc`, and `sqrt` function.
+        If you provide one, you must provide all.
+
+        The argument to `sqrt` is the scalar :math:`s = \langle x^2 \rangle_0`, while the input to the
+        `cosh` and `sinhc` functions is the output of the sqrt function applied to :math:`s`.
+
+        For example, for a simple rotation `kingdon`'s implementation is equivalent to
+
+        .. code-block ::
+
+            alg = Algebra(2)
+            x = alg.bivector(e12=1)
+            x.exp(
+                cosh=np.cos,
+                sinhc=np.sinc,
+                sqrt=lambda s: (-s)**0.5,
+            )
+        """
+        ll = (self * self).filter()
+        if ll.grades and ll.grades != (0,):
+            raise NotImplementedError(
+                'Currently only elements that square to a scalar (i.e. are simple) can be exponentiated.'
+            )
+
+        ll = ll.e
+        if sqrt is None and cosh is None and sinhc is None:
+            if isinstance(ll, Expr):
+                sqrt = lambda x: (-x) ** 0.5
+                cosh = cos
+                sinhc = sinc
+            elif isinstance(ll, (float, int)) and ll > 0:
+                sqrt = lambda x: x ** 0.5
+                import numpy as np
+                cosh = np.cosh
+                sinhc = lambda x: np.sinh(x) / x
+            elif isinstance(ll, (float, int)) and ll == 0:
+                sqrt = lambda x: x ** 0.5
+                import numpy as np
+                cosh = sinhc = lambda x: 1
+            else:
+                # Assume numpy
+                sqrt = lambda x: (-x) ** 0.5
+                import numpy as np
+                cosh = np.cos
+                sinhc = lambda x: np.sinc(x / np.pi)
+
+        l = sqrt(ll)
+        return cosh(l) + sinhc(l) * self
 
     def polarity(self):
         return self.algebra.polarity(self)
