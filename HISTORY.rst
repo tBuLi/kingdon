@@ -36,3 +36,22 @@ History
   (e.g. numpy array or pytorch tensor), and will return a new multivector.
   Moreover, you can use the new slicing syntax to set values as well.
   If you really still need access to the coefficients, there is always the getattr syntax or the .values() method.
+
+1.0.5 (2024-06-26)
+------------------
+* Blades by grade syntax: alg.blades.grade(2).
+* Fixed "define" error in ganja.js integration, kingdon now works with reveal.js voila template.
+
+1.0.6 (2024-07-10)
+------------------
+Bugfixes to ganja.js integration:
+* Make sure camera is an object before checking for 'mv' key.
+* Improved draggable points for PGA.
+
+1.1.0 (2024-08-10)
+------------------
+* Map and filter now support two argument functions. If such a funtion is provided,
+  map/filter is applied on key, value pairs.
+* Added exponential function for simple objects.
+* Raising a mv to 0.5 is now correctly interpreted as a square root.
+  This enables e.g. automatic differentiation.
