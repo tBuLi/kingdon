@@ -503,7 +503,7 @@ class MultiVector:
         return self.algebra.outertan(self)
 
     def exp(self, cosh=None, sinhc=None, sqrt=None):
-        """
+        r"""
         Calculate the exponential of simple elements, meaning an element that squares to a scalar.
         Works for python float, int and complex dtypes, and for symbolic expressions using sympy.
         For more control, it is possible to explicitly provide a `cosh`, `sinhc`, and `sqrt` function.
