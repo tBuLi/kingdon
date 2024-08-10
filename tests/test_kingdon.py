@@ -994,3 +994,22 @@ def test_custom_basis():
     assert X == - pga3d.blades.e31
     # print()
     # print(X)
+
+def test_dual_numbers():
+    alg = Algebra(r=1)
+    x = alg.multivector(name='x')
+    y = alg.multivector(name='y')
+    assert x + y == alg.multivector(e=x.e + y.e, e0=x.e0 + y.e0)
+    assert x * y == alg.multivector(e=x.e * y.e, e0=x.e * y.e0 + x.e0 * y.e)
+    assert x / y == alg.multivector(e=x.e / y.e, e0=(x.e0 * y.e - x.e * y.e0) / y.e**2)
+    assert x.sqrt() == alg.multivector(e=x.e**0.5, e0=0.5 * x.e0 / x.e**0.5)
+    assert x**3 == alg.multivector(e=x.e ** 3, e0=3 * x.e0 * x.e**2)
+
+def test_power():
+    alg = Algebra(2)
+    x = alg.multivector(name='x')
+    xinv = x.inv()
+    assert x ** 3 == x * x * x
+    assert x ** 0.5 == x.sqrt()
+    assert x ** -0.5 == xinv.sqrt()
+    assert x ** -3 == xinv * xinv * xinv
