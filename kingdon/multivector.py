@@ -327,7 +327,7 @@ class MultiVector:
         If `func` has two arguments, the function is called with the key, value pairs as per
         self.items() instead.
         """
-        if func.__code__.co_argcount == 2:
+        if hasattr(func, '__code__') and func.__code__.co_argcount == 2:
             vals = [func(k, v) for k, v in self.items()]
         else:
             vals = [func(v) for v in self.values()]
@@ -343,7 +343,7 @@ class MultiVector:
         """
         if func is None:
             func = self.algebra.simp_func
-        if func.__code__.co_argcount == 2:
+        if hasattr(func, '__code__') and func.__code__.co_argcount == 2:
             keysvalues = tuple((k, v) for k, v in self.items() if func(k, v))
         else:
             keysvalues = tuple((k, v) for k, v in self.items() if func(v))
@@ -469,10 +469,17 @@ class MultiVector:
         # TODO: this should also be taken care of via codegen, but for now this workaround is ok.
         if power == 0:
             return self.algebra.scalar((1,))
+        elif power < 0:
+            res = x = self.inv()
+            power *= -1
+        else:
+            res = x = self
 
-        res = self
+        if power == 0.5:
+            return res.sqrt()
+
         for i in range(1, power):
-            res = res.gp(self)
+            res = res.gp(x)
         return res
 
     def outerexp(self):
