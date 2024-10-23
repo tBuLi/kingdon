@@ -1,4 +1,5 @@
 import operator
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import reduce, cached_property
@@ -6,9 +7,9 @@ from typing import Generator
 from itertools import product
 
 from sympy import Expr, Symbol, sympify
+import numpy as np
 
 from kingdon.codegen import _lambdify_mv
-from kingdon.polynomial import RationalPolynomial
 
 
 @dataclass(init=False)
@@ -36,6 +37,14 @@ class MultiVector:
             :code:`MultiVector(alg, e12=1)`. Mutually exclusive with `values` and `keys`.
         """
         if items and keys is None and values is None:
+            from kingdon.algebra import _swap_blades
+            for key in items:
+                if key not in algebra.canon2bin:
+                    swaps, indices, _ = _swap_blades(key[1:], '', target=f'{sorted(key[1:])}')
+                    key = f'e{indices}'
+                    if swaps % 2:
+                        items[key] = - items[key]
+
             keys, values = zip(*((blade, items[blade]) for blade in algebra.canon2bin if blade in items))
             values = list(values)
 

@@ -829,3 +829,126 @@ def test_blades_of_grade():
         assert isinstance(blades_of_grade, dict)
         assert all(label in alg.canon2bin and blade.grades[0] in indices
                    for label, blade in blades_of_grade.items())
+
+def test_free_symbols():
+    alg = Algebra(3)
+    X = alg.multivector()
+    assert X.free_symbols == set()
+
+def test_swap_blades():
+    """
+    Test the _swap_blades function, which should place like-labels together
+    to find the number of swaps and the resulting blade.
+    """
+    from kingdon.algebra import _swap_blades
+
+    tests = [
+        {'input': ('1', '2', '12'), 'output': (0, '12', '')},
+        {'input': ('1', '2', '21'), 'output': (1, '21', '')},
+        {'input': ('123', '1', '23'), 'output': (2, '23', '1')},
+        {'input': ('123', '1', '32'), 'output': (3, '32', '1')},
+
+        {'input': ('23', '1', '123'), 'output': (2, '123', '')},
+
+        {'input': ('', ''), 'output': (0, '', '')},
+        {'input': ('', '2'), 'output': (0, '2', '')},
+        {'input': ('2', ''), 'output': (0, '2', '')},
+        {'input': ('21', '3'), 'output': (0, '213', '')},
+        {'input': ('21', '1'), 'output': (0, '2', '1')},
+        {'input': ('12', '1'), 'output': (1, '2', '1')},
+        {'input': ('1', '21'), 'output': (1, '2', '1')},
+        {'input': ('1', '12'), 'output': (0, '2', '1')},
+        {'input': ('321', '3'), 'output': (2, '21', '3')},
+        {'input': ('231', '3'), 'output': (1, '21', '3')},
+        {'input': ('213', '3'), 'output': (0, '21', '3')},
+        {'input': ('3', '321'), 'output': (0, '21', '3')},
+        {'input': ('3', '231'), 'output': (1, '21', '3')},
+        {'input': ('3', '213'), 'output': (2, '21', '3')},
+        {'input': ('31', '321'), 'output': (2, '2', '31')},
+        {'input': ('321', '31'), 'output': (2, '2', '31')},
+        {'input': ('123', '12'), 'output': (3, '3', '12')},
+    ]
+    for test in tests:
+        swaps, res_blade, eliminated = _swap_blades(*test['input'])
+        assert swaps == test['output'][0]
+        assert res_blade == test['output'][1]
+        assert eliminated == test['output'][2]
+
+def test_signs_swaps():
+    from itertools import product
+    from collections import Counter
+
+    def _sort_product(prod):
+        """
+        Compute the number of swaps of orthogonal vectors needed to order the basis vectors. E.g. in
+        ['1', '2', '3', '1', '2'] we need 3 swaps to get to ['1', '1', '2', '2', '3'].
+
+        Changes the input list! This is by design.
+        """
+        swaps = 0
+        if len(prod) > 1:
+            prev_swap = 0
+            while True:
+                for i in range(len(prod) - 1):
+                    if prod[i] > prod[i + 1]:
+                        swaps += 1
+                        prod[i], prod[i + 1] = prod[i + 1], prod[i]
+                if prev_swap == swaps:
+                    break
+                else:
+                    prev_swap = swaps
+        return swaps
+
+    self = Algebra(3)
+    cayley = {}
+    signs = np.zeros((len(self), len(self)), dtype=int)
+    swaps_arr = np.zeros((len(self), len(self)), dtype=int)
+
+    for eI, eJ in product(self.canon2bin, repeat=2):
+        # Compute the number of swaps of orthogonal vectors needed to order the basis vectors.
+        prod = list(eI[1:] + eJ[1:])
+        swaps = _sort_product(prod) if len(prod) else 0
+        swaps_arr[self.canon2bin[eI], self.canon2bin[eJ]] = swaps
+
+        # Remove even powers of basis-vectors.
+        sign = -1 if swaps % 2 else 1
+        count = Counter(prod)
+        for key, value in count.items():
+            if value // 2:
+                sign *= self.signature[int(key, base=16) - self.start_index]
+            count[key] = value % 2
+        signs[self.canon2bin[eI], self.canon2bin[eJ]] = sign
+
+        # Make the Cayley table.
+        if sign:
+            prod = ''.join(key * value for key, value in count.items())
+            sign = '-' if sign == -1 else ''
+            cayley[eI, eJ] = f'{sign}e{prod}'
+        else:
+            cayley[eI, eJ] = f'0'
+
+
+    assert self.cayley == cayley
+    assert np.all(self.swaps == swaps_arr)
+    assert np.all(self.signs == signs)
+
+def test_custom_basis():
+    # basis = ["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"]
+    # pga2d = Algebra.fromname('2DPGA')
+    # assert pga2d.basis == basis
+    # assert list(pga2d.canon2bin.keys()) == basis
+    #
+    # e20 = pga2d.blades.e20
+    # e0 = pga2d.blades.e0
+    # e2 = pga2d.blades.e2
+    # assert e20 * e2 == - e0
+
+    basis = ["e","e1","e2","e3","e0","e01","e02","e03","e12","e31","e23","e032","e013","e021","e123","e0123"]
+    pga3d = Algebra.fromname('3DPGA')
+    # assert pga3d.basis == basis
+    # assert list(pga3d.canon2bin.keys()) == basis
+
+    X = pga3d.multivector(e13=1)
+    assert X == - pga3d.blades.e31
+    # print()
+    # print(X)

@@ -21,7 +21,7 @@ function render({ model, el }) {
             return new Element(_values);
         }
         var decode = x=>typeof x === 'object' && 'mv' in x?toElement(x):Array.isArray(x)?x.map(decode):x;
-        var encode = x=>x instanceof Element?({mv:[...x]}):x.map?x.map(encode):x;
+        var encode = x=>x instanceof Element?({mv:[...x]}):x?.map?x.map(encode):x;
 
         // Decode camera if provided.
          if (options?.camera) {

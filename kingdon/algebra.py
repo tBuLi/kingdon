@@ -1,8 +1,11 @@
+import operator
 from itertools import combinations, product, chain, groupby
-from functools import partial
+from functools import partial, reduce
 from collections import Counter
 from dataclasses import dataclass, field, fields
 from collections.abc import Mapping, Callable
+from typing import List
+
 try:
     from functools import cached_property
 except ImportError:
@@ -43,6 +46,10 @@ class Algebra:
     :param p:  number of positive dimensions.
     :param q:  number of negative dimensions.
     :param r:  number of null dimensions.
+    :param signature: Optional signature of the algebra, e.g. [0, 1, 1] for 2DPGA.
+        Mutually exclusive with `p`, `q`, `r`.
+    :param start_index: Optionally set the start index of the dimensions. For PGA this defualts to `0`, otherwise `1`.
+    :param basis: Custom basis order, e.g. `["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"]` for 2DPGA.
     :param cse: If :code:`True` (default), attempt Common Subexpression Elimination (CSE)
         on symbolically optimized expressions.
     :param graded: If :code:`True` (default is :code:`False`), perform binary and unary operations on a graded basis.
@@ -64,6 +71,7 @@ class Algebra:
     d: int = field(init=False, repr=False, compare=False)  # Total number of dimensions
     signature: np.ndarray = field(default=None, compare=False)
     start_index: int = field(default=None, repr=False, compare=False)
+    basis: List[str] = field(repr=False, default_factory=list)
 
     # Clever dictionaries that cache previously symbolically optimized lambda functions between elements.
     gp: OperatorDict = operation_field(metadata={'codegen': codegen_gp})  # geometric product
@@ -102,6 +110,7 @@ class Algebra:
     # Mappings from binary to canonical reps. e.g. 0b01 = 1 <-> 'e1', 0b11 = 3 <-> 'e12'.
     canon2bin: dict = field(init=False, repr=False, compare=False)
     bin2canon: dict = field(init=False, repr=False, compare=False)
+    # basis2canon: dict = field(init=False, repr=False, compare=False)
     _bin2canon_prettystr: dict = field(init=False, repr=False, compare=False)
 
     # Options for the algebra
@@ -140,11 +149,23 @@ class Algebra:
         self.d = self.p + self.q + self.r
 
         # Setup mapping from binary to canonical string rep and vise versa
-        self.bin2canon = {
-            eJ: 'e' + ''.join(hex(num + self.start_index - 1)[2:] for ei in range(0, self.d) if (num := (eJ & 2**ei).bit_length()))
-            for eJ in range(2 ** self.d)
-        }
-        self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
+        if self.basis:
+            assert len(self.basis) == len(self)
+            assert self.basis == sorted(self.basis, key=len)
+            assert all(eJ[0] == 'e' for eJ in self.basis)
+            vecs = [eJ[1:] for eJ in self.basis if len(eJ) == 2]
+            vec2bin = {vec: 2 ** j for j, vec in enumerate(vecs)}
+            self.canon2bin = {eJ: reduce(operator.xor, (bin for vec, bin in vec2bin.items() if vec in eJ), 0)
+                              for eJ in self.basis}
+            self.bin2canon = {J: eJ for eJ, J in sorted(self.canon2bin.items(), key=lambda x: x[1])}
+            # self.basis2canon = {eJ: f'e{sorted(eJ[1:])}' for eJ in self.canon2bin}
+        else:
+            self.bin2canon = {
+                eJ: 'e' + ''.join(hex(num + self.start_index - 1)[2:] for ei in range(0, self.d) if (num := (eJ & 2**ei).bit_length()))
+                for eJ in range(2 ** self.d)
+            }
+            self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
+
         def pretty_blade(blade):
             if blade == 'e':
                 return '1'
@@ -166,6 +187,25 @@ class Algebra:
                          for f in fields(self) if 'codegen' in f.metadata}
         for name, operator_dict in self.registry.items():
             setattr(self, name, operator_dict)
+
+    @classmethod
+    def fromname(cls, name: str):
+        """
+        Initialize a well known algebra by its name. Options are 2DPGA, 3DPGA, and STAP.
+        This uses sensable ordering of the basis vectors in the basis blades to avoid minus surpurflous signs.
+        """
+        if name == '2DPGA':
+            basis = ["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"]
+            return cls(2, 0, 1, basis=basis)
+        elif name == '3DPGA':
+            basis = ["e","e1","e2","e3","e0","e01","e02","e03","e12","e31","e23","e032","e013","e021","e123","e0123"]
+            return cls(3, 0, 1, basis=basis)
+        elif name == 'STAP':
+            basis = ["e","e0","e1","e2","e3","e4","e01","e02","e03","e40","e12","e31","e23","e41","e42","e43","e234","e314","e124","e123","e014","e024","e034","e032","e013","e021","e0324","e0134","e0214","e0123","e1234","e01234"]
+            return cls(3, 1, 1, basis=basis)
+        else:
+            raise ValueError("No algebra by this name exists.")
+
 
     def __len__(self):
         return 2 ** self.d
@@ -201,22 +241,6 @@ class Algebra:
     def matrix_basis(self):
         return matrix_rep(self.p, self.q, self.r)
 
-    @cached_property
-    def frame(self) -> list:
-        """
-        The set of orthogonal basis vectors, :math:`\{ e_i \}`. Note that for a frame linear independence suffices,
-        but we already have orthogonal basis vectors so why not use those?
-        """
-        return [self.blades[self.bin2canon[2**j]] for j in range(0, self.d)]
-
-    @cached_property
-    def reciprocal_frame(self) -> list:
-        """
-        The reciprocal frame is a set of vectors :math:`\{ e^i \}` that satisfies
-        :math:`e^i \cdot e_j = \delta^i_j` with the frame vectors :math:`\{ e_i \}`.
-        """
-        return [v.inv() for v in self.frame]
-
     def _prepare_signs_and_cayley(self):
         """
         Prepares two dicts whose keys are two basis-blades (in binary rep) and the result is either
@@ -228,25 +252,20 @@ class Algebra:
         cayley = {}
         signs = np.zeros((len(self), len(self)), dtype=int)
         swaps_arr = np.zeros((len(self), len(self)), dtype=int)
-        # swap_dict = {}
-        for eI, eJ in product(self.canon2bin, repeat=2):
+
+        for (eI, I), (eJ, J) in product(self.canon2bin.items(), repeat=2):
             # Compute the number of swaps of orthogonal vectors needed to order the basis vectors.
-            prod = list(eI[1:] + eJ[1:])
-            swaps = _sort_product(prod) if len(prod) else 0
-            swaps_arr[self.canon2bin[eI], self.canon2bin[eJ]] = swaps
+            swaps, prod, eliminated = _swap_blades(eI[1:], eJ[1:], self.bin2canon[I ^ J][1:])
+            swaps_arr[I, J] = swaps
 
             # Remove even powers of basis-vectors.
             sign = -1 if swaps % 2 else 1
-            count = Counter(prod)
-            for key, value in count.items():
-                if value // 2:
-                    sign *= self.signature[int(key, base=16) - self.start_index]
-                count[key] = value % 2
-            signs[self.canon2bin[eI], self.canon2bin[eJ]] = sign
+            for key in eliminated:
+                sign *= self.signature[int(key, base=16) - self.start_index]
+            signs[I, J] = sign
 
             # Make the Cayley table.
             if sign:
-                prod = ''.join(key*value for key, value in count.items())
                 sign = '-' if sign == -1 else ''
                 cayley[eI, eJ] = f'{sign}e{prod}'
             else:
@@ -415,26 +434,40 @@ class Algebra:
         )
 
 
-def _sort_product(prod):
+def _swap_blades(blade1: str, blade2: str, target: str = '') -> (int, str, str):
     """
-    Compute the number of swaps of orthogonal vectors needed to order the basis vectors. E.g. in
-    ['1', '2', '3', '1', '2'] we need 3 swaps to get to ['1', '1', '2', '2', '3'].
+    Compute the number of swaps of orthogonal vectors needed to pair the basis vectors. E.g. in
+    ['1', '2', '3', '1', '2'] we need 3 swaps to get to ['1', '1', '2', '2', '3']. Pairs are also removed,
+    in order to find the resulting blade; in the above example the result is ['3'].
 
-    Changes the input list! This is by design.
+    The output of the function is the number of swaps, the resulting blade indices, and the eliminated indices. E.g.
+
+    .. code-block ::
+
+            >>> _swap_blades('123', '12')
+            3, '3', '12'
     """
+    blade1 = list(blade1)
     swaps = 0
-    if len(prod) > 1:
-        prev_swap = 0
-        while True:
-            for i in range(len(prod) - 1):
-                if prod[i] > prod[i + 1]:
-                    swaps += 1
-                    prod[i], prod[i + 1] = prod[i + 1], prod[i]
-            if prev_swap == swaps:
-                break
-            else:
-                prev_swap = swaps
-    return swaps
+    eliminated = []
+    for char in blade2:
+        if char not in blade1:  # Move char from blade2 to blade1
+            blade1.append(char)
+            continue
+
+        idx = blade1.index(char)
+        swaps += len(blade1) - idx - 1
+        blade1.remove(char)
+        eliminated.append(char)
+
+    if target:
+        # Find the number of additional swaps needed to match the target.
+        for i, char in enumerate(target):
+            idx = blade1.index(char)
+            blade1.insert(i, blade1.pop(idx))
+            swaps += idx - i
+
+    return swaps, ''.join(blade1), ''.join(eliminated)
 
 
 @dataclass
