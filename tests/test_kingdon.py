@@ -1017,3 +1017,10 @@ def test_power():
     assert x ** 0.5 == x.sqrt()
     assert x ** -0.5 == xinv.sqrt()
     assert x ** -3 == xinv * xinv * xinv
+
+def test_nested_algebra_print():
+    dalg = Algebra(0, 0, 1)
+    dalg2 = Algebra(0, 0, 1, pretty_blade='𝒇')
+    x = dalg.multivector(e='x', e0=1)
+    x = dalg2.multivector(e=x, e0=1)
+    assert str(x ** 2) == "((x**2) + (2*x) 𝐞₀) + ((2*x) + 2 𝐞₀) 𝒇₀"

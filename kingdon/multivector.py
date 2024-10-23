@@ -253,15 +253,19 @@ class MultiVector:
             return '0'
 
         def print_value(val):
+            s = str(val)
             if isinstance(val, Expr):
                 if val.is_Symbol:
-                    return f"{val}"
-                else:
-                    return f"({val})"
-            elif isinstance(val, float):
+                    return s
+                return f"({s})"
+            if isinstance(val, float):
                 return f'{val:.3}'
-            else:
-                return f'{val}'
+            if isinstance(val, int):
+                return s
+            if bool(re.search(r'[\(\[\{].*[\)\]\}]$', s)):
+                # If the expression already has brackets, like numpy arrays
+                return s
+            return f'({s})'
 
         canon_sorted_vals = {self.algebra._bin2canon_prettystr[key]: val for key, val in self.items()}
         str_repr = ' + '.join(
@@ -281,6 +285,7 @@ class MultiVector:
             iden = '_'.join(''.join('1' if i in self.keys() else '0' for i in bin_blades)
                             for bin_blades in self.algebra.indices_for_grade.values())
             return iden
+        return str(self)
 
     def __getitem__(self, item):
         if not isinstance(item, tuple):
