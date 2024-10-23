@@ -107,6 +107,7 @@ class Algebra:
     # Options for the algebra
     cse: bool = field(default=True, repr=False)  # Common Subexpression Elimination (CSE)
     graded: bool = field(default=False, repr=False)  # If true, precompute products per grade.
+    pretty_blade: str = field(default='𝐞', repr=False, compare=False)
 
     # Codegen & call customization.
     # Wrapper function applied to the codegen generated functions.
@@ -148,7 +149,7 @@ class Algebra:
         def pretty_blade(blade):
             if blade == 'e':
                 return '1'
-            blade = '𝐞' + blade[1:]
+            blade = self.pretty_blade + blade[1:]
             for old, new in tuple(zip("0123456789", "₀₁₂₃₄₅₆₇₈₉")):
                 blade = blade.replace(old, new)
             return blade
