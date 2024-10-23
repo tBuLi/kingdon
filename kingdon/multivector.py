@@ -556,7 +556,7 @@ class MultiVector:
                 sinhc = lambda x: np.sinc(x / np.pi)
 
         l = sqrt(ll)
-        return cosh(l) + sinhc(l) * self
+        return self * sinhc(l) + cosh(l)
 
     def polarity(self):
         return self.algebra.polarity(self)
