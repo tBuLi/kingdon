@@ -64,6 +64,7 @@ class Algebra:
     :param codegen_symbolcls: The symbol class used during codegen. By default, this is our own fast
         :class:`~kingdon.polynomial.RationalPolynomial` class.
     :param simp_func: This function is applied as a filter function to every multivector coefficient.
+    :param pretty_blade: character to use for basis blades when pretty printing to string. Default is 𝐞.
     """
     p: int = 0
     q: int = 0
