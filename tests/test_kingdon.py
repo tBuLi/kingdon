@@ -141,6 +141,10 @@ def test_getattr(pga1d):
     X = pga1d.multivector({0: 2, 'e12': 3})
     assert X.e == 2 and X.e12 == 3
     assert X.e1 == 0 and X.e2 == 0
+    # Asking for a valid basis blade outside of the algebra should also return 0
+    assert X.e3 == 0
+    with pytest.raises(AttributeError):
+        X.someattrthatdoesntexist
 
 def test_gp_symbolic(vga2d):
     u = vga2d.vector(name='u')

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from functools import reduce, cached_property
 from typing import Generator
 from itertools import product
+import re
 
 from sympy import Expr, Symbol, sympify, sinc, cos
 
@@ -301,6 +302,8 @@ class MultiVector:
 
     def __getattr__(self, basis_blade):
         # TODO: if this first check is not true, raise hell instead?
+        if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
+            raise AttributeError(f'{self.__class__.__name__} object has no attribute or basis blade {basis_blade}')
         if basis_blade not in self.algebra.canon2bin:
             return 0
         try:
