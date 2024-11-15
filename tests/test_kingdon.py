@@ -858,17 +858,17 @@ def test_simple_exp():
 
     B = alg.bivector([0, 0, 2])
     R = B.exp()
-    assert R == B.normalized() * np.sin(2) + np.cos(2)
+    assert R == np.cos(2) + np.sin(2) * B.normalized()
 
     B = alg.bivector([0, 1, 2])
     R = B.exp()
     l = (-(B | B).e) ** 0.5
-    assert R == B * np.sin(l) / l + np.cos(l)
+    assert R == np.cos(l) + np.sin(l) * B / l
 
     B = alg.bivector([0, 1 + 2j, 2 - 0.5j])
     R = B.exp()
     l = (-(B | B).e) ** 0.5
-    Rexpected = B * np.sin(l) / l + np.cos(l)
+    Rexpected = np.cos(l) + np.sin(l) * B / l
     assert (R - Rexpected).filter(lambda v: np.abs(v) > 1e-15) == alg.multivector()
 
     B = alg.bivector(name='B')
