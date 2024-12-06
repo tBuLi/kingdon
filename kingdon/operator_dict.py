@@ -88,6 +88,12 @@ class OperatorDict(Mapping):
             mv1 = mv1()
         while isinstance(mv2, Callable) and not isinstance(mv2, MultiVector):
             mv2 = mv2()
+        # If mv2 is a list, apply mv1 to all elements in the list
+        if isinstance(mv2, (tuple, list)):
+            return type(mv2)(self._call_binary(mv1, mv) for mv in mv2)
+        # If mv1 is a list, apply mv2 to all elements in the list
+        if isinstance(mv1, (tuple, list)):
+            return type(mv1)(self._call_binary(mv, mv2) for mv in mv1)
 
         # Make sure all inputs are multivectors. If an input is not, assume its scalar.
         mv1 = mv1 if isinstance(mv1, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv1])

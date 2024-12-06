@@ -30,5 +30,5 @@ def test_expr_as_matrix():
     # Test for the matrix rep of conjugation of the e3 plane.
     x = alg.vector(name='x', keys=('e3',))
     A, y = expr_as_matrix(alg.sw, B, x)
-    assert A == Matrix([[2*B12*B23], [-2*B12*B13], [B12**2 - B13**2 - B23**2], [0]])
-    assert [alg.bin2canon[k] for k in y.keys()] == ['e1', 'e2', 'e3', 'e123']
+    assert A == Matrix([[2*B12*B23], [-2*B12*B13], [B12**2 - B13**2 - B23**2]])
+    assert [alg.bin2canon[k] for k in y.keys()] == ['e1', 'e2', 'e3']
