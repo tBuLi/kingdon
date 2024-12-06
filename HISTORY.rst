@@ -61,3 +61,8 @@ Bugfixes to ganja.js integration:
 * Improved printing, especially for multivector with array or multivector coefficients.
 * `pretty_blade` options added to algebra, to allow users to choose the printing of basis blades.
 * getattr bugfix
+
+1.2.0 (2024-12-06)
+------------------
+* Binary operators are not broadcasted accross lists and tuples, e.g. `R >> [point1, point2]`.
+* Projection (@) and conjugation (>>) are now symbolically optimized by default.
