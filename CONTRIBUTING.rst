@@ -121,7 +121,7 @@ A reminder for the maintainers on how to deploy.
 Make sure all your changes are committed (including an entry in HISTORY.rst).
 Then run::
 
-$ bump2version patch # possible: major / minor / patch
+$ bump-my-version bump patch # possible: major / minor / patch, add --dry-run -vv for dry-run.
 $ git push origin <tag_name>
 
 Travis will then deploy to PyPI if tests pass.
