@@ -6,6 +6,8 @@ This follows the approach outlined in
 Graded Symmetry Groups: Plane and Simple, section 10.
 See the paper for more details.
 """
+import itertools
+import string
 from functools import reduce
 from itertools import combinations
 from typing import Callable
@@ -95,7 +97,21 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
 
     In order to build the matrix rep the input `expr` is evaluated, so make sure the inputs
     to the expression are given in the correct order.
-    The last of the positional arguments is assumed to be the vector x.
+    The last of the positional arguments is assumed to be the vector x in the linear equation y = Ax,
+    and is *assumed to be symbolic*.
+    The other arguments can also be numeric or e.g. a multidimensional array/torsor, in which case the
+    returned matrix A will be numerical as well. This can e.g. be used to easily generate the matrix
+    representations of a given (dual-)quaternion::
+
+        >>> alg = Algebra(3, 0, 1)
+        >>> R = alg.evenmv(e12=0.25*numpy.pi).exp()
+        >>> x = alg.vector(name='x')
+        >>> A, y = expr_as_matrix(lambda R, x: R >> x, R, x)
+        >>> A
+        [[ 1.  0.  0.  0.]
+         [ 0.  0.  1.  0.]
+         [ 0. -1.  0.  0.]
+         [ 0.  0.  0.  1.]]
 
     :expr: Callable representing a valid GA expression.
         Can also be a :class:`~kingdon.operator_dict.OperatorDict`.
