@@ -88,6 +88,7 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
     """
     This represents any GA expression as a matrix. To illustrate by example, we might want to
     represent the multivector equation y = R >> x as a matrix equation y = Ax.
+    (If the multivector `x` is of pure grade, the matrix `A` will be in irrep of the transformation.)
     To obtain A, call this function as follows::
 
         alg = Algebra(3, 0, 1)
@@ -122,14 +123,29 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
         In the example above setting, `res_like = alg.vector(e1=1)` would mean only the e1 component of the matrix
         is returned. This does not have to be a symbolic multivector, only the keys are checked.
     :return: This function returns the matrix representation, and the result of applying the expression to the input.
+        If at least one of the inputs other than the last one is symbolic, the result will be a sympy symbolic matrix.
+        Otherwise, the result will be a numpy array.
     """
-    x = inputs[-1]
-    y = expr(*inputs)
+    *rest, x = inputs
     alg = x.algebra
+    numerical = all(not r.issymbolic for r in rest)
+    if numerical and any(len(r.shape) > 1 for r in rest):  # Only do this for multidimensional arrays
+        symbolic_rest = [alg.multivector(name=string.ascii_uppercase[i], keys=mv.keys()) for i, mv in enumerate(rest)]
+        symbolic_inputs = [*symbolic_rest, x]
+        A, y = expr_as_matrix(expr, *symbolic_inputs, res_like=res_like,)
+        symbols2values = dict(itertools.chain(*(zip(smv.values(), mv.values()) for smv, mv in zip(symbolic_rest, rest))))
+        func = sympy.lambdify(symbols2values.keys(), A)
+        kwargs = {str(k): v for k, v in symbols2values.items()}
+        A = func(**kwargs)
+        symbols2values.update({v: v for v in x.values()})
+        y = y(**{str(k): v for k, v in symbols2values.items() if k in y.free_symbols})
+        return A, y
+
+    y = expr(*inputs)
     if res_like is not None:
         y = alg.multivector({k: sympy.sympify(getattr(y, alg.bin2canon[k])) for k in res_like.keys()})
 
-    A = sympy.zeros(len(y), len(x))
+    A = sympy.zeros(len(y), len(x)) if not numerical else np.zeros((len(y), len(x)))
     for i, (blade_y, yi) in enumerate(y.items()):
         cv = sympy.collect(yi.expand(), x.values())
         for j, (blade_x, xj) in enumerate(x.items()):
