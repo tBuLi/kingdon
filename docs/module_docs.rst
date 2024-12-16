@@ -67,6 +67,6 @@ Taperecorder
 
 Used `Algebra.register` to generate code.
 
-.. automodule:: kingdon.polynomial
+.. automodule:: kingdon.taperecorder
    :members:
    :undoc-members:
