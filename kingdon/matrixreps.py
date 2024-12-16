@@ -134,7 +134,7 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
         symbolic_inputs = [*symbolic_rest, x]
         A, y = expr_as_matrix(expr, *symbolic_inputs, res_like=res_like,)
         symbols2values = dict(itertools.chain(*(zip(smv.values(), mv.values()) for smv, mv in zip(symbolic_rest, rest))))
-        func = sympy.lambdify(symbols2values.keys(), A)
+        func = sympy.lambdify(symbols2values.keys(), A, modules={'ImmutableDenseMatrix': list})
         kwargs = {str(k): v for k, v in symbols2values.items()}
         A = func(**kwargs)  # TODO: vectorize this call correctly
         symbols2values.update({v: v for v in x.values()})
