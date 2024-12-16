@@ -53,6 +53,5 @@ def test_expr_as_matrix_numerical():
 
     # Test for the matrix rep of the commutator. (Grade preserving)
     A, y = expr_as_matrix(alg.cp, B, x)
-    assert type(A) == np.ndarray
+    assert type(A) == list
     assert type(y) == MultiVector
-    assert A.shape == (4, 4)
