@@ -61,3 +61,12 @@ Rational Polynomial
 .. automodule:: kingdon.polynomial
    :members:
    :undoc-members:
+
+Taperecorder
+------------
+
+Used `Algebra.register` to generate code.
+
+.. automodule:: kingdon.polynomial
+   :members:
+   :undoc-members:
