@@ -6,6 +6,8 @@ This follows the approach outlined in
 Graded Symmetry Groups: Plane and Simple, section 10.
 See the paper for more details.
 """
+import itertools
+import string
 from functools import reduce
 from itertools import combinations
 from typing import Callable
@@ -86,6 +88,7 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
     """
     This represents any GA expression as a matrix. To illustrate by example, we might want to
     represent the multivector equation y = R >> x as a matrix equation y = Ax.
+    (If the multivector `x` is of pure grade, the matrix `A` will be in irrep of the transformation.)
     To obtain A, call this function as follows::
 
         alg = Algebra(3, 0, 1)
@@ -95,25 +98,54 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
 
     In order to build the matrix rep the input `expr` is evaluated, so make sure the inputs
     to the expression are given in the correct order.
-    The last of the positional arguments is assumed to be the vector x.
+    The last of the positional arguments is assumed to be the vector x in the linear equation y = Ax,
+    and is *assumed to be symbolic*.
+    The other arguments can also be numeric or e.g. a multidimensional array/torsor, in which case the
+    returned matrix A will be numerical as well. This can e.g. be used to easily generate the matrix
+    representations of a given (dual-)quaternion::
+
+        >>> alg = Algebra(3, 0, 1)
+        >>> R = alg.evenmv(e12=0.25*numpy.pi).exp()
+        >>> x = alg.vector(name='x')
+        >>> A, y = expr_as_matrix(lambda R, x: R >> x, R, x)
+        >>> A
+        [[ 1.  0.  0.  0.]
+         [ 0.  0.  1.  0.]
+         [ 0. -1.  0.  0.]
+         [ 0.  0.  0.  1.]]
 
     :expr: Callable representing a valid GA expression.
         Can also be a :class:`~kingdon.operator_dict.OperatorDict`.
     :inputs: All positional arguments are consider symbolic input arguments to `expr`. The last of these is assumed to
         represent the vector `x` in `y = Ax`.
-    :res_like: optional multivector corresponding to the desired output. If None, then the full output is returned.
+    :res_like: (optional) multivector corresponding to the desired output. If None, then the full output is returned.
         However, if only a subsegment of the output is desired, provide a multivector with the desired shape.
         In the example above setting, `res_like = alg.vector(e1=1)` would mean only the e1 component of the matrix
         is returned. This does not have to be a symbolic multivector, only the keys are checked.
     :return: This function returns the matrix representation, and the result of applying the expression to the input.
+        If at least one of the inputs other than the last one is symbolic, the result will be a sympy symbolic matrix.
+        Otherwise, the result will be a numpy array.
     """
-    x = inputs[-1]
-    y = expr(*inputs)
+    *rest, x = inputs
     alg = x.algebra
+    numerical = all(not r.issymbolic for r in rest)
+    if numerical and any(len(r.shape) > 1 for r in rest):  # Only do this for multidimensional arrays
+        symbolic_rest = [alg.multivector(name=string.ascii_uppercase[i], keys=mv.keys()) for i, mv in enumerate(rest)]
+        symbolic_inputs = [*symbolic_rest, x]
+        A, y = expr_as_matrix(expr, *symbolic_inputs, res_like=res_like,)
+        symbols2values = dict(itertools.chain(*(zip(smv.values(), mv.values()) for smv, mv in zip(symbolic_rest, rest))))
+        func = sympy.lambdify(symbols2values.keys(), A, modules={'ImmutableDenseMatrix': list})
+        kwargs = {str(k): v for k, v in symbols2values.items()}
+        A = func(**kwargs)  # TODO: vectorize this call correctly
+        symbols2values.update({v: v for v in x.values()})
+        y = y(**{str(k): v for k, v in symbols2values.items() if k in y.free_symbols})
+        return A, y
+
+    y = expr(*inputs)
     if res_like is not None:
         y = alg.multivector({k: sympy.sympify(getattr(y, alg.bin2canon[k])) for k in res_like.keys()})
 
-    A = sympy.zeros(len(y), len(x))
+    A = sympy.zeros(len(y), len(x)) if not numerical else np.zeros((len(y), len(x)))
     for i, (blade_y, yi) in enumerate(y.items()):
         cv = sympy.collect(yi.expand(), x.values())
         for j, (blade_x, xj) in enumerate(x.items()):

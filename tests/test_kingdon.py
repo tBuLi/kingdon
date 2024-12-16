@@ -2,6 +2,7 @@
 
 """Tests for `kingdon` package."""
 import itertools
+import operator
 from dataclasses import replace
 
 import pytest
@@ -901,3 +902,23 @@ def test_nested_algebra_print():
     x = dalg.multivector(e='x', e0=1)
     x = dalg2.multivector(e=x, e0=1)
     assert str(x ** 2) == "((x**2) + (2*x) 𝐞₀) + ((2*x) + 2 𝐞₀) 𝒇₀"
+
+def test_apply_to_list():
+    alg = Algebra(2, 0, 1)
+    line1 = alg.vector(e1=-1, e2=1)  # the line "y - x = 0"
+    line2 = alg.vector(e1=-1, e2=2)
+    R = (line1 * line2).normalized()
+    triangle = [
+        alg.vector(e0=1, e1=1).dual(),
+        alg.vector(e0=1, e1=0.6, e2=0.5).dual(),
+        alg.vector(e0=1, e1=1.3, e2=0.8).dual()
+    ]
+    operators = [operator.mul, operator.xor, operator.and_, operator.rshift]
+    for op in operators:
+        transformed_subjects = op(R, triangle)
+        for i, p in enumerate(triangle):
+            assert op(R, p) == transformed_subjects[i]
+
+        transformed_subjects = op(triangle, R)
+        for i, p in enumerate(triangle):
+            assert op(p, R) == transformed_subjects[i]
