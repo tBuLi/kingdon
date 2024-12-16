@@ -118,7 +118,7 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
         Can also be a :class:`~kingdon.operator_dict.OperatorDict`.
     :inputs: All positional arguments are consider symbolic input arguments to `expr`. The last of these is assumed to
         represent the vector `x` in `y = Ax`.
-    :res_like: optional multivector corresponding to the desired output. If None, then the full output is returned.
+    :res_like: (optional) multivector corresponding to the desired output. If None, then the full output is returned.
         However, if only a subsegment of the output is desired, provide a multivector with the desired shape.
         In the example above setting, `res_like = alg.vector(e1=1)` would mean only the e1 component of the matrix
         is returned. This does not have to be a symbolic multivector, only the keys are checked.
@@ -136,7 +136,7 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
         symbols2values = dict(itertools.chain(*(zip(smv.values(), mv.values()) for smv, mv in zip(symbolic_rest, rest))))
         func = sympy.lambdify(symbols2values.keys(), A)
         kwargs = {str(k): v for k, v in symbols2values.items()}
-        A = func(**kwargs)
+        A = func(**kwargs)  # TODO: vectorize this call correctly
         symbols2values.update({v: v for v in x.values()})
         y = y(**{str(k): v for k, v in symbols2values.items() if k in y.free_symbols})
         return A, y
