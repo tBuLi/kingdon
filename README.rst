@@ -5,13 +5,13 @@ Kingdon
 
 .. image:: https://img.shields.io/pypi/v/kingdon.svg
         :target: https://pypi.python.org/pypi/kingdon
-        
+
 .. image:: https://readthedocs.org/projects/kingdon/badge/?version=latest
         :target: https://kingdon.readthedocs.io/en/latest/?version=latest
-        
+
 .. image:: https://coveralls.io/repos/github/tBuLi/kingdon/badge.svg?branch=master
         :target: https://coveralls.io/github/tBuLi/kingdon?branch=master
-        
+
 
 
 Pythonic Geometric Algebra Package
@@ -39,6 +39,34 @@ In bullet points:
 - Agnostic to the input types: work with GA's over :code:`numpy` arrays, :code:`PyTorch` tensors, :code:`sympy` expressions, etc. Any object that overloads addition, subtraction and multiplication makes for valid multivector coefficients in :code:`kingdon`.
 - Automatic broadcasting, such that transformations can be applied to e.g. point-clouds.
 - Compatible with :code:`numba` and other JIT compilers to speed-up numerical computations.
+
+Examples
+--------
+To jump in straight away, visit the `teahouse <https://tbuli.github.io/teahouse/>`_.
+
+.. list-table:: Menu:
+   :class: borderless
+
+   * - .. image:: docs/_static/pga2d_distances_and_angles.png
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_distances_and_angles.ipynb
+     - .. image:: docs/_static/pga2d_inverse_kinematics.png
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_inverse_kinematics.ipynb
+     - .. image:: docs/_static/pga2d_project_and_reject.png
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_project_and_reject.ipynb
+   * - .. image:: docs/_static/pga2d_hypercube_on_string.png
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_hypercube_on_string.ipynb
+     - .. image:: docs/_static/pga3d_distances_and_angles.png
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=3DPGA%2Fex_3dpga_distances_and_angles.ipynb
+     - .. image:: docs/_static/pga3d_points_and_lines.png
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=3DPGA%2Fex_3dpga_points_and_lines.ipynb
+   * - .. image:: docs/_static/exercise_spider6.png
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=exercises%2Fspider6.ipynb
+     - .. image:: docs/_static/cga2d_points_and_circles.png
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DCGA%2Fex_2dcga_points_and_circles.ipynb
+     - .. image:: docs/_static/pga2d_fivebar.png
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_fivebar.ipynb
+
+
 
 Code Example
 ------------
@@ -170,10 +198,26 @@ Overview of Operators
      - $a - b$
      - :code:`a - b`
      - :code:`a.sub(b)`
+   * - "Divide" :code:`a` by :code:`b`
+     - $a b^{-1}$
+     - :code:`a / b`
+     - :code:`a.div(b)`
+   * - Inverse of :code:`a`
+     - $a^{-1}$
+     -
+     - :code:`a.inv()`
    * - Reverse of :code:`a`
      - $\\widetilde{a}$
      - :code:`~a`
      - :code:`a.reverse()`
+   * - Grade Involution of :code:`a`
+     - $\\hat{a}$
+     -
+     - :code:`a.involute()`
+   * - Clifford Conjugate of :code:`a`
+     - $\\bar{a} = \\hat{\\widetilde{a}}$
+     -
+     - :code:`a.conjugate()`
    * - Squared norm of :code:`a`
      - $a \\widetilde{a}$
      -
