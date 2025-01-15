@@ -44,26 +44,18 @@ Examples
 --------
 To jump in straight away, visit the `teahouse <https://tbuli.github.io/teahouse/>`_.
 
-.. list-table:: Examples
-   :widths: 10 10 10
-   :header-rows: 0
-
-   * - .. figure:: https://github.com/tBuLi/kingdon/blob/readme_update/docs/_static/pga2d_distances_and_angles.svg
-         :scale: 33 %
-     - .. raw:: html
-         :file: docs/_static/pga2d_distances_and_angles.svg
-     - .. figure:: https://github.com/tBuLi/kingdon/blob/readme_update/docs/_static/graph_triangle.png
-         :scale: 33 %
-
 .. list-table:: simple image grid
    :class: borderless
 
-   * - .. image:: https://github.com/tBuLi/kingdon/blob/readme_update/docs/_static/pga2d_distances_and_angles.svg
-     - .. raw:: html
-         :file: docs/_static/pga2d_distances_and_angles.svg
-     - .. raw:: html
-         :file: https://github.com/tBuLi/kingdon/blob/readme_update/docs/_static/pga2d_distances_and_angles.svg
-     - .. image:: https://github.com/tBuLi/kingdon/blob/readme_update/docs/_static/graph_triangle.png
+   * - .. image:: docs/_static/pga2d_distances_and_angles.png
+     - .. image:: docs/_static/pga2d_inverse_kinematics.png
+     - .. image:: docs/_static/pga2d_project_and_reject.png
+   * - .. image:: docs/_static/pga2d_hypercube_on_string.png
+     - .. image:: docs/_static/pga3d_distances_and_angles.png
+     - .. image:: docs/_static/pga3d_points_and_lines.png
+   * - .. image:: docs/_static/exercise_spider6.png
+     - .. image:: docs/_static/cga2d_points_and_circles.png
+     - .. image:: docs/_static/pga2d_fivebar.png
 
 
 
