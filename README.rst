@@ -44,7 +44,7 @@ Examples
 --------
 To jump in straight away, visit the `teahouse <https://tbuli.github.io/teahouse/>`_.
 
-.. list-table:: menu
+.. list-table:: Menu:
    :class: borderless
 
    * - .. image:: docs/_static/pga2d_distances_and_angles.png
