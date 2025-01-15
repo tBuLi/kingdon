@@ -50,8 +50,8 @@ To jump in straight away, have a look at the `teahouse <https://tbuli.github.io/
 
    * - .. figure:: https://github.com/tBuLi/kingdon/blob/readme_update/docs/_static/pga2d_distances_and_angles.svg
          :scale: 33 %
-     - .. figure:: docs/_static/pga2d_distances_and_angles.svg
-         :scale: 33 %
+     - .. raw:: html
+         :file: docs/_static/pga2d_distances_and_angles.svg
      - .. figure:: https://github.com/tBuLi/kingdon/blob/readme_update/docs/_static/graph_triangle.png
          :scale: 33 %
 
