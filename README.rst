@@ -5,13 +5,13 @@ Kingdon
 
 .. image:: https://img.shields.io/pypi/v/kingdon.svg
         :target: https://pypi.python.org/pypi/kingdon
-        
+
 .. image:: https://readthedocs.org/projects/kingdon/badge/?version=latest
         :target: https://kingdon.readthedocs.io/en/latest/?version=latest
-        
+
 .. image:: https://coveralls.io/repos/github/tBuLi/kingdon/badge.svg?branch=master
         :target: https://coveralls.io/github/tBuLi/kingdon?branch=master
-        
+
 
 
 Pythonic Geometric Algebra Package
@@ -39,6 +39,23 @@ In bullet points:
 - Agnostic to the input types: work with GA's over :code:`numpy` arrays, :code:`PyTorch` tensors, :code:`sympy` expressions, etc. Any object that overloads addition, subtraction and multiplication makes for valid multivector coefficients in :code:`kingdon`.
 - Automatic broadcasting, such that transformations can be applied to e.g. point-clouds.
 - Compatible with :code:`numba` and other JIT compilers to speed-up numerical computations.
+
+Examples
+--------
+To jump in straight away, have a look at the `teahouse <https://tbuli.github.io/teahouse/>`_.
+
+.. list-table:: Examples
+   :widths: 15 10 30
+   :header-rows: 0
+
+   * - .. figure:: docs/_static/pga2d_distances_and_angles.svg
+         :scale: 33 %
+     - .. figure:: docs/_static/pga2d_distances_and_angles.svg
+         :scale: 33 %
+     - .. figure:: docs/_static/pga2d_distances_and_angles.svg
+         :scale: 33 %
+
+
 
 Code Example
 ------------
@@ -170,10 +187,26 @@ Overview of Operators
      - $a - b$
      - :code:`a - b`
      - :code:`a.sub(b)`
+   * - "Divide" :code:`a` by :code:`b`
+     - $a b^{-1}$
+     - :code:`a / b`
+     - :code:`a.div(b)`
+   * - Inverse of :code:`a`
+     - $a^{-1}$
+     -
+     - :code:`a.inv()`
    * - Reverse of :code:`a`
      - $\\widetilde{a}$
      - :code:`~a`
      - :code:`a.reverse()`
+   * - Grade Involution of :code:`a`
+     - $\\hat{a}$
+     -
+     - :code:`a.conjugate()`
+   * - Clifford Conjugate of :code:`a`
+     - $\\bar{a} = \\hat{\\widetilde{a}}$
+     -
+     - :code:`a.involute()`
    * - Squared norm of :code:`a`
      - $a \\widetilde{a}$
      -
