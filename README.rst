@@ -42,10 +42,10 @@ In bullet points:
 
 Examples
 --------
-To jump in straight away, have a look at the `teahouse <https://tbuli.github.io/teahouse/>`_.
+To jump in straight away, visit the `teahouse <https://tbuli.github.io/teahouse/>`_.
 
 .. list-table:: Examples
-   :widths: 15 10 30
+   :widths: 10 10 10
    :header-rows: 0
 
    * - .. figure:: https://github.com/tBuLi/kingdon/blob/readme_update/docs/_static/pga2d_distances_and_angles.svg
@@ -59,7 +59,10 @@ To jump in straight away, have a look at the `teahouse <https://tbuli.github.io/
    :class: borderless
 
    * - .. image:: https://github.com/tBuLi/kingdon/blob/readme_update/docs/_static/pga2d_distances_and_angles.svg
-     - .. image:: docs/_static/pga2d_distances_and_angles.svg
+     - .. raw:: html
+         :file: docs/_static/pga2d_distances_and_angles.svg
+     - .. raw:: html
+         :file: https://github.com/tBuLi/kingdon/blob/readme_update/docs/_static/pga2d_distances_and_angles.svg
      - .. image:: https://github.com/tBuLi/kingdon/blob/readme_update/docs/_static/graph_triangle.png
 
 
