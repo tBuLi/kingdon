@@ -48,12 +48,19 @@ To jump in straight away, have a look at the `teahouse <https://tbuli.github.io/
    :widths: 15 10 30
    :header-rows: 0
 
-   * - .. figure:: docs/_static/pga2d_distances_and_angles.svg
+   * - .. figure:: https://github.com/tBuLi/kingdon/blob/readme_update/docs/_static/pga2d_distances_and_angles.svg
          :scale: 33 %
      - .. figure:: docs/_static/pga2d_distances_and_angles.svg
          :scale: 33 %
-     - .. figure:: docs/_static/pga2d_distances_and_angles.svg
+     - .. figure:: https://github.com/tBuLi/kingdon/blob/readme_update/docs/_static/graph_triangle.png
          :scale: 33 %
+
+.. list-table:: simple image grid
+   :class: borderless
+
+   * - .. image:: https://github.com/tBuLi/kingdon/blob/readme_update/docs/_static/pga2d_distances_and_angles.svg
+     - .. image:: docs/_static/pga2d_distances_and_angles.svg
+     - .. image:: https://github.com/tBuLi/kingdon/blob/readme_update/docs/_static/graph_triangle.png
 
 
 
@@ -202,11 +209,11 @@ Overview of Operators
    * - Grade Involution of :code:`a`
      - $\\hat{a}$
      -
-     - :code:`a.conjugate()`
+     - :code:`a.involute()`
    * - Clifford Conjugate of :code:`a`
      - $\\bar{a} = \\hat{\\widetilde{a}}$
      -
-     - :code:`a.involute()`
+     - :code:`a.conjugate()`
    * - Squared norm of :code:`a`
      - $a \\widetilde{a}$
      -
