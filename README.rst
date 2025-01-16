@@ -40,11 +40,12 @@ In bullet points:
 - Automatic broadcasting, such that transformations can be applied to e.g. point-clouds.
 - Compatible with :code:`numba` and other JIT compilers to speed-up numerical computations.
 
-Examples
---------
-To jump in straight away, visit the `teahouse <https://tbuli.github.io/teahouse/>`_.
+Teahouse Menu
+=============
+If you are thirsty for some examples, please visit the `teahouse <https://tbuli.github.io/teahouse/>`_.
+A small selection of our items:
 
-.. list-table:: Menu:
+.. list-table::
    :class: borderless
 
    * - .. image:: docs/_static/pga2d_distances_and_angles.png
@@ -78,7 +79,7 @@ To jump in straight away, visit the `teahouse <https://tbuli.github.io/teahouse/
      - .. image:: docs/_static/cga2d_points_and_circles.png
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DCGA%2Fex_2dcga_points_and_circles.ipynb
 
-       Projection and intersection, but round
+       Project and intersect, but round
      - .. image:: docs/_static/pga2d_fivebar.png
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_fivebar.ipynb
 
