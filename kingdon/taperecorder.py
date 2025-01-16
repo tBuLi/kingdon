@@ -24,9 +24,16 @@ class TapeRecorder:
         return int(''.join('1' if i in self.keys() else '0' for i in reversed(self.algebra.canon2bin.values())), 2)
 
     def __getattr__(self, basis_blade):
-        bin_blade = self.algebra.canon2bin[basis_blade]
+        if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
+            raise AttributeError(f'{self.__class__.__name__} object has no attribute or basis blade {basis_blade}')
+        if basis_blade not in self.algebra.canon2bin:
+            return self.__class__(
+                algebra=self.algebra,
+                expr=f"(0,)",
+                keys=(0,)
+            )
         try:
-            idx = self.keys().index(bin_blade)
+            idx = self.keys().index(self.algebra.canon2bin[basis_blade])
         except ValueError:
             return self.__class__(
                 algebra=self.algebra,
@@ -135,3 +142,11 @@ class TapeRecorder:
             raise Exception('Cannot select a suitable undual in auto mode for this algebra.')
         else:
             raise ValueError(f'No undual found for kind={kind}.')
+
+    def norm(self):
+        normsq = self.normsq()
+        return normsq.sqrt()
+
+    def normalized(self):
+        """ Normalized version of this multivector. """
+        return self / self.norm()

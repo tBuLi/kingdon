@@ -1,6 +1,8 @@
-from kingdon import Algebra
+from sympy import Matrix
+import numpy as np
+
+from kingdon import Algebra, MultiVector
 from kingdon.matrixreps import expr_as_matrix
-from sympy import Matrix, pprint
 
 
 def test_expr_as_matrix():
@@ -30,5 +32,26 @@ def test_expr_as_matrix():
     # Test for the matrix rep of conjugation of the e3 plane.
     x = alg.vector(name='x', keys=('e3',))
     A, y = expr_as_matrix(alg.sw, B, x)
-    assert A == Matrix([[2*B12*B23], [-2*B12*B13], [B12**2 - B13**2 - B23**2], [0]])
-    assert [alg.bin2canon[k] for k in y.keys()] == ['e1', 'e2', 'e3', 'e123']
+    assert A == Matrix([[2*B12*B23], [-2*B12*B13], [B12**2 - B13**2 - B23**2]])
+    assert [alg.bin2canon[k] for k in y.keys()] == ['e1', 'e2', 'e3']
+
+def test_expr_as_matrix_numerical():
+    alg = Algebra(3, 0, 1)
+    Bvals = np.random.random(len(alg.blades.grade(2)))
+    x = alg.vector(name='x')
+    B = alg.bivector(Bvals)
+
+    # Test for the matrix rep of the commutator. (Grade preserving)
+    A, y = expr_as_matrix(alg.cp, B, x)
+    assert type(A) == np.ndarray
+    assert type(y) == MultiVector
+    assert A.shape == (4, 4)
+
+    Bvals = np.random.random((len(alg.blades.grade(2)), 10))
+    x = alg.vector(name='x')
+    B = alg.bivector(Bvals)
+
+    # Test for the matrix rep of the commutator. (Grade preserving)
+    A, y = expr_as_matrix(alg.cp, B, x)
+    assert type(A) == list
+    assert type(y) == MultiVector

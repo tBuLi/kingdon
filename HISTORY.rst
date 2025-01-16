@@ -55,3 +55,15 @@ Bugfixes to ganja.js integration:
 * Added exponential function for simple objects.
 * Raising a mv to 0.5 is now correctly interpreted as a square root.
   This enables e.g. automatic differentiation.
+
+1.1.2 (2024-11-15)
+------------------
+* Improved printing, especially for multivector with array or multivector coefficients.
+* `pretty_blade` options added to algebra, to allow users to choose the printing of basis blades.
+* getattr bugfix
+
+1.2.0 (2024-12-16)
+------------------
+* Binary operators are now broadcasted across lists and tuples, e.g. `R >> [point1, point2]`.
+* Projection (@) and conjugation (>>) are now symbolically optimized by default.
+* Matrix reps made with `expr_as_matrix` now have better support for numerical (and multidimensional) multivectors.
