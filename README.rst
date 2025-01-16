@@ -56,7 +56,7 @@ A small selection of our items:
      - .. image:: docs/_static/pga2d_inverse_kinematics.png
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_inverse_kinematics.ipynb
 
-       Dimension agnostic inverse kinematics
+       Dimension agnostic IK
      - .. image:: docs/_static/pga2d_project_and_reject.png
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_project_and_reject.ipynb
 
