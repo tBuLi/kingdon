@@ -46,6 +46,7 @@ If you are thirsty for some examples, please visit the `teahouse <https://tbuli.
 A small selection of our items:
 
 .. list-table::
+   :widths: 33 33 33
    :class: borderless
 
    * - .. image:: docs/_static/pga2d_distances_and_angles.png
