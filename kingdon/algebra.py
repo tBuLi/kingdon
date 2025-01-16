@@ -195,7 +195,7 @@ class Algebra:
     def fromname(cls, name: str, **kwargs):
         """
         Initialize a well known algebra by its name. Options are 2DPGA, 3DPGA, and STAP.
-        This uses sensable ordering of the basis vectors in the basis blades to avoid minus surpurflous signs.
+        This uses sensible ordering of the basis vectors in the basis blades to avoid minus superfluous signs.
         """
         if name == '2DPGA':
             basis = ["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"]
