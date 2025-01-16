@@ -49,22 +49,40 @@ To jump in straight away, visit the `teahouse <https://tbuli.github.io/teahouse/
 
    * - .. image:: docs/_static/pga2d_distances_and_angles.png
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_distances_and_angles.ipynb
+
+       Land measurement 101
      - .. image:: docs/_static/pga2d_inverse_kinematics.png
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_inverse_kinematics.ipynb
+
+       Dimension agnostic inverse kinematics
      - .. image:: docs/_static/pga2d_project_and_reject.png
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_project_and_reject.ipynb
-   * - .. image:: docs/_static/pga2d_hypercube_on_string.png
-          :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_hypercube_on_string.ipynb
-     - .. image:: docs/_static/pga3d_distances_and_angles.png
+
+       2D projection and intersection
+   * - .. image:: docs/_static/pga3d_distances_and_angles.png
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=3DPGA%2Fex_3dpga_distances_and_angles.ipynb
+
+       Land measurement 420
+     - .. image:: docs/_static/pga2d_hypercube_on_string.png
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_hypercube_on_string.ipynb
+
+       **Best-seller**: Tesseract on a string!
      - .. image:: docs/_static/pga3d_points_and_lines.png
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=3DPGA%2Fex_3dpga_points_and_lines.ipynb
+
+       3D projection and intersection
    * - .. image:: docs/_static/exercise_spider6.png
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=exercises%2Fspider6.ipynb
+
+       Build-A-Spider Workshop!
      - .. image:: docs/_static/cga2d_points_and_circles.png
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DCGA%2Fex_2dcga_points_and_circles.ipynb
+
+       Projection and intersection, but round
      - .. image:: docs/_static/pga2d_fivebar.png
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_fivebar.ipynb
+
+       Fivebar mechanism
 
 
 
