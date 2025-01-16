@@ -444,9 +444,13 @@ class Algebra:
         """ Retrieve the canonical blade for a given blade, and the number of sing swaps required. """
         if basis_blade in self.canon2bin:
             return basis_blade, 0
-        canon_blade = self.bin2canon[reduce(operator.xor, (self.canon2bin[f'e{i}'] for i in basis_blade[1:]))]
-        swaps, *_ = _swap_blades(basis_blade, '', target=canon_blade)
-        return canon_blade, swaps
+        # if a generator isn't found, return a generator outside of the current space.
+        bin = reduce(operator.or_, (self.canon2bin.get(f'e{i}', 2 ** self.d) for i in basis_blade[1:]))
+        canon_blade = self.bin2canon.get(bin, False)
+        if canon_blade:
+            swaps, *_ = _swap_blades(basis_blade, '', target=canon_blade)
+            return canon_blade, swaps
+        return f'e{2 ** self.d}', 0
 
 
 def _swap_blades(blade1: str, blade2: str, target: str = '') -> (int, str, str):
