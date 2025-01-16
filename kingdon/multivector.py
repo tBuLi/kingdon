@@ -334,8 +334,8 @@ class MultiVector:
         return bool(self.values())
 
     @cached_property
-    def free_symbols(self):
-        return reduce(operator.or_, (v.free_symbols for v in self.values() if hasattr(v, "free_symbols")))
+    def free_symbols(self) -> set:
+        return reduce(operator.or_, (v.free_symbols for v in self.values() if hasattr(v, "free_symbols")), set())
 
     def map(self, func) -> "MultiVector":
         """
