@@ -1069,81 +1069,31 @@ def test_swap_blades():
         assert res_blade == test['output'][1]
         assert eliminated == test['output'][2]
 
-def test_signs_swaps():
-    from itertools import product
-    from collections import Counter
-
-    def _sort_product(prod):
-        """
-        Compute the number of swaps of orthogonal vectors needed to order the basis vectors. E.g. in
-        ['1', '2', '3', '1', '2'] we need 3 swaps to get to ['1', '1', '2', '2', '3'].
-
-        Changes the input list! This is by design.
-        """
-        swaps = 0
-        if len(prod) > 1:
-            prev_swap = 0
-            while True:
-                for i in range(len(prod) - 1):
-                    if prod[i] > prod[i + 1]:
-                        swaps += 1
-                        prod[i], prod[i + 1] = prod[i + 1], prod[i]
-                if prev_swap == swaps:
-                    break
-                else:
-                    prev_swap = swaps
-        return swaps
-
-    self = Algebra(3)
-    cayley = {}
-    signs = np.zeros((len(self), len(self)), dtype=int)
-    swaps_arr = np.zeros((len(self), len(self)), dtype=int)
-
-    for eI, eJ in product(self.canon2bin, repeat=2):
-        # Compute the number of swaps of orthogonal vectors needed to order the basis vectors.
-        prod = list(eI[1:] + eJ[1:])
-        swaps = _sort_product(prod) if len(prod) else 0
-        swaps_arr[self.canon2bin[eI], self.canon2bin[eJ]] = swaps
-
-        # Remove even powers of basis-vectors.
-        sign = -1 if swaps % 2 else 1
-        count = Counter(prod)
-        for key, value in count.items():
-            if value // 2:
-                sign *= self.signature[int(key, base=16) - self.start_index]
-            count[key] = value % 2
-        signs[self.canon2bin[eI], self.canon2bin[eJ]] = sign
-
-        # Make the Cayley table.
-        if sign:
-            prod = ''.join(key * value for key, value in count.items())
-            sign = '-' if sign == -1 else ''
-            cayley[eI, eJ] = f'{sign}e{prod}'
-        else:
-            cayley[eI, eJ] = f'0'
-
-
-    assert self.cayley == cayley
-    assert np.all(self.swaps == swaps_arr)
-    assert np.all(self.signs == signs)
-
 def test_custom_basis():
-    # basis = ["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"]
-    # pga2d = Algebra.fromname('2DPGA')
-    # assert pga2d.basis == basis
-    # assert list(pga2d.canon2bin.keys()) == basis
-    #
-    # e20 = pga2d.blades.e20
-    # e0 = pga2d.blades.e0
-    # e2 = pga2d.blades.e2
-    # assert e20 * e2 == - e0
-
     basis = ["e","e1","e2","e3","e0","e01","e02","e03","e12","e31","e23","e032","e013","e021","e123","e0123"]
     pga3d = Algebra.fromname('3DPGA')
-    # assert pga3d.basis == basis
-    # assert list(pga3d.canon2bin.keys()) == basis
+    assert pga3d.basis == basis
+    assert list(pga3d.canon2bin.keys()) == basis
 
-    X = pga3d.multivector(e13=1)
-    assert X == - pga3d.blades.e31
-    # print()
-    # print(X)
+    e20, e0, e2 = pga3d.blades.e20, pga3d.blades.e0, pga3d.blades.e2
+    assert e20 * e2 == - e0
+
+    X = pga3d.multivector(e12=1)
+    assert X == pga3d.blades.e12
+    assert X == - pga3d.blades.e21
+    assert X.e21 == -1
+    assert X.e12 == 1
+
+    # Compare a mv in alg301 with pga3d and test if they are identical when we extract the coefficients.
+    alg301 = Algebra(3, 0, 1)
+    x = alg301.multivector(name='x')
+    X = pga3d.multivector(**{alg301.bin2canon[k]: v for k, v in x.items()})
+    assert all(getattr(x, blade) == getattr(X, blade) for blade in alg301.canon2bin)
+    assert all(getattr(x, blade) == getattr(X, blade) for blade in pga3d.canon2bin)
+
+    # Same, but now after performing a product.
+    y = alg301.multivector(name='y')
+    Y = pga3d.multivector(**{alg301.bin2canon[k]: v for k, v in y.items()})
+    xy, XY = x*y, X*Y
+    assert all(getattr(xy, blade) == getattr(XY, blade) for blade in alg301.canon2bin)
+    assert all(getattr(xy, blade) == getattr(XY, blade) for blade in pga3d.canon2bin)

@@ -1,4 +1,5 @@
 import operator
+import re
 from itertools import combinations, product, chain, groupby
 from functools import partial, reduce
 from collections import Counter
@@ -153,14 +154,14 @@ class Algebra:
         # Setup mapping from binary to canonical string rep and vise versa
         if self.basis:
             assert len(self.basis) == len(self)
-            assert self.basis == sorted(self.basis, key=len)
+            assert self.basis == sorted(self.basis, key=len)  # The basis has to be ordered by grade.
             assert all(eJ[0] == 'e' for eJ in self.basis)
             vecs = [eJ[1:] for eJ in self.basis if len(eJ) == 2]
+            self.start_index = int(min(vecs))
             vec2bin = {vec: 2 ** j for j, vec in enumerate(vecs)}
-            self.canon2bin = {eJ: reduce(operator.xor, (bin for vec, bin in vec2bin.items() if vec in eJ), 0)
+            self.canon2bin = {eJ: reduce(operator.xor, (vec2bin[v] for v in eJ[1:]), 0)
                               for eJ in self.basis}
             self.bin2canon = {J: eJ for eJ, J in sorted(self.canon2bin.items(), key=lambda x: x[1])}
-            # self.basis2canon = {eJ: f'e{sorted(eJ[1:])}' for eJ in self.canon2bin}
         else:
             self.bin2canon = {
                 eJ: 'e' + ''.join(hex(num + self.start_index - 1)[2:] for ei in range(0, self.d) if (num := (eJ & 2**ei).bit_length()))
@@ -191,23 +192,27 @@ class Algebra:
             setattr(self, name, operator_dict)
 
     @classmethod
-    def fromname(cls, name: str):
+    def fromname(cls, name: str, **kwargs):
         """
         Initialize a well known algebra by its name. Options are 2DPGA, 3DPGA, and STAP.
         This uses sensable ordering of the basis vectors in the basis blades to avoid minus surpurflous signs.
         """
         if name == '2DPGA':
             basis = ["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"]
-            return cls(2, 0, 1, basis=basis)
+            return cls(2, 0, 1, basis=basis, **kwargs)
         elif name == '3DPGA':
-            basis = ["e","e1","e2","e3","e0","e01","e02","e03","e12","e31","e23","e032","e013","e021","e123","e0123"]
-            return cls(3, 0, 1, basis=basis)
+            basis = ["e", "e1", "e2", "e3", "e0",
+                     "e01", "e02", "e03", "e12", "e31", "e23",
+                     "e032", "e013", "e021", "e123", "e0123"]
+            return cls(3, 0, 1, basis=basis, **kwargs)
         elif name == 'STAP':
-            basis = ["e","e0","e1","e2","e3","e4","e01","e02","e03","e40","e12","e31","e23","e41","e42","e43","e234","e314","e124","e123","e014","e024","e034","e032","e013","e021","e0324","e0134","e0214","e0123","e1234","e01234"]
-            return cls(3, 1, 1, basis=basis)
+            basis = ["e", "e0", "e1", "e2", "e3", "e4",
+                     "e01", "e02", "e03", "e40", "e12", "e31", "e23", "e41", "e42", "e43",
+                     "e234", "e314", "e124", "e123", "e014", "e024", "e034", "e032", "e013", "e021",
+                     "e0324", "e0134", "e0214", "e0123", "e1234", "e01234"]
+            return cls(3, 1, 1, basis=basis, **kwargs)
         else:
-            raise ValueError("No algebra by this name exists.")
-
+            raise ValueError("No algebra by this name is known.")
 
     def __len__(self):
         return 2 ** self.d
@@ -435,6 +440,14 @@ class Algebra:
             options=options,
         )
 
+    def _blade2canon(self, basis_blade: str):
+        """ Retrieve the canonical blade for a given blade, and the number of sing swaps required. """
+        if basis_blade in self.canon2bin:
+            return basis_blade, 0
+        canon_blade = self.bin2canon[reduce(operator.xor, (self.canon2bin[f'e{i}'] for i in basis_blade[1:]))]
+        swaps, *_ = _swap_blades(basis_blade, '', target=canon_blade)
+        return canon_blade, swaps
+
 
 def _swap_blades(blade1: str, blade2: str, target: str = '') -> (int, str, str):
     """
@@ -494,17 +507,20 @@ class BladeDict(Mapping):
             # If not lazy, retrieve all blades once to force initiation.
             for blade in self.algebra.canon2bin: self[blade]
 
-    def __getitem__(self, blade):
+    def __getitem__(self, basis_blade):
         """ Blade must be in canonical form, e.g. 'e12'. """
-        if blade not in self.blades:
-            bin_blade = self.algebra.canon2bin[blade]
+        if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
+            raise AttributeError(f'{basis_blade} is not a valid basis blade.')
+        basis_blade, swaps = self.algebra._blade2canon(basis_blade)
+        if basis_blade not in self.blades:
+            bin_blade = self.algebra.canon2bin[basis_blade]
             if self.algebra.graded:
                 g = format(bin_blade, 'b').count('1')
                 indices = self.algebra.indices_for_grade[g]
-                self.blades[blade] = self.algebra.multivector(values=[int(bin_blade == i) for i in indices], grades=(g,))
+                self.blades[basis_blade] = self.algebra.multivector(values=[int(bin_blade == i) for i in indices], grades=(g,))
             else:
-                self.blades[blade] = MultiVector.fromkeysvalues(self.algebra, keys=(bin_blade,), values=[1])
-        return self.blades[blade]
+                self.blades[basis_blade] = MultiVector.fromkeysvalues(self.algebra, keys=(bin_blade,), values=[1])
+        return self.blades[basis_blade] if swaps % 2 == 0 else - self.blades[basis_blade]
 
     def __getattr__(self, blade):
         return self[blade]
