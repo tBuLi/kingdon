@@ -68,7 +68,7 @@ A small selection of our items:
      - .. image:: docs/_static/pga2d_hypercube_on_string.png
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_hypercube_on_string.ipynb
 
-       **Best-seller**: Tesseract on a string!
+       Best-seller: Tesseract on a string!
      - .. image:: docs/_static/pga3d_points_and_lines.png
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=3DPGA%2Fex_3dpga_points_and_lines.ipynb
 
