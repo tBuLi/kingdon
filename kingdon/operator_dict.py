@@ -31,6 +31,13 @@ class OperatorDict(Mapping):
     codegen: Callable
     algebra: "Algebra"
     operator_dict: dict = field(default_factory=dict, init=False)
+    codegen_symbolcls: Callable = field(default=None)
+
+    def __post_init__(self):
+        if self.algebra.codegen_symbolcls and self.codegen_symbolcls is not str:
+            # If the user forces a different codegen_symbolcls then give them what they want,
+            # but not if this is a codegen optimized to work with strings.
+            self.codegen_symbolcls = self.algebra.codegen_symbolcls
 
     def __len__(self):
         return len(self.operator_dict)
@@ -38,8 +45,12 @@ class OperatorDict(Mapping):
     def __getitem__(self, keys_in: Tuple[Tuple[int]]):
         if keys_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
-            mvs = [self.algebra.multivector(name=name, keys=keys, symbolcls=self.algebra.codegen_symbolcls)
-                   for name, keys in zip(string.ascii_lowercase, keys_in)]
+            if self.codegen_symbolcls is str:
+                mvs = [MultiVector.fromkeysvalues(self.algebra, keys=keys, values=list(f'{name}{self.algebra.bin2canon[k][1:]}' for k in keys))
+                       for name, keys in zip(string.ascii_lowercase, keys_in)]
+            else:
+                mvs = [self.algebra.multivector(name=name, keys=keys, symbolcls=self.codegen_symbolcls)
+                       for name, keys in zip(string.ascii_lowercase, keys_in)]
             keys_out, func = do_codegen(self.codegen, *mvs)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
             self.operator_dict[keys_in] = (keys_out, func)
@@ -123,7 +134,10 @@ class UnaryOperatorDict(OperatorDict):
     """
     def __getitem__(self, keys_in: Tuple[Tuple[int]]):
         if keys_in not in self.operator_dict:
-            mv = self.algebra.multivector(name='a', keys=keys_in, symbolcls=self.algebra.codegen_symbolcls)
+            if self.codegen_symbolcls is str:
+                mv = MultiVector.fromkeysvalues(self.algebra, keys=keys_in, values=list(f'a{self.algebra.bin2canon[k][1:]}' for k in keys_in))
+            else:
+                mv = self.algebra.multivector(name='a', keys=keys_in, symbolcls=self.codegen_symbolcls)
             keys_out, func = do_codegen(self.codegen, mv)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
             self.operator_dict[keys_in] = (keys_out, func)
