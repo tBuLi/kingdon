@@ -351,7 +351,7 @@ def codegen_hitzer_inv(x, symbolic=False):
         num = combo * (x_combo - 2 * x_combo.grade(1, 4))
     else:
         raise NotImplementedError(f"Closed form inverses are not known in {d=} dimensions.")
-    denom = (x * num).e
+    denom = (x.sp(num)).e
 
     if symbolic:
         return Fraction(num, denom)

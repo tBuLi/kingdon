@@ -903,6 +903,79 @@ def test_nested_algebra_print():
     x = dalg2.multivector(e=x, e0=1)
     assert str(x ** 2) == "((x**2) + (2*x) 𝐞₀) + ((2*x) + 2 𝐞₀) 𝒇₀"
 
+def test_free_symbols():
+    alg = Algebra(3)
+    X = alg.multivector()
+    assert X.free_symbols == set()
+
+def test_swap_blades():
+    """
+    Test the _swap_blades function, which should place like-labels together
+    to find the number of swaps and the resulting blade.
+    """
+    from kingdon.algebra import _swap_blades
+
+    tests = [
+        {'input': ('1', '2', '12'), 'output': (0, '12', '')},
+        {'input': ('1', '2', '21'), 'output': (1, '21', '')},
+        {'input': ('123', '1', '23'), 'output': (2, '23', '1')},
+        {'input': ('123', '1', '32'), 'output': (3, '32', '1')},
+
+        {'input': ('23', '1', '123'), 'output': (2, '123', '')},
+
+        {'input': ('', ''), 'output': (0, '', '')},
+        {'input': ('', '2'), 'output': (0, '2', '')},
+        {'input': ('2', ''), 'output': (0, '2', '')},
+        {'input': ('21', '3'), 'output': (0, '213', '')},
+        {'input': ('21', '1'), 'output': (0, '2', '1')},
+        {'input': ('12', '1'), 'output': (1, '2', '1')},
+        {'input': ('1', '21'), 'output': (1, '2', '1')},
+        {'input': ('1', '12'), 'output': (0, '2', '1')},
+        {'input': ('321', '3'), 'output': (2, '21', '3')},
+        {'input': ('231', '3'), 'output': (1, '21', '3')},
+        {'input': ('213', '3'), 'output': (0, '21', '3')},
+        {'input': ('3', '321'), 'output': (0, '21', '3')},
+        {'input': ('3', '231'), 'output': (1, '21', '3')},
+        {'input': ('3', '213'), 'output': (2, '21', '3')},
+        {'input': ('31', '321'), 'output': (2, '2', '31')},
+        {'input': ('321', '31'), 'output': (2, '2', '31')},
+        {'input': ('123', '12'), 'output': (3, '3', '12')},
+    ]
+    for test in tests:
+        swaps, res_blade, eliminated = _swap_blades(*test['input'])
+        assert swaps == test['output'][0]
+        assert res_blade == test['output'][1]
+        assert eliminated == test['output'][2]
+
+def test_custom_basis():
+    basis = ["e","e1","e2","e3","e0","e01","e02","e03","e12","e31","e23","e032","e013","e021","e123","e0123"]
+    pga3d = Algebra.fromname('3DPGA')
+    assert pga3d.basis == basis
+    assert list(pga3d.canon2bin.keys()) == basis
+
+    e20, e0, e2 = pga3d.blades.e20, pga3d.blades.e0, pga3d.blades.e2
+    assert e20 * e2 == - e0
+
+    X = pga3d.multivector(e12=1)
+    assert X == pga3d.blades.e12
+    assert X == - pga3d.blades.e21
+    assert X.e21 == -1
+    assert X.e12 == 1
+
+    # Compare a mv in alg301 with pga3d and test if they are identical when we extract the coefficients.
+    alg301 = Algebra(3, 0, 1)
+    x = alg301.multivector(name='x')
+    X = pga3d.multivector(**{alg301.bin2canon[k]: v for k, v in x.items()})
+    assert all(getattr(x, blade) == getattr(X, blade) for blade in alg301.canon2bin)
+    assert all(getattr(x, blade) == getattr(X, blade) for blade in pga3d.canon2bin)
+
+    # Same, but now after performing a product.
+    y = alg301.multivector(name='y')
+    Y = pga3d.multivector(**{alg301.bin2canon[k]: v for k, v in y.items()})
+    xy, XY = x*y, X*Y
+    assert all(getattr(xy, blade) == getattr(XY, blade) for blade in alg301.canon2bin)
+    assert all(getattr(xy, blade) == getattr(XY, blade) for blade in pga3d.canon2bin)
+
 def test_apply_to_list():
     alg = Algebra(2, 0, 1)
     line1 = alg.vector(e1=-1, e2=1)  # the line "y - x = 0"

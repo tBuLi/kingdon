@@ -36,6 +36,12 @@ class MultiVector:
             :code:`MultiVector(alg, e12=1)`. Mutually exclusive with `values` and `keys`.
         """
         if items and keys is None and values is None:
+            for key in list(items.keys()):
+                if key not in algebra.canon2bin:
+                    target, swaps = algebra._blade2canon(key)
+                    if swaps % 2:
+                        items[target] = - items.pop(key)
+
             keys, values = zip(*((blade, items[blade]) for blade in algebra.canon2bin if blade in items))
             values = list(values)
 
@@ -311,13 +317,14 @@ class MultiVector:
             return 0  # Numpy does this to decide the output type.
         if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
             raise AttributeError(f'{self.__class__.__name__} object has no attribute or basis blade {basis_blade}')
+        basis_blade, swaps = self.algebra._blade2canon(basis_blade)
         if basis_blade not in self.algebra.canon2bin:
             return 0
         try:
             idx = self.keys().index(self.algebra.canon2bin[basis_blade])
         except ValueError:
             return 0
-        return self._values[idx]
+        return self._values[idx] if swaps % 2 == 0 else - self._values[idx]
 
     def __contains__(self, item):
         item = item if isinstance(item, int) else self.algebra.canon2bin[item]
@@ -327,8 +334,8 @@ class MultiVector:
         return bool(self.values())
 
     @cached_property
-    def free_symbols(self):
-        return reduce(operator.or_, (v.free_symbols for v in self.values() if hasattr(v, "free_symbols")))
+    def free_symbols(self) -> set:
+        return reduce(operator.or_, (v.free_symbols for v in self.values() if hasattr(v, "free_symbols")), set())
 
     def map(self, func) -> "MultiVector":
         """
@@ -555,7 +562,7 @@ class MultiVector:
                 sinhc = lambda x: np.sinc(x / np.pi)
 
         l = sqrt(ll)
-        return cosh(l) + sinhc(l) * self
+        return self * sinhc(l) + cosh(l)
 
     def polarity(self):
         return self.algebra.polarity(self)
