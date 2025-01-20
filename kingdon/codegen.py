@@ -555,7 +555,6 @@ def do_codegen(codegen, *mvs) -> CodegenOutput:
     :return: Instance of :class:`CodegenOutput`.
     """
     algebra = mvs[0].algebra
-    namespace = algebra.numspace
 
     res = codegen(*mvs)
 
