@@ -229,14 +229,15 @@ def codegen_rp(x, y):
     :return: tuple of keys in binary representation and a lambda function.
     """
     algebra = x.algebra
-    keyout_func = lambda tot, key_in: len(algebra) - 1 - (key_in ^ tot)
-    filter_func = lambda tt: len(algebra) - 1 == sum(tt.keys_in) - tt.key_out
+    key_pss = len(algebra) - 1
+    keyout_func = lambda kx, ky: key_pss - (kx ^ ky)
+    filter_func = lambda kx, ky, k_out: key_pss == kx + ky - k_out
     # Sign is composed of dualization of each blade, exterior product, and undual.
     sign_func = lambda pair: (
-        algebra.signs[pair[0], len(algebra) - 1 - pair[0]] *
-        algebra.signs[pair[1], len(algebra) - 1 - pair[1]] *
-        (-1)**algebra.swaps[len(algebra) - 1 - pair[0], len(algebra) - 1 - pair[1]] *
-        algebra.signs[len(algebra) - 1 - (pair[0] ^ pair[1]), pair[0] ^ pair[1]]
+        algebra.signs[pair[0], key_pss - pair[0]] *
+        algebra.signs[pair[1], key_pss - pair[1]] *
+        algebra.signs[key_pss - pair[0], key_pss - pair[1]] *
+        algebra.signs[key_pss - (pair[0] ^ pair[1]), pair[0] ^ pair[1]]
     )
 
     return codegen_product(

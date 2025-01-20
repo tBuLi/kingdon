@@ -128,7 +128,6 @@ class Algebra:
     simp_func: Callable = field(default=lambda v: v if not isinstance(v, sympy.Expr) else sympy.simplify(sympy.expand(v)), repr=False, compare=False)
 
     signs: dict = field(init=False, repr=False, compare=False)
-    cayley: dict = field(init=False, repr=False, compare=False)
     blades: "BladeDict" = field(init=False, repr=False, compare=False)
     pss: object = field(init=False, repr=False, compare=False)
 
@@ -177,7 +176,7 @@ class Algebra:
             return blade
         self._bin2canon_prettystr = {k: pretty_blade(v) for k, v in self.bin2canon.items()}
 
-        self.swaps, self.signs, self.cayley = self._prepare_signs_and_cayley()
+        self.signs = self._prepare_signs()
 
         # Blades are not precomputed for algebras larger than 6D.
         self.blades = BladeDict(algebra=self, lazy=self.d > 6)
@@ -263,36 +262,47 @@ class Algebra:
         """
         return [v.inv() for v in self.frame]
 
-    def _prepare_signs_and_cayley(self):
+    def _prepare_signs(self):
         r"""
-        Prepares two dicts whose keys are two basis-blades (in binary rep) and the result is either
-        just the sign (1, -1, 0) of the corresponding multiplication, or the full result.
-        The full result is essentially the Cayley table, if printed as a table.
+        Prepares a dict whose keys are a pair of basis-blades (in binary rep) and the
+        result is the sign (1, -1, 0) of the corresponding multiplication.
 
         E.g. in :math:`\mathbb{R}_2`, sings[(0b11, 0b11)] = -1.
         """
-        cayley = {}
-        signs = np.zeros((len(self), len(self)), dtype=int)
-        swaps_arr = np.zeros((len(self), len(self)), dtype=int)
+        signs = {}
 
-        for (eI, I), (eJ, J) in product(self.canon2bin.items(), repeat=2):
+        def _compute_sign(bin_pair, canon_pair=None):
+            I, J = bin_pair
+            if not canon_pair:
+                canon_pair = self.bin2canon[I], self.bin2canon[J]
+            eI, eJ = canon_pair
             # Compute the number of swaps of orthogonal vectors needed to order the basis vectors.
             swaps, prod, eliminated = _swap_blades(eI[1:], eJ[1:], self.bin2canon[I ^ J][1:])
-            swaps_arr[I, J] = swaps
 
             # Remove even powers of basis-vectors.
             sign = -1 if swaps % 2 else 1
             for key in eliminated:
                 sign *= self.signature[int(key, base=16) - self.start_index]
-            signs[I, J] = sign
+            return sign
 
-            # Make the Cayley table.
-            if sign:
+        if self.d > 6:
+            return DefaultKeyDict(_compute_sign)
+
+        for (eI, I), (eJ, J) in product(self.canon2bin.items(), repeat=2):
+            signs[I, J] = _compute_sign((I, J), (eI, eJ))
+
+        return signs
+
+    @cached_property
+    def cayley(self):
+        cayley = {}
+        for (eI, I), (eJ, J) in product(self.canon2bin.items(), repeat=2):
+            if sign := self.signs[I, J]:
                 sign = '-' if sign == -1 else ''
-                cayley[eI, eJ] = f'{sign}e{prod}'
+                cayley[eI, eJ] = f'{sign}{self.bin2canon[I ^ J]}'
             else:
                 cayley[eI, eJ] = f'0'
-        return swaps_arr, signs, cayley
+        return cayley
 
     def register(self, expr=None, /, *, name=None, symbolic=False):
         """
@@ -467,6 +477,26 @@ class Algebra:
             return canon_blade, swaps
         return f'e{2 ** self.d}', 0
 
+    def _swap_blades_bin(self, A: int, B: int):
+        """ Swap basis blades binary style. """
+        ab = A & B
+        res = A ^ B
+        if ab & ((1 << self.r) - 1):
+            return [0, 0]
+
+        t = A >> 1
+        t ^= t >> 1
+        t ^= t >> 2
+        t ^= t >> 4
+        t ^= t >> 8
+
+        t &= B
+        t ^= ab >> (self.p + self.r)
+        t ^= t >> 16
+        t ^= t >> 8
+        t ^= t >> 4
+        return [res, 1 - 2 * (27030 >> (t & 15) & 1)]
+
 
 def _swap_blades(blade1: str, blade2: str, target: str = '') -> (int, str, str):
     """
@@ -502,6 +532,19 @@ def _swap_blades(blade1: str, blade2: str, target: str = '') -> (int, str, str):
             swaps += idx - i
 
     return swaps, ''.join(blade1), ''.join(eliminated)
+
+
+class DefaultKeyDict(dict):
+    """
+    A lightweight dict subclass that behaves like a defaultdict
+    but calls the factory function with the key as argument.
+    """
+    def __init__(self, factory):
+        self.factory = factory
+
+    def __missing__(self, key):
+        res = self[key] = self.factory(key)
+        return res
 
 
 @dataclass
