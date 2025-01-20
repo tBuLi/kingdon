@@ -293,6 +293,13 @@ def test_hodge_dual(pga2d, pga3d):
     z = y.undual()
     assert z == x
 
+def test_polarity():
+    alg = Algebra(4, 1)
+    x = alg.multivector(name='x')
+    xdual = x.polarity()
+    assert not (xdual - x * alg.pss).values()
+    assert not (xdual.unpolarity() - x).values()
+
 def test_regressive(pga3d):
     """ Test the regressive product of full mvs in 3DPGA against the known result from GAmphetamine.js"""
     xvals = symbols(','.join(f'x{i}' for i in range(1, len(pga3d) + 1)))
