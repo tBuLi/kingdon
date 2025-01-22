@@ -74,23 +74,6 @@ def power_supply(x: "MultiVector", exponents: Tuple[int, ...], operation: Callab
         yield powers[step]
 
 
-class TermTuple(NamedTuple):
-    """
-    TermTuple represents a single monomial in a product of multivectors.
-
-    :param key_out: is the basis blade to which this monomial belongs.
-    :param keys_in: are the input basis blades in this monomial.
-    :param sign: Sign of the monomial.
-    :param values_in: Input values. Typically, tuple of :class:`sympy.core.symbol.Symbol`.
-    :param termstr: The string representation of this monomial, e.g. '-x*y'.
-    """
-    key_out: int
-    keys_in: Tuple[int]
-    sign: int
-    values_in: Tuple["sympy.core.symbol.Symbol"]
-    termstr: str
-
-
 class CodegenOutput(NamedTuple):
     """
     Output of a codegen function.
@@ -101,19 +84,6 @@ class CodegenOutput(NamedTuple):
     """
     keys_out: Tuple[int]
     func: Callable
-
-
-def term_tuple(items, sign_func, keyout_func=operator.xor):
-    """
-    Create a single term in a multivector product between the basis blades present in `items`.
-    """
-    keys_in, values_in = zip(*items)
-    sign = sign_func(keys_in)
-    if not sign:
-        return TermTuple(key_out=0, keys_in=keys_in, sign=sign, values_in=values_in, termstr='')
-    key_out = keyout_func(*keys_in)
-    return TermTuple(key_out, keys_in, sign, values_in,
-                     f'{"+" if sign > 0 else "-"}{"*".join(str(v) for v in values_in)}')
 
 
 def codegen_product(x, y, filter_func=None, sign_func=None, keyout_func=operator.xor):
@@ -128,23 +98,19 @@ def codegen_product(x, y, filter_func=None, sign_func=None, keyout_func=operator
         for metric dependent products. Input: 2-tuple of blade indices, e.g. (ei, ej).
     :param keyout_func:
     """
-    algebra = x.algebra
-    if sign_func is None:
-        sign_func = lambda pair: algebra.signs[pair]
+    sign_func = sign_func or (lambda pair: x.algebra.signs[pair])
 
-    # If sign == 0, then the term should be disregarded since it is zero
-    terms = filter(lambda tt: tt.sign, (term_tuple(items, sign_func, keyout_func=keyout_func)
-                                        for items in product(x.items(), y.items())))
-    if filter_func is not None:
-        terms = filter(filter_func, terms)
-
-    res = defaultdict(str)
-    for term in terms:
-        if term.key_out in res:
-            res[term.key_out] += term.termstr
-        else:
-            res[term.key_out] = term.termstr[1:] if term.termstr[0] == '+' else term.termstr
-    return dict(sorted(res.items()))
+    res = {}
+    for (kx, vx), (ky, vy) in product(x.items(), y.items()):
+        if (sign := sign_func((kx, ky))):
+            key_out = keyout_func(kx, ky)
+            if filter_func and not filter_func(kx, ky, key_out): continue
+            termstr = f'{"+" if sign > 0 else "-"}{vx}*{vy}'
+            if key_out in res:
+                res[key_out] += termstr
+            else:
+                res[key_out] = termstr[1:] if termstr[0] == '+' else termstr
+    return res
 
 
 def codegen_gp(x, y):
@@ -175,7 +141,7 @@ def codegen_cp(x, y):
     :return: tuple of keys in binary representation and a lambda function.
     """
     algebra = x.algebra
-    filter_func = lambda tt: (algebra.signs[tt.keys_in] - algebra.signs[tt.keys_in[::-1]])
+    filter_func = lambda kx, ky, k_out: (algebra.signs[kx, ky] - algebra.signs[ky, kx])
     return codegen_product(x, y, filter_func=filter_func)
 
 
@@ -186,7 +152,7 @@ def codegen_acp(x, y):
     :return: tuple of keys in binary representation and a lambda function.
     """
     algebra = x.algebra
-    filter_func = lambda tt: (algebra.signs[tt.keys_in] + algebra.signs[tt.keys_in[::-1]])
+    filter_func = lambda kx, ky, k_out: (algebra.signs[kx, ky] + algebra.signs[ky, kx])
     return codegen_product(x, y, filter_func=filter_func)
 
 
@@ -199,8 +165,7 @@ def codegen_ip(x, y, diff_func=abs):
         function generates left-contraction, and when :code:`lambda x: x`, right-contraction.
     :return: tuple of keys in binary representation and a lambda function.
     """
-    algebra = x.algebra
-    filter_func = lambda tt: tt.key_out == diff_func(tt.keys_in[0] - tt.keys_in[1])
+    filter_func = lambda kx, ky, k_out: k_out == diff_func(kx - ky)
     return codegen_product(x, y, filter_func=filter_func)
 
 
@@ -250,9 +215,8 @@ def codegen_op(x, y):
         and values which are a 3-tuple of indices in `x`, indices in `y`, and a lambda function.
     """
     algebra = x.algebra
-    filter_func = lambda tt: tt.key_out == sum(tt.keys_in)
-    sign_func = lambda pair: (-1)**algebra.swaps[pair]
-    return codegen_product(x, y, filter_func=filter_func, sign_func=sign_func)
+    filter_func = lambda kx, ky, k_out: k_out == kx + ky
+    return codegen_product(x, y, filter_func=filter_func)
 
 
 def codegen_rp(x, y):
@@ -265,14 +229,15 @@ def codegen_rp(x, y):
     :return: tuple of keys in binary representation and a lambda function.
     """
     algebra = x.algebra
-    keyout_func = lambda tot, key_in: len(algebra) - 1 - (key_in ^ tot)
-    filter_func = lambda tt: len(algebra) - 1 == sum(tt.keys_in) - tt.key_out
+    key_pss = len(algebra) - 1
+    keyout_func = lambda kx, ky: key_pss - (kx ^ ky)
+    filter_func = lambda kx, ky, k_out: key_pss == kx + ky - k_out
     # Sign is composed of dualization of each blade, exterior product, and undual.
     sign_func = lambda pair: (
-        algebra.signs[pair[0], len(algebra) - 1 - pair[0]] *
-        algebra.signs[pair[1], len(algebra) - 1 - pair[1]] *
-        (-1)**algebra.swaps[len(algebra) - 1 - pair[0], len(algebra) - 1 - pair[1]] *
-        algebra.signs[len(algebra) - 1 - (pair[0] ^ pair[1]), pair[0] ^ pair[1]]
+        algebra.signs[pair[0], key_pss - pair[0]] *
+        algebra.signs[pair[1], key_pss - pair[1]] *
+        algebra.signs[key_pss - pair[0], key_pss - pair[1]] *
+        algebra.signs[key_pss - (pair[0] ^ pair[1]), pair[0] ^ pair[1]]
     )
 
     return codegen_product(
@@ -465,7 +430,7 @@ def codegen_add(x, y):
     vals = dict(x.items())
     for k, v in y.items():
         if k in vals:
-            vals[k] = vals[k] + v
+            vals[k] = f'{vals[k]}+{v}'
         else:
             vals[k] = v
     return vals
@@ -475,13 +440,13 @@ def codegen_sub(x, y):
     vals = dict(x.items())
     for k, v in y.items():
         if k in vals:
-            vals[k] = vals[k] - v
+            vals[k] = f'{vals[k]}-{v}'
         else:
-            vals[k] = -v
+            vals[k] = '-'+v
     return vals
 
 def codegen_neg(x):
-    return {k: -v for k, v in x.items()}
+    return {k: '-'+v for k, v in x.items()}
 
 
 def codegen_involutions(x, invert_grades=(2, 3)):
@@ -491,7 +456,7 @@ def codegen_involutions(x, invert_grades=(2, 3)):
 
     :param invert_grades: The grades that flip sign under this involution mod 4, e.g. (2, 3) for reversion.
     """
-    return {k: -v if bin(k).count('1') % 4 in invert_grades else v
+    return {k: '-'+v if bin(k).count('1') % 4 in invert_grades else v
             for k, v in x.items()}
 
 
@@ -546,11 +511,12 @@ def codegen_sqrt(x):
 def codegen_polarity(x, undual=False):
     if undual:
         return x * x.algebra.pss
-    sign = x.algebra.signs[-1, -1]
+    key_pss = len(x.algebra) - 1
+    sign = x.algebra.signs[key_pss, key_pss]
+    if sign == -1:
+        return - x * x.algebra.pss
     if sign == 1:
         return x * x.algebra.pss
-    if sign == -1:
-        return x * (-x.algebra.pss)
     if sign == 0:
         raise ZeroDivisionError
 
@@ -561,14 +527,10 @@ def codegen_unpolarity(x):
 
 def codegen_hodge(x, undual=False):
     if undual:
-        return x.algebra.multivector(
-            {len(x.algebra) - 1 - eI: x.algebra.signs[len(x.algebra) - 1 - eI, eI] * val
-             for eI, val in x.items()}
-        )
-    return x.algebra.multivector(
-        {len(x.algebra) - 1 - eI: x.algebra.signs[eI, len(x.algebra) - 1 - eI] * val
-         for eI, val in x.items()}
-    )
+        return {(key_dual := len(x.algebra) - 1 - eI): f'-{v}' if x.algebra.signs[key_dual, eI] < 0 else v
+                for eI, v in x.items()}
+    return {(key_dual := len(x.algebra) - 1 - eI): f'-{v}' if x.algebra.signs[eI, key_dual] < 0 else v
+            for eI, v in x.items()}
 
 
 def codegen_unhodge(x):
@@ -593,7 +555,6 @@ def do_codegen(codegen, *mvs) -> CodegenOutput:
     :return: Instance of :class:`CodegenOutput`.
     """
     algebra = mvs[0].algebra
-    namespace = algebra.numspace
 
     res = codegen(*mvs)
 

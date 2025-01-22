@@ -9,6 +9,7 @@ import re
 from sympy import Expr, Symbol, sympify, sinc, cos
 
 from kingdon.codegen import _lambdify_mv
+from kingdon.polynomial import RationalPolynomial
 
 
 @dataclass(init=False)
@@ -83,7 +84,7 @@ class MultiVector:
             keys = tuple(key if key in algebra.bin2canon else algebra.canon2bin[key]
                          for key in keys)
 
-        if any(isinstance(v, str) for v in values):
+        if symbolcls is not str and any(isinstance(v, str) for v in values):
             values = list(val if not isinstance(val, str) else sympify(val)
                           for val in values)
 
@@ -180,10 +181,11 @@ class MultiVector:
     @cached_property
     def issymbolic(self):
         """ True if this mv contains Symbols, False otherwise. """
-        # Allowed symbol classes. codegen_symbolcls might refer to a constructor (method): get the class instead.
-        symbol_classes = (Expr, self.algebra.codegen_symbolcls.__self__
-                                if hasattr(self.algebra.codegen_symbolcls, '__self__')
-                                else self.algebra.codegen_symbolcls)
+        symbol_classes = (Expr, RationalPolynomial)
+        if self.algebra.codegen_symbolcls:
+            # Allowed symbol classes. codegen_symbolcls might refer to a constructor (method): get the class instead.
+            symbolcls = self.algebra.codegen_symbolcls
+            symbol_classes = (*symbol_classes, symbolcls.__self__ if hasattr(symbolcls, '__self__') else symbolcls)
         return any(isinstance(v, symbol_classes) for v in self.values())
 
     def neg(self):
@@ -579,9 +581,9 @@ class MultiVector:
     def dual(self, kind='auto'):
         """
         Compute the dual of `self`. There are three different kinds of duality in common usage.
-        The first is polarity, which is simply multiplying by the inverse PSS. This is the only game in town for
-        non-degenerate metrics (Algebra.r = 0). However, for degenerate spaces this no longer works, and we have
-        two popular options: Poincaré and Hodge duality.
+        The first is polarity, which is simply multiplying by the inverse PSS from the right. This is the only game in
+        town for non-degenerate metrics (Algebra.r = 0). However, for degenerate spaces this no longer works, and we
+        have two popular options: Poincaré and Hodge duality.
 
         By default, :code:`kingdon` will use polarity in non-degenerate spaces, and Hodge duality for spaces with
         `Algebra.r = 1`. For spaces with `r > 2`, little to no literature exists, and you are on your own.
