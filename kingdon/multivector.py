@@ -581,9 +581,9 @@ class MultiVector:
     def dual(self, kind='auto'):
         """
         Compute the dual of `self`. There are three different kinds of duality in common usage.
-        The first is polarity, which is simply multiplying by the inverse PSS. This is the only game in town for
-        non-degenerate metrics (Algebra.r = 0). However, for degenerate spaces this no longer works, and we have
-        two popular options: Poincaré and Hodge duality.
+        The first is polarity, which is simply multiplying by the inverse PSS from the right. This is the only game in
+        town for non-degenerate metrics (Algebra.r = 0). However, for degenerate spaces this no longer works, and we
+        have two popular options: Poincaré and Hodge duality.
 
         By default, :code:`kingdon` will use polarity in non-degenerate spaces, and Hodge duality for spaces with
         `Algebra.r = 1`. For spaces with `r > 2`, little to no literature exists, and you are on your own.

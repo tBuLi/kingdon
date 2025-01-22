@@ -297,7 +297,7 @@ def test_polarity():
     alg = Algebra(4, 1)
     x = alg.multivector(name='x')
     xdual = x.polarity()
-    assert not (xdual - x * alg.pss).values()
+    assert not (xdual - x * alg.pss.inv()).values()
     assert not (xdual.unpolarity() - x).values()
 
 def test_regressive(pga3d):

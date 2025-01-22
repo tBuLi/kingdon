@@ -514,9 +514,9 @@ def codegen_polarity(x, undual=False):
     key_pss = len(x.algebra) - 1
     sign = x.algebra.signs[key_pss, key_pss]
     if sign == -1:
-        return x * x.algebra.pss
+        return - x * x.algebra.pss
     if sign == 1:
-        return x * (-x.algebra.pss)
+        return x * x.algebra.pss
     if sign == 0:
         raise ZeroDivisionError
 
