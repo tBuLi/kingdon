@@ -17,6 +17,31 @@ from sympy.utilities.iterables import iterable, flatten
 from sympy.printing.lambdarepr import LambdaPrinter
 
 
+class mathstr(str):
+    """ Lightweight subclass that overlands maths operators to form expressions. """
+    def __add__(self, other: str):
+        if other[0] == '-':
+            return self.__class__(f'{self}{other}')
+        return self.__class__(f'{self}+{other}')
+
+    def __sub__(self, other: str):
+        if other[0] == '-':
+            return self.__class__(f'{self}+{other[1:]}')
+        return self.__class__(f'{self}-{other}')
+
+    def __neg__(self):
+        if self[0] == '-':
+            return self.__class__(self[1:])
+        return self.__class__('-'+self)
+
+    def __mul__(self, other):
+        if other[0] != '-':
+            return self.__class__(f'{self}*{other}')
+        elif self[0] == '-':
+            return self.__class__(f'{self[1:]}*{other[1:]}')
+        return self.__class__(f'-{self}*{other[1:]}')
+
+
 @dataclass
 class AdditionChains:
     limit: int
@@ -105,11 +130,11 @@ def codegen_product(x, y, filter_func=None, sign_func=None, keyout_func=operator
         if (sign := sign_func((kx, ky))):
             key_out = keyout_func(kx, ky)
             if filter_func and not filter_func(kx, ky, key_out): continue
-            termstr = f'{"+" if sign > 0 else "-"}{vx}*{vy}'
+            termstr = vx * vy if sign > 0 else (- vx * vy)
             if key_out in res:
                 res[key_out] += termstr
             else:
-                res[key_out] = termstr[1:] if termstr[0] == '+' else termstr
+                res[key_out] = termstr
     return res
 
 
@@ -273,7 +298,7 @@ def codegen_inv(y, x=None, symbolic=False):
     if symbolic:
         return Fraction(num, denom)
 
-    d = alg.scalar(name='d', symbolcls=alg.codegen_symbolcls)
+    d = alg.scalar(name='d', symbolcls=alg.div.codegen_symbolcls)
     denom_inv = alg.scalar([1 / denom])
     yinv = num * d.e  #TODO: this multiply is too gready, would be better if it didnt distribute, & reinstate CSE
 
@@ -363,7 +388,7 @@ def codegen_div(x, y):
     num, denom = codegen_inv(y, x, symbolic=True)
     if not denom:
         raise ZeroDivisionError
-    d = alg.scalar(name='d', symbolcls=alg.codegen_symbolcls)
+    d = alg.scalar(name='d', symbolcls=alg.div.codegen_symbolcls)
     denom_inv = alg.scalar([1 / denom])
     res = num * d.e
 
@@ -430,7 +455,7 @@ def codegen_add(x, y):
     vals = dict(x.items())
     for k, v in y.items():
         if k in vals:
-            vals[k] = f'{vals[k]}+{v}'
+            vals[k] = vals[k] + v
         else:
             vals[k] = v
     return vals
@@ -440,13 +465,13 @@ def codegen_sub(x, y):
     vals = dict(x.items())
     for k, v in y.items():
         if k in vals:
-            vals[k] = f'{vals[k]}-{v}'
+            vals[k] = vals[k] - v
         else:
-            vals[k] = '-'+v
+            vals[k] = -v
     return vals
 
 def codegen_neg(x):
-    return {k: '-'+v for k, v in x.items()}
+    return {k: -v for k, v in x.items()}
 
 
 def codegen_involutions(x, invert_grades=(2, 3)):
@@ -456,7 +481,7 @@ def codegen_involutions(x, invert_grades=(2, 3)):
 
     :param invert_grades: The grades that flip sign under this involution mod 4, e.g. (2, 3) for reversion.
     """
-    return {k: '-'+v if bin(k).count('1') % 4 in invert_grades else v
+    return {k: -v if bin(k).count('1') % 4 in invert_grades else v
             for k, v in x.items()}
 
 
@@ -527,9 +552,9 @@ def codegen_unpolarity(x):
 
 def codegen_hodge(x, undual=False):
     if undual:
-        return {(key_dual := len(x.algebra) - 1 - eI): f'-{v}' if x.algebra.signs[key_dual, eI] < 0 else v
+        return {(key_dual := len(x.algebra) - 1 - eI): -v if x.algebra.signs[key_dual, eI] < 0 else v
                 for eI, v in x.items()}
-    return {(key_dual := len(x.algebra) - 1 - eI): f'-{v}' if x.algebra.signs[eI, key_dual] < 0 else v
+    return {(key_dual := len(x.algebra) - 1 - eI): -v if x.algebra.signs[eI, key_dual] < 0 else v
             for eI, v in x.items()}
 
 
