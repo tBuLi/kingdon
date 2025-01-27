@@ -99,6 +99,16 @@ as values for the multivector:
     >>> x.normsq()
     1
 
+.. note::
+    Strings are also automatically converted to symbolics with SymPy.
+    So :code:`x` from the example above can also be created as
+
+    .. code-block::
+
+        >>> x = alg.multivector(e='cos(t)', e12='sin(t)')
+        >>> x.normsq()
+        1
+
 More control over basisvectors
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -302,27 +312,16 @@ The strings can be simple labels, or valid SVG syntax.
 
 Performance Tips
 ----------------
-Because :code:`kingdon` attempts to symbolically optimize expressions
-using :mod:`sympy` the first time they are called, the first call to any operation is comparatively slow,
-whereas subsequent calls have very good performance.
+Because :code:`kingdon` attempts to symbolically optimize expressions the first time they are called, the first
+call to any operation is comparatively slow, whereas subsequent calls have very good performance.
 
 There are however several things to be aware of to ensure good performance.
 
-Graded
-~~~~~~
-The first time :code:`kingdon` is asked to perform an operation it hasn't seen before, it performs code generation
-for that particular request. Because codegen is the most expensive step, it is beneficial to reduce the number of
-times it is needed. An easy way to achieve this is to initiate the :class:`~kingdon.algebra.Algebra` with `graded=True`.
-This enforces that :code:`kingdon` does not specialize codegen down to the individual basis blades, but rather only
-per grade. This means there are far less combinations that have to be considered and generated.
-
-Numba JIT
-~~~~~~~~~
-We can enable numba just-in-time compilation by initiating an :class:`~kingdon.algebra.Algebra` with `wrapper=numba.njit`.
-This comes with a significant cost the first time any operator is called, but subsequent calls to the same operator are
-significantly faster. It is worth mentioning that when dealing with :ref:`Numerical Multivectors` over numpy arrays,
-the benefit of using `numba` actually reduces rapidly as the numpy arrays become larger, since then most of the time
-is spend in numpy routines anyway.
+Broadcasting
+~~~~~~~~~~~~
+Avoid arrays of multivectors, and use multivectors over e.g. :code:`numpy` arrays or :code:`PyTorch`
+tensors instead, as shown in the numerical section.
+This ensures the high level overhead of kingdon is paid only once.
 
 Register Expressions
 ~~~~~~~~~~~~~~~~~~~~
@@ -344,3 +343,21 @@ decorator.
 Calling the decorated :code:`myfunc` has the benefit that all the numerical computation is done in one single call,
 instead of doing each binary operation individually. This has the benefit that all the (expensive) python boilerplate
 code is called only once.
+Moreover, one can use :code:`@alg.register(symbolic=True)`
+
+Graded
+~~~~~~
+The first time :code:`kingdon` is asked to perform an operation it hasn't seen before, it performs code generation
+for that particular request. Because codegen is the most expensive step, it can be beneficial to reduce the number of
+times it is needed. An easy way to achieve this is to initiate the :class:`~kingdon.algebra.Algebra` with `graded=True`.
+This enforces that :code:`kingdon` does not specialize codegen down to the individual basis blades, but rather only
+per grade. This means there are far less combinations that have to be considered and generated.
+
+Numba JIT
+~~~~~~~~~
+We can enable numba just-in-time compilation by initiating an :class:`~kingdon.algebra.Algebra` with `wrapper=numba.njit`.
+This comes with a significant cost the first time any operator is called, but subsequent calls to the same operator are
+significantly faster. It is worth mentioning that when dealing with :ref:`Numerical Multivectors` over numpy arrays,
+the benefit of using `numba` actually disappears rapidly as the numpy arrays become larger, since then most of the time
+is spend in numpy routines anyway.
+So you need to experiment carefully if numba is right for you.
