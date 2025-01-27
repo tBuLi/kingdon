@@ -8,6 +8,7 @@ from sympy import Symbol, Expr, simplify
 from kingdon.multivector import MultiVector
 from kingdon.codegen import do_codegen, do_compile
 from kingdon.taperecorder import TapeRecorder
+from kingdon.polynomial import RationalPolynomial
 
 
 class AlgebraError(Exception):
@@ -31,12 +32,11 @@ class OperatorDict(Mapping):
     codegen: Callable
     algebra: "Algebra"
     operator_dict: dict = field(default_factory=dict, init=False)
-    codegen_symbolcls: Callable = field(default=None)
+    codegen_symbolcls: Callable = field(default=RationalPolynomial.fromname, repr=False)
 
     def __post_init__(self):
-        if self.algebra.codegen_symbolcls and self.codegen_symbolcls is not str:
-            # If the user forces a different codegen_symbolcls then give them what they want,
-            # but not if this is a codegen optimized to work with strings.
+        if self.algebra.codegen_symbolcls is not None:
+            # If the user forces a different codegen_symbolcls then give them what they want.
             self.codegen_symbolcls = self.algebra.codegen_symbolcls
 
     def __len__(self):
@@ -45,12 +45,8 @@ class OperatorDict(Mapping):
     def __getitem__(self, keys_in: Tuple[Tuple[int]]):
         if keys_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
-            if self.codegen_symbolcls is str:
-                mvs = [MultiVector.fromkeysvalues(self.algebra, keys=keys, values=list(f'{name}{self.algebra.bin2canon[k][1:]}' for k in keys))
-                       for name, keys in zip(string.ascii_lowercase, keys_in)]
-            else:
-                mvs = [self.algebra.multivector(name=name, keys=keys, symbolcls=self.codegen_symbolcls)
-                       for name, keys in zip(string.ascii_lowercase, keys_in)]
+            mvs = [self.algebra.multivector(name=name, keys=keys, symbolcls=self.codegen_symbolcls)
+                   for name, keys in zip(string.ascii_lowercase, keys_in)]
             keys_out, func = do_codegen(self.codegen, *mvs)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
             self.operator_dict[keys_in] = (keys_out, func)
@@ -134,10 +130,7 @@ class UnaryOperatorDict(OperatorDict):
     """
     def __getitem__(self, keys_in: Tuple[Tuple[int]]):
         if keys_in not in self.operator_dict:
-            if self.codegen_symbolcls is str:
-                mv = MultiVector.fromkeysvalues(self.algebra, keys=keys_in, values=list(f'a{self.algebra.bin2canon[k][1:]}' for k in keys_in))
-            else:
-                mv = self.algebra.multivector(name='a', keys=keys_in, symbolcls=self.codegen_symbolcls)
+            mv = self.algebra.multivector(name='a', keys=keys_in, symbolcls=self.codegen_symbolcls)
             keys_out, func = do_codegen(self.codegen, mv)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
             self.operator_dict[keys_in] = (keys_out, func)

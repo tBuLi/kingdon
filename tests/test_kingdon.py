@@ -362,9 +362,10 @@ def test_inv_div(pga2d):
     assert res.e == 1
 
 def test_hitzer_inv():
-    for d in range(5): # The d=5 case is excluded becuase the test it too slow.
+    from kingdon.polynomial import RationalPolynomial
+    for d in range(5): # The d=5 case is excluded becuase the test is too slow.
         alg = Algebra(d)
-        x = alg.multivector(name='x', symbolcls=alg.codegen_symbolcls)
+        x = alg.multivector(name='x', symbolcls=RationalPolynomial.fromname)
         assert x * x.inv() == alg.blades.e
 
 

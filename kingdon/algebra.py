@@ -24,12 +24,12 @@ from kingdon.codegen import (
     codegen_rc, codegen_normsq, codegen_add, codegen_neg, codegen_reverse,
     codegen_involute, codegen_conjugate, codegen_sub, codegen_sqrt,
     codegen_outerexp, codegen_outersin, codegen_outercos, codegen_outertan,
-    codegen_polarity, codegen_unpolarity, codegen_hodge, codegen_unhodge
+    codegen_polarity, codegen_unpolarity, codegen_hodge, codegen_unhodge,
+    mathstr
 )
 from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry
 from kingdon.matrixreps import matrix_rep
 from kingdon.multivector import MultiVector
-from kingdon.polynomial import RationalPolynomial
 from kingdon.graph import GraphWidget
 
 operation_field = partial(field, default_factory=dict, init=False, repr=False, compare=False)
@@ -76,31 +76,31 @@ class Algebra:
     basis: List[str] = field(repr=False, default_factory=list)
 
     # Clever dictionaries that cache previously symbolically optimized lambda functions between elements.
-    gp: OperatorDict = operation_field(metadata={'codegen': codegen_gp, 'codegen_symbolcls': str})  # geometric product
+    gp: OperatorDict = operation_field(metadata={'codegen': codegen_gp, 'codegen_symbolcls': mathstr})  # geometric product
     sw: OperatorDict = operation_field(metadata={'codegen': codegen_sw})  # conjugation
-    cp: OperatorDict = operation_field(metadata={'codegen': codegen_cp, 'codegen_symbolcls': str})  # commutator product
-    acp: OperatorDict = operation_field(metadata={'codegen': codegen_acp, 'codegen_symbolcls': str})  # anti-commutator product
-    ip: OperatorDict = operation_field(metadata={'codegen': codegen_ip, 'codegen_symbolcls': str})  # inner product
-    sp: OperatorDict = operation_field(metadata={'codegen': codegen_sp, 'codegen_symbolcls': str})  # Scalar product
-    lc: OperatorDict = operation_field(metadata={'codegen': codegen_lc, 'codegen_symbolcls': str})  # left-contraction
-    rc: OperatorDict = operation_field(metadata={'codegen': codegen_rc, 'codegen_symbolcls': str})  # right-contraction
-    op: OperatorDict = operation_field(metadata={'codegen': codegen_op, 'codegen_symbolcls': str})  # exterior product
-    rp: OperatorDict = operation_field(metadata={'codegen': codegen_rp, 'codegen_symbolcls': str})  # regressive product
+    cp: OperatorDict = operation_field(metadata={'codegen': codegen_cp, 'codegen_symbolcls': mathstr})  # commutator product
+    acp: OperatorDict = operation_field(metadata={'codegen': codegen_acp, 'codegen_symbolcls': mathstr})  # anti-commutator product
+    ip: OperatorDict = operation_field(metadata={'codegen': codegen_ip, 'codegen_symbolcls': mathstr})  # inner product
+    sp: OperatorDict = operation_field(metadata={'codegen': codegen_sp, 'codegen_symbolcls': mathstr})  # Scalar product
+    lc: OperatorDict = operation_field(metadata={'codegen': codegen_lc, 'codegen_symbolcls': mathstr})  # left-contraction
+    rc: OperatorDict = operation_field(metadata={'codegen': codegen_rc, 'codegen_symbolcls': mathstr})  # right-contraction
+    op: OperatorDict = operation_field(metadata={'codegen': codegen_op, 'codegen_symbolcls': mathstr})  # exterior product
+    rp: OperatorDict = operation_field(metadata={'codegen': codegen_rp, 'codegen_symbolcls': mathstr})  # regressive product
     proj: OperatorDict = operation_field(metadata={'codegen': codegen_proj})  # projection
-    add: OperatorDict = operation_field(metadata={'codegen': codegen_add, 'codegen_symbolcls': str})  # add
-    sub: OperatorDict = operation_field(metadata={'codegen': codegen_sub, 'codegen_symbolcls': str})  # sub
+    add: OperatorDict = operation_field(metadata={'codegen': codegen_add, 'codegen_symbolcls': mathstr})  # add
+    sub: OperatorDict = operation_field(metadata={'codegen': codegen_sub, 'codegen_symbolcls': mathstr})  # sub
     div: OperatorDict = operation_field(metadata={'codegen': codegen_div})  # division
     # Unary operators
     inv: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_inv})  # inverse
-    neg: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_neg, 'codegen_symbolcls': str})  # negate
-    reverse: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_reverse, 'codegen_symbolcls': str})  # reverse
-    involute: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_involute, 'codegen_symbolcls': str})  # grade involution
-    conjugate: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_conjugate, 'codegen_symbolcls': str})  # clifford conjugate
+    neg: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_neg, 'codegen_symbolcls': mathstr})  # negate
+    reverse: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_reverse, 'codegen_symbolcls': mathstr})  # reverse
+    involute: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_involute, 'codegen_symbolcls': mathstr})  # grade involution
+    conjugate: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_conjugate, 'codegen_symbolcls': mathstr})  # clifford conjugate
     sqrt: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_sqrt})  # Square root
     polarity: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_polarity})
     unpolarity: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_unpolarity})
-    hodge: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_hodge, 'codegen_symbolcls': str})
-    unhodge: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_unhodge, 'codegen_symbolcls': str})
+    hodge: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_hodge, 'codegen_symbolcls': mathstr})
+    unhodge: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_unhodge, 'codegen_symbolcls': mathstr})
     normsq: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_normsq})  # norm squared
     outerexp: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outerexp})
     outersin: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outersin})
@@ -123,7 +123,7 @@ class Algebra:
     # Wrapper function applied to the codegen generated functions.
     wrapper: Callable = field(default=None, repr=False, compare=False)
     # The symbol class used in codegen. By default, use our own fast RationalPolynomial class.
-    codegen_symbolcls: object = field(default=RationalPolynomial.fromname, repr=False, compare=False)
+    codegen_symbolcls: object = field(default=None, repr=False, compare=False)
     # This simplify func is applied to every component after a symbolic expression is called, to simplify and filter by.
     simp_func: Callable = field(default=lambda v: v if not isinstance(v, sympy.Expr) else sympy.simplify(sympy.expand(v)), repr=False, compare=False)
 
