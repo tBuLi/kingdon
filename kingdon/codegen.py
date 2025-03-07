@@ -18,7 +18,7 @@ from sympy.printing.lambdarepr import LambdaPrinter
 
 
 class mathstr(str):
-    """ Lightweight subclass that overlands maths operators to form expressions. """
+    """ Lightweight subclass that overloads maths operators to form expressions. """
     def __add__(self, other: str):
         if other[0] == '-':
             return self.__class__(f'{self}{other}')
