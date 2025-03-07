@@ -84,7 +84,7 @@ class MultiVector:
             keys = tuple(key if key in algebra.bin2canon else algebra.canon2bin[key]
                          for key in keys)
 
-        if symbolcls is Symbol and any(isinstance(v, str) for v in values):
+        if isinstance(symbolcls, Symbol) and any(isinstance(v, str) for v in values):
             values = list(val if not isinstance(val, str) else sympify(val)
                           for val in values)
 

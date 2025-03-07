@@ -34,7 +34,7 @@ class mathstr(str):
             return self.__class__(self[1:])
         return self.__class__('-'+self)
 
-    def __mul__(self, other):
+    def __mul__(self, other: str):
         if other[0] != '-':
             return self.__class__(f'{self}*{other}')
         elif self[0] == '-':

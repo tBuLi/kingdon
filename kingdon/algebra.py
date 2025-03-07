@@ -295,6 +295,7 @@ class Algebra:
 
     @cached_property
     def cayley(self):
+        """ Cayley table of the algebra. """
         cayley = {}
         for (eI, I), (eJ, J) in product(self.canon2bin.items(), repeat=2):
             if sign := self.signs[I, J]:
@@ -478,7 +479,10 @@ class Algebra:
         return f'e{2 ** self.d}', 0
 
     def _swap_blades_bin(self, A: int, B: int):
-        """ Swap basis blades binary style. """
+        """
+        Swap basis blades binary style. Not currently used because (suprinsingly) this does not
+        seem to be faster than the string manipulation version.
+        """
         ab = A & B
         res = A ^ B
         if ab & ((1 << self.r) - 1):
