@@ -67,3 +67,10 @@ Bugfixes to ganja.js integration:
 * Binary operators are now broadcasted across lists and tuples, e.g. `R >> [point1, point2]`.
 * Projection (@) and conjugation (>>) are now symbolically optimized by default.
 * Matrix reps made with `expr_as_matrix` now have better support for numerical (and multidimensional) multivectors.
+
+1.3.0 (2025-03-10)
+------------------
+* Added custom basis support! You can now choose your own basis, to reduce the number of sign swaps. E.g. `e31` instead of `e13` for the j quaternion.
+* Added `Algebra.fromname` alternative constructor, to initiate popular algebras with optimized bases, identical to `GAmphetamine.js`.
+* Codegen has been made 2-15 times faster for basic operators.
+* Updated the documentation.
