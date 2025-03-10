@@ -2,7 +2,7 @@
 
 __author__ = """Martin Roelfs"""
 __email__ = 'martinroelfs@yahoo.com'
-__version__ = '1.1.2'
+__version__ = '1.2.0'
 
 from sympy import symbols
 
