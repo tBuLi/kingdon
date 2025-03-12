@@ -68,17 +68,17 @@ class TapeRecorder:
     def binary_operator(self, other, operator: str):
         if not isinstance(other, self.__class__):
             # Assume scalar
-            keys_out, func = getattr(self.algebra, operator)[self.keys(), (0,)]
+            type_number_out, func = getattr(self.algebra, operator)[self.type_number, 1]
             expr = f'{func.__name__}({self.expr}, ({other},))'
         else:
-            keys_out, func = getattr(self.algebra, operator)[self.keys(), other.keys()]
+            type_number_out, func = getattr(self.algebra, operator)[self.type_number, other.type_number]
             expr = f'{func.__name__}({self.expr}, {other.expr})'
-        return self.__class__(algebra=self.algebra, expr=expr, keys=keys_out)
+        return self.__class__(algebra=self.algebra, expr=expr, keys=self.algebra.typenumbers2keys[type_number_out])
 
     def unary_operator(self, operator: str):
-        keys_out, func = getattr(self.algebra, operator)[self.keys()]
+        type_number_out, func = getattr(self.algebra, operator)[self.type_number]
         expr = f'{func.__name__}({self.expr})'
-        return self.__class__(algebra=self.algebra, expr=expr, keys=keys_out)
+        return self.__class__(algebra=self.algebra, expr=expr, keys=self.algebra.typenumbers2keys[type_number_out])
 
     # Binary operators
     gp = __mul__ = __rmul__ = partialmethod(binary_operator, operator='gp')

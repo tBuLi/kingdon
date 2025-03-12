@@ -42,18 +42,18 @@ class OperatorDict(Mapping):
     def __len__(self):
         return len(self.operator_dict)
 
-    def __getitem__(self, keys_in: Tuple[Tuple[int]]):
-        if keys_in not in self.operator_dict:
+    def __getitem__(self, type_numbers_in: Tuple[int]):
+        if type_numbers_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
-            mvs = [self.algebra.multivector(name=name, keys=keys, symbolcls=self.codegen_symbolcls)
-                   for name, keys in zip(string.ascii_lowercase, keys_in)]
+            mvs = [self.algebra.multivector(name=name, keys=self.algebra.typenumbers2keys[type_number], symbolcls=self.codegen_symbolcls)
+                   for name, type_number in zip(string.ascii_lowercase, type_numbers_in)]
             keys_out, func = do_codegen(self.codegen, *mvs)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
-            self.operator_dict[keys_in] = (keys_out, func)
-        return self.operator_dict[keys_in]
+            self.operator_dict[type_numbers_in] = (self.algebra.keys2typenumbers[keys_out], func)
+        return self.operator_dict[type_numbers_in]
 
-    def __contains__(self, keys_in: Tuple[Tuple[int]]):
-        return keys_in in self.operator_dict
+    def __contains__(self, type_numbers_in: Tuple[int]):
+        return type_numbers_in in self.operator_dict
 
     def __iter__(self):
         return iter(self.operator_dict)
@@ -74,9 +74,10 @@ class OperatorDict(Mapping):
         if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
             raise AlgebraError("Cannot multiply elements of different algebra's.")
 
-        keys_in = tuple(mv.keys() for mv in mvs)
+        type_numbers_in = tuple(self.algebra.keys2typenumbers[mv.keys()] for mv in mvs)
         values_in = tuple(mv.values() for mv in mvs)
-        keys_out, func = self[keys_in]
+        type_number_out, func = self[type_numbers_in]
+        keys_out = self.algebra.typenumbers2keys[type_number_out]
         issymbolic = any(mv.issymbolic for mv in mvs)
         if issymbolic or not mvs[0].algebra.wrapper:
             values_out = func(*values_in)
@@ -109,7 +110,8 @@ class OperatorDict(Mapping):
         if not (mv1.algebra is mv2.algebra or mv1.algebra == mv2.algebra):
             raise AlgebraError("Cannot multiply elements of different algebra's.")
 
-        keys_out, func = self[mv1.keys(), mv2.keys()]
+        type_number_out, func = self[mv1.type_number, mv2.type_number]
+        keys_out = self.algebra.typenumbers2keys[type_number_out]
         issymbolic = (mv1.issymbolic or mv2.issymbolic)
         if issymbolic or not mv1.algebra.wrapper:
             values_out = func(mv1.values(), mv2.values())
@@ -128,16 +130,18 @@ class UnaryOperatorDict(OperatorDict):
     case of unary operators, we can do away with all of the overhead that is necessary for
     operators that act on multiple multivectors.
     """
-    def __getitem__(self, keys_in: Tuple[Tuple[int]]):
-        if keys_in not in self.operator_dict:
+    def __getitem__(self, type_number_in: int):
+        if type_number_in not in self.operator_dict:
+            keys_in = self.algebra.typenumbers2keys[type_number_in]
             mv = self.algebra.multivector(name='a', keys=keys_in, symbolcls=self.codegen_symbolcls)
             keys_out, func = do_codegen(self.codegen, mv)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
-            self.operator_dict[keys_in] = (keys_out, func)
-        return self.operator_dict[keys_in]
+            self.operator_dict[type_number_in] = (self.algebra.keys2typenumbers[keys_out], func)
+        return self.operator_dict[type_number_in]
 
-    def __call__(self, mv):
-        keys_out, func = self[mv.keys()]
+    def __call__(self, mv: MultiVector):
+        type_number_out, func = self[mv.type_number]
+        keys_out = self.algebra.typenumbers2keys[type_number_out]
 
         issymbolic = mv.issymbolic
         if issymbolic or not mv.algebra.wrapper:
@@ -152,15 +156,16 @@ class UnaryOperatorDict(OperatorDict):
 
 
 class Registry(OperatorDict):
-    def __getitem__(self, keys_in: Tuple[Tuple[int]]):
-        if keys_in not in self.operator_dict:
+    def __getitem__(self, type_numbers_in: Tuple[int]):
+        if type_numbers_in not in self.operator_dict:
+            keys_in = [self.algebra.typenumbers2keys[type_number_in] for type_number_in in type_numbers_in]
             # Make symbolic multivectors for each set of keys and generate the code.
             tapes = [TapeRecorder(algebra=self.algebra, expr=name, keys=keys)
                      for name, keys in zip(string.ascii_lowercase, keys_in)]
             keys_out, func = do_compile(self.codegen, *tapes)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
-            self.operator_dict[keys_in] = (keys_out, func)
-        return self.operator_dict[keys_in]
+            self.operator_dict[type_numbers_in] = (self.algebra.keys2typenumbers[keys_out], func)
+        return self.operator_dict[type_numbers_in]
 
     def __call__(self, *mvs):
         mvs = list(mvs)
@@ -172,10 +177,11 @@ class Registry(OperatorDict):
             mvs[i] = mv
 
         if all(isinstance(mv, TapeRecorder) for mv in mvs):
-            keys_in = tuple(mv.keys() for mv in mvs)
-            keys_out, func = self[keys_in]
+            type_numbers_in = tuple(mv.type_number for mv in mvs)
+            type_number_out, func = self[type_numbers_in]
+
             expr = f"{func.__name__}({', '.join(mv.expr for mv in mvs)})"
-            return TapeRecorder(self.algebra, keys=keys_out, expr=expr)
+            return TapeRecorder(self.algebra, keys=self.algebra.typenumbers2keys[type_number_out], expr=expr)
 
         # Make sure all inputs are multivectors. If an input is not, assume its scalar.
         mvs = [mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), (mv,))
@@ -183,9 +189,10 @@ class Registry(OperatorDict):
         if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
             raise AlgebraError("Cannot multiply elements of different algebra's.")
 
-        keys_in = tuple(mv.keys() for mv in mvs)
+        type_numbers_in = tuple(mv.type_number for mv in mvs)
         values_in = tuple(mv.values() for mv in mvs)
-        keys_out, func = self[keys_in]
+        type_number_out, func = self[type_numbers_in]
+        keys_out = self.algebra.typenumbers2keys[type_number_out]
 
         if not mvs[0].algebra.wrapper:
             values_out = func(*values_in)
