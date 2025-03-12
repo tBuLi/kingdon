@@ -1003,3 +1003,10 @@ def test_apply_to_list():
         transformed_subjects = op(triangle, R)
         for i, p in enumerate(triangle):
             assert op(p, R) == transformed_subjects[i]
+
+def test_type_number_conversion():
+    alg = Algebra(3)
+    for key, blade in alg.blades.items():
+        keys = alg.typenumbers2keys[blade.type_number]
+        assert blade.keys() == keys
+        assert blade.type_number == alg.keys2typenumbers[keys]
