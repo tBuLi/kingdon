@@ -23,6 +23,19 @@ Pythonic Geometric Algebra Package
 
 `✨ Try kingdon in your browser ✨ <https://tbuli.github.io/teahouse/>`_
 
+Cite as::
+
+    @misc{roelfs2025willingkingdoncliffordalgebra,
+          title={The Willing Kingdon Clifford Algebra Library}, 
+          author={Martin Roelfs},
+          year={2025},
+          eprint={2503.10451},
+          archivePrefix={arXiv},
+          primaryClass={cs.MS},
+          url={https://arxiv.org/abs/2503.10451}, 
+    }
+
+
 Features
 --------
 
