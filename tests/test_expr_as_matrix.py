@@ -1,3 +1,5 @@
+import itertools
+
 from sympy import Matrix
 import numpy as np
 
@@ -55,3 +57,33 @@ def test_expr_as_matrix_numerical():
     A, y = expr_as_matrix(alg.cp, B, x)
     assert type(A) == list
     assert type(y) == MultiVector
+
+
+def test_matrixreps():
+    # 3DVGA test
+    alg = Algebra(3)
+    x = alg.multivector(name='x')
+    xmat = x.asmatrix()
+    xprime = MultiVector.frommatrix(alg, matrix=xmat)
+    assert np.all(x.values() == xprime.values())
+    assert x.keys() == xprime.keys()
+
+    # PTAP test
+    alg = Algebra(2, 1)
+    x = alg.multivector(name='x')
+    xmat = x.asmatrix()
+    xprime = MultiVector.frommatrix(alg, matrix=xmat)
+    assert np.all(x.values() == xprime.values())
+    assert x.keys() == xprime.keys()
+
+
+def test_matrix_rep():
+    for p, q, r in itertools.product(list(range(3)), repeat=3):
+        if not 2 <= p+q+r <= 3: continue
+        alg = Algebra(p, q, r)
+        x = alg.multivector(name='x')
+        y = alg.multivector(name='x')
+        XY = x.asmatrix() @ y.asmatrix()
+        xy = x.gp(y).asmatrix()
+        res = MultiVector.frommatrix(alg, xy - XY).filter()
+        assert not res
