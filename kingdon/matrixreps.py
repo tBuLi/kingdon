@@ -38,7 +38,7 @@ def ordering_matrix(Rs):
     return np.vstack(columns)
 
 
-def matrix_rep(p=0, q=0, r=0):
+def matrix_rep(p=0, q=0, r=0, signature=None):
     """
     Create the matrix reps of all the basis blades of an algebra.
     These are selected such that the entries in the first column
@@ -58,9 +58,20 @@ def matrix_rep(p=0, q=0, r=0):
     Ip = Ip2
 
     # Store all the signature matrices needed for the E_i
-    Ss = [Z for _ in range(r)]
-    Ss.extend([P for _ in range(p)])
-    Ss.extend([N for _ in range(q)])
+    SsR = [Z for _ in range(r)]
+    SsP = [P for _ in range(p)]
+    SsN = [N for _ in range(q)]
+    if signature is not None:
+        Ss = []
+        for s in signature:
+            if s == 0:
+                Ss.append(SsR.pop(0))
+            elif s == 1:
+                Ss.append(SsP.pop(0))
+            elif s == -1:
+                Ss.append(SsN.pop(0))
+    else:
+        Ss = [*SsR, *SsP, *SsN]
     # Construct the matrix reps for the E_i from E_d to E_0
     Es = []
     for i, Si in enumerate(Ss):
@@ -68,7 +79,7 @@ def matrix_rep(p=0, q=0, r=0):
         mats.append(Si)
         mats.extend([Ip for _ in range(d - i - 1)])
         Es.append(reduce(np.kron, mats, 1))
-    Es = list(reversed(Es))
+    Es = list(Es)
 
     Rs = Es.copy()
     Iden = reduce(np.kron, [I for _ in range(d)])

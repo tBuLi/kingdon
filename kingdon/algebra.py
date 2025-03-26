@@ -244,7 +244,7 @@ class Algebra:
 
     @cached_property
     def matrix_basis(self):
-        return matrix_rep(self.p, self.q, self.r)
+        return matrix_rep(self.p, self.q, self.r, signature=self.signature)
 
     @cached_property
     def frame(self) -> list:

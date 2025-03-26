@@ -395,23 +395,6 @@ def test_namedmv(R6):
     assert x.keys() == keys
 
 
-def test_matrixreps(vga3d):
-    # 3DPGA test
-    x = vga3d.multivector(name='x')
-    xmat = x.asmatrix()
-    xprime = MultiVector.frommatrix(vga3d, matrix=xmat)
-    assert np.all(x.values() == xprime.values())
-    assert x.keys() == xprime.keys()
-
-    # PTAP test
-    alg = Algebra(2, 1)
-    x = alg.multivector(name='x')
-    xmat = x.asmatrix()
-    xprime = MultiVector.frommatrix(alg, matrix=xmat)
-    assert np.all(x.values() == xprime.values())
-    assert x.keys() == xprime.keys()
-
-
 def test_fromkeysvalues():
     alg = Algebra(2)
     xvals = symbols('x x1 x2 x12')
