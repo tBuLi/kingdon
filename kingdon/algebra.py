@@ -131,6 +131,10 @@ class Algebra:
     blades: "BladeDict" = field(init=False, repr=False, compare=False)
     pss: object = field(init=False, repr=False, compare=False)
 
+    # Type number to keys conversion
+    typenumbers2keys: dict = field(init=False, repr=False, compare=False)
+    keys2typenumbers: dict = field(init=False, repr=False, compare=False)
+
     def __post_init__(self):
         if self.signature is not None:
             counts = Counter(self.signature)
@@ -182,6 +186,14 @@ class Algebra:
         self.blades = BladeDict(algebra=self, lazy=self.d > 6)
 
         self.pss = self.blades[self.bin2canon[2 ** self.d - 1]]
+
+        # Setup conversion from type_number to keys and vice versa
+        # TODO: use the same function to compute MV.type_number
+        # Question: is it smart to keep track of this in a dict for all time?
+        _keys2typenumbers = lambda keys: int(''.join('1' if i in keys else '0' for i in reversed(self.canon2bin.values())), 2)
+        _typenumbers2keys = lambda type_number: tuple(k for i, k in zip(reversed(bin(type_number)[2:]), self.canon2bin.values()) if i == '1')
+        self.keys2typenumbers = DefaultKeyDict(_keys2typenumbers)
+        self.typenumbers2keys = DefaultKeyDict(_typenumbers2keys)
 
         # Prepare OperatorDict's
         self.registry = {f.name: f.type(name=f.name, algebra=self, **f.metadata)
