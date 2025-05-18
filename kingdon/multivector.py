@@ -19,6 +19,10 @@ class MultiVector:
     _values: list = field(default_factory=list)
     _keys: tuple = field(default_factory=tuple)
 
+    # Make MultiVector "primary" operand in operations involving ndarray.
+    # (forces reflected (swapped) operands operations, like __radd__)
+    __array_priority__: int = 1
+
     def __copy__(self):
         return self.fromkeysvalues(self.algebra, self._keys, self._values)
 
@@ -322,8 +326,6 @@ class MultiVector:
 
     def __getattr__(self, basis_blade):
         # TODO: if this first check is not true, raise hell instead?
-        if basis_blade == '__array_priority__':
-            return 0  # Numpy does this to decide the output type.
         if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
             raise AttributeError(f'{self.__class__.__name__} object has no attribute or basis blade {basis_blade}')
         basis_blade, swaps = self.algebra._blade2canon(basis_blade)
