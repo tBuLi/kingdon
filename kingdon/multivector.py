@@ -1,5 +1,6 @@
 import operator
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import reduce, cached_property
 from typing import Generator
@@ -17,6 +18,14 @@ class MultiVector:
     algebra: "Algebra"
     _values: list = field(default_factory=list)
     _keys: tuple = field(default_factory=tuple)
+
+    def copy(self):
+        return self.algebra.multivector(keys=self._keys[:], values=self._values[:])
+
+    def __deepcopy__(self, memo):
+        return self.algebra.multivector(
+            keys=self._keys[:], values=deepcopy(self._values)
+        )
 
     def __new__(cls, algebra: "Algebra", values=None, keys=None, *, name=None, grades=None, symbolcls=Symbol, **items):
         """
