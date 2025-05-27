@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 """Tests for `kingdon` package."""
+import copy
 import itertools
 import operator
 from dataclasses import replace
@@ -986,3 +987,21 @@ def test_apply_to_list():
         transformed_subjects = op(triangle, R)
         for i, p in enumerate(triangle):
             assert op(p, R) == transformed_subjects[i]
+
+
+def test_shallow_copy_multivector(pga2d):
+    mv = pga2d.vector(e1=[2, 1], e2=[4, 0])
+    copied_mv = copy.copy(mv)
+    assert mv == copied_mv
+
+    mv.e1[1] = 5
+    assert copied_mv.e1[1] == 5
+
+
+def test_deep_copy_multivector(pga2d):
+    mv = pga2d.vector(e1=[2, 1], e2=[4, 0])
+    copied_mv = copy.deepcopy(mv)
+    assert mv == copied_mv
+
+    mv.e1[1] = 5
+    assert copied_mv.e1[1] == 1
