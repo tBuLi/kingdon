@@ -19,8 +19,8 @@ class MultiVector:
     _values: list = field(default_factory=list)
     _keys: tuple = field(default_factory=tuple)
 
-    def copy(self):
         return self.algebra.multivector(keys=self._keys[:], values=self._values[:])
+    def __copy__(self):
 
     def __deepcopy__(self, memo):
         return self.algebra.multivector(
