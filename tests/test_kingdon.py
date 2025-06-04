@@ -992,16 +992,22 @@ def test_apply_to_list():
 def test_shallow_copy_multivector(pga2d):
     mv = pga2d.vector(e1=[2, 1], e2=[4, 0])
     copied_mv = copy.copy(mv)
-    assert mv == copied_mv
-
-    mv.e1[1] = 5
-    assert copied_mv.e1[1] == 5
+    assert mv is not copied_mv
+    assert mv.keys() is copied_mv.keys()
+    assert mv.values() is copied_mv.values()
 
 
 def test_deep_copy_multivector(pga2d):
-    mv = pga2d.vector(e1=[2, 1], e2=[4, 0])
+    mv = pga2d.vector(e1=[[2], [1]], e2=[4, 0])
     copied_mv = copy.deepcopy(mv)
+
+    assert mv is not copied_mv
     assert mv == copied_mv
 
-    mv.e1[1] = 5
-    assert copied_mv.e1[1] == 1
+    assert mv.keys() == copied_mv.keys()
+
+    assert mv.values() is not copied_mv.values()
+    assert mv.values() == copied_mv.values()
+
+    mv.e1.append(1)
+    assert copied_mv.e1[1] == [1]
