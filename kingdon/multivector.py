@@ -19,13 +19,11 @@ class MultiVector:
     _values: list = field(default_factory=list)
     _keys: tuple = field(default_factory=tuple)
 
-        return self.algebra.multivector(keys=self._keys[:], values=self._values[:])
     def __copy__(self):
+        return self.fromkeysvalues(self.algebra, self._keys, self._values)
 
     def __deepcopy__(self, memo):
-        return self.algebra.multivector(
-            keys=self._keys[:], values=deepcopy(self._values)
-        )
+        return self.fromkeysvalues(self.algebra, self._keys[:], deepcopy(self._values))
 
     def __new__(cls, algebra: "Algebra", values=None, keys=None, *, name=None, grades=None, symbolcls=Symbol, **items):
         """
