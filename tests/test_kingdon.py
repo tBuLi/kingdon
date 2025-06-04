@@ -138,7 +138,7 @@ def test_reverse(R6):
     assert X.grade((0, 1, 4, 5)) == Xrev.grade((0, 1, 4, 5))
     assert X.grade((2, 3, 6)) == - Xrev.grade((2, 3, 6))
 
-def test_getattr(pga1d):
+def test_getattr_setattr(pga1d):
     X = pga1d.multivector({0: 2, 'e12': 3})
     assert X.e == 2 and X.e12 == 3
     assert X.e1 == 0 and X.e2 == 0
@@ -146,6 +146,15 @@ def test_getattr(pga1d):
     assert X.e3 == 0
     with pytest.raises(AttributeError):
         X.someattrthatdoesntexist
+
+    X.e = 3
+    assert X.e == 3
+    with pytest.raises(TypeError):
+        X.e1 = 5
+    assert dict(X.items()) == {0: 3, 3: 3}
+
+    with pytest.raises(TypeError):
+        del X.e
 
 def test_gp_symbolic(vga2d):
     u = vga2d.vector(name='u')

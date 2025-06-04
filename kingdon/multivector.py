@@ -328,6 +328,19 @@ class MultiVector:
             return 0
         return self._values[idx] if swaps % 2 == 0 else - self._values[idx]
 
+    def __setattr__(self, basis_blade, value):
+        if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
+            return super().__setattr__(basis_blade, value)
+        if (key := self.algebra.canon2bin[basis_blade]) in self.keys():
+            self._values[key] = value
+        else:
+            raise TypeError("The keys of a MultiVector are immutable, please create a new MultiVector.")
+
+    def __delattr__(self, basis_blade, value):
+        if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
+            return super().__setattr__(basis_blade, value)
+        raise TypeError("The keys of a MultiVector are immutable, please create a new MultiVector.")
+
     def __contains__(self, item):
         item = item if isinstance(item, int) else self.algebra.canon2bin[item]
         return item in self._keys
