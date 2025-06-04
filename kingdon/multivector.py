@@ -23,7 +23,7 @@ class MultiVector:
         return self.fromkeysvalues(self.algebra, self._keys, self._values)
 
     def __deepcopy__(self, memo):
-        return self.fromkeysvalues(self.algebra, self._keys[:], deepcopy(self._values))
+        return self.fromkeysvalues(self.algebra, self._keys, deepcopy(self._values))
 
     def __new__(cls, algebra: "Algebra", values=None, keys=None, *, name=None, grades=None, symbolcls=Symbol, **items):
         """
