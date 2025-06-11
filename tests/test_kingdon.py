@@ -1020,3 +1020,9 @@ def test_deep_copy_multivector(pga2d):
 
     mv.e1.append(1)
     assert copied_mv.e1[1] == [1]
+
+def test_swapped_operands(pga2d):
+    mv = pga2d.vector(e1=[[2], [1]], e2=[4, 0])
+    one = np.ones(3)
+    assert type(mv + one) is type(mv), 'ndarray took precedence as right-side operand'
+    assert type(one + mv) is type(mv), 'ndarray took precedence as left-side operand'
