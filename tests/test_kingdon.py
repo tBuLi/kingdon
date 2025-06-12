@@ -1021,7 +1021,8 @@ def test_deep_copy_multivector(pga2d):
     mv.e1.append(1)
     assert copied_mv.e1[1] == [1]
 
-def test_swapped_operands(pga2d):
+def test_87(pga2d):
+    # Test if MVs operators are used when one of the arguments is a numpy ndarray.
     len_vector = len(pga2d.blades.grade(1))
     uvals = np.random.random((len_vector, 2))
     u = pga2d.vector(uvals)
