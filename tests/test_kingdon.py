@@ -373,7 +373,7 @@ def test_inv_div(pga2d):
 
 def test_hitzer_inv():
     from kingdon.polynomial import RationalPolynomial
-    for d in range(5): # The d=5 case is excluded becuase the test is too slow.
+    for d in range(5): # The d=5 case is excluded because the test is too slow.
         alg = Algebra(d)
         x = alg.multivector(name='x', symbolcls=RationalPolynomial.fromname)
         assert x * x.inv() == alg.blades.e
@@ -505,7 +505,7 @@ def test_multidimensional_indexing():
     alg = Algebra(4)
     nrows = 3
     ncolumns = 4
-    shape = (len(alg.indices_for_grade[2]), nrows, ncolumns)
+    shape = (len(alg.indices_for_grade(2)), nrows, ncolumns)
     bvals = np.random.random(shape)
     B = alg.bivector(bvals)
     np.testing.assert_allclose(B[2:4].e12, bvals[0, 2:4])
@@ -550,12 +550,12 @@ def test_clifford_involutions():
 
 
 def test_normalization(pga3d):
-    vvals = np.random.random(len(pga3d.indices_for_grade[1]))
+    vvals = np.random.random(len(pga3d.indices_for_grade(1)))
     v = pga3d.vector(vvals).normalized()
     assert (v*v).e == pytest.approx(1.0)
 
     # Normalizing a non-simple bivector makes it simple!
-    bvals = np.random.random(len(pga3d.indices_for_grade[2]))
+    bvals = np.random.random(len(pga3d.indices_for_grade(2)))
     B = pga3d.bivector(bvals)
     Bnormalized = B.normalized()
     assert Bnormalized.normsq().e == pytest.approx(1.0)
@@ -565,7 +565,7 @@ def test_normalization(pga3d):
 def test_itermv():
     alg = Algebra(4)
     nrows = 3
-    shape = (len(alg.indices_for_grade[2]), nrows)
+    shape = (len(alg.indices_for_grade(2)), nrows)
     bvals = np.random.random(shape)
     B = alg.bivector(bvals)
     for i, b in enumerate(B.itermv()):
@@ -621,7 +621,7 @@ def test_graded():
 
     for b in alg.blades.values():
         assert len(b.grades) == 1
-        assert b.keys() == alg.indices_for_grades[b.grades]
+        assert b.keys() == alg.indices_for_grades(b.grades)
 
     with pytest.raises(ValueError):
         # In graded mode, the keys have to be correct.
@@ -649,7 +649,7 @@ def test_blade_dict():
     alg = Algebra(7, graded=True)
     assert alg.blades.lazy
     assert len(alg.blades) == 1  # PSS is calculated by default
-    assert len(alg.blades['e12']) == len(alg.indices_for_grade[2])
+    assert len(alg.blades['e12']) == len(alg.indices_for_grade(2))
     assert len(alg.blades) == 2
 
 
@@ -830,7 +830,9 @@ def test_43():
 
 def test_blades_of_grade():
     alg = Algebra(4)
-    for indices in alg.indices_for_grades:
+    grade_combinations = [comb for r in range(alg.d + 2) for comb in itertools.combinations(tuple(range(alg.d + 1)), r=r)]
+    for comb in grade_combinations:
+        indices = alg.indices_for_grades(comb)
         blades_of_grade = alg.blades.grade(*indices)
         assert isinstance(blades_of_grade, dict)
         assert all(label in alg.canon2bin and blade.grades[0] in indices
@@ -1020,3 +1022,9 @@ def test_deep_copy_multivector(pga2d):
 
     mv.e1.append(1)
     assert copied_mv.e1[1] == [1]
+
+def test_101():
+    # No news is good news, because with kingdon <= 1.5.1 this raised a MemoryError
+    alg = Algebra(16)
+    basisvectors = [alg.vector(keys=(2 ** i,), values=(1.0,)) for i in range(alg.d)]
+    assert basisvectors[0] * basisvectors[1] == basisvectors[0] ^ basisvectors[1]

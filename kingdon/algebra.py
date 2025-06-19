@@ -1,11 +1,11 @@
 import operator
 import re
-from itertools import combinations, product, chain, groupby
+from itertools import combinations, product, chain
 from functools import partial, reduce
 from collections import Counter
 from dataclasses import dataclass, field, fields
 from collections.abc import Mapping, Callable
-from typing import List
+from typing import List, Tuple
 
 try:
     from functools import cached_property
@@ -215,32 +215,30 @@ class Algebra:
     def __len__(self):
         return 2 ** self.d
 
-    @cached_property
-    def indices_for_grade(self):
+    def indices_for_grade(self, grade: int) -> tuple:
         """
-        Mapping from the grades to the indices for that grade. E.g. in 2D VGA, this returns
+        Function that generates all the indices for a given grade. E.g. in 2D VGA, this returns
 
         .. code-block ::
 
-            {0: (0,), 1: (1, 2), 2: (3,)}
+            >>> alg = Algebra(2)
+            >>> alg.indices_for_grade(1)
+            (1, 2)
         """
-        return {length - 1: tuple(self.canon2bin[blade] for blade in blades)
-                for length, blades in groupby(self.canon2bin, key=len)}
+        return tuple((sum(2**bin for bin in bins)) for bins in combinations(range(self.d), r=grade))
 
-    @cached_property
-    def indices_for_grades(self):
+    def indices_for_grades(self, grades: Tuple[int]) -> tuple:
         """
-        Mapping from a sequence of grades to the corresponding indices.
+        Function that generates indices from a sequence of grades.
         E.g. in 2D VGA, this returns
 
         .. code-block ::
 
-            {(): (), (0,): (0,), (1,): (1, 2), (2,): (3,), (0, 1): (0, 1, 2),
-             (0, 2): (0, 3), (1, 2): (1, 2, 3), (0, 1, 2): (0, 1, 2, 3)}
+            >>> alg = Algebra(2)
+            >>> alg.indices_for_grades((1, 2))
+            (1, 2, 3)
         """
-        all_grade_combs = chain(*(combinations(range(0, self.d + 1), r=j) for j in range(0, len(self) + 1)))
-        return {comb: sum((self.indices_for_grade[grade] for grade in comb), ())
-                for comb in all_grade_combs}
+        return tuple(chain.from_iterable(self.indices_for_grade(grade) for grade in sorted(grades)))
 
     @cached_property
     def matrix_basis(self):
@@ -582,7 +580,7 @@ class BladeDict(Mapping):
             bin_blade = self.algebra.canon2bin[basis_blade]
             if self.algebra.graded:
                 g = format(bin_blade, 'b').count('1')
-                indices = self.algebra.indices_for_grade[g]
+                indices = self.algebra.indices_for_grade(g)
                 self.blades[basis_blade] = self.algebra.multivector(values=[int(bin_blade == i) for i in indices], grades=(g,))
             else:
                 self.blades[basis_blade] = MultiVector.fromkeysvalues(self.algebra, keys=(bin_blade,), values=[1])
@@ -607,4 +605,4 @@ class BladeDict(Mapping):
             grades = grades[0]
 
         return {(blade := self.algebra.bin2canon[k]): self[blade]
-                for k in self.algebra.indices_for_grades[grades]}
+                for k in self.algebra.indices_for_grades(grades)}

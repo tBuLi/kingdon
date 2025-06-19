@@ -6,11 +6,23 @@ from functools import reduce, cached_property
 from typing import Generator
 from itertools import product
 import re
+import math
+import sys
 
 from sympy import Expr, Symbol, sympify, sinc, cos
 
 from kingdon.codegen import _lambdify_mv
 from kingdon.polynomial import RationalPolynomial
+
+if sys.version_info >= (3, 10):
+    _bit_count = int.bit_count
+else:
+    def _bit_count(n):
+        count = 0
+        while n:
+            n &= n - 1
+            count += 1
+        return count
 
 
 @dataclass(init=False)
@@ -70,19 +82,19 @@ class MultiVector:
             else:
                 grades = tuple(range(algebra.d + 1))
 
-        if algebra.graded and keys and keys != algebra.indices_for_grades[grades]:
-            raise ValueError(f"In graded mode, the keys should be equal to "
+        if algebra.graded and keys and len(keys) != sum(math.comb(algebra.d, grade) for grade in grades):
+            raise ValueError(f"In graded mode, the number of keys should be equal to "
                              f"those expected for a multivector of {grades=}.")
 
         # Construct a new MV on the basis of the kind of input we received.
         if isinstance(values, Mapping):
             keys, values = zip(*values.items()) if values else (tuple(), list())
             values = list(values)
-        elif len(values) == len(algebra.indices_for_grades[grades]) and not keys:
-            keys = algebra.indices_for_grades[grades]
+        elif len(values) == sum(math.comb(algebra.d, grade) for grade in grades) and not keys:
+            keys = algebra.indices_for_grades(grades)
         elif name and not values:
             # values was not given, but we do have a name. So we are in symbolic mode.
-            keys = algebra.indices_for_grades[grades] if not keys else keys
+            keys = algebra.indices_for_grades(grades) if not keys else keys
             values = list(symbolcls(f'{name}{algebra.bin2canon[k][1:]}') for k in keys)
         elif len(keys) != len(values):
             raise TypeError(f'Length of `keys` and `values` have to match.')
@@ -95,7 +107,7 @@ class MultiVector:
             values = list(val if not isinstance(val, str) else sympify(val)
                           for val in values)
 
-        if not set(keys) <= set(algebra.indices_for_grades[grades]):
+        if not all(_bit_count(k) in grades for k in keys):
             raise ValueError(f"All keys should be of grades {grades}.")
 
         return cls.fromkeysvalues(algebra, keys, values)
@@ -181,9 +193,8 @@ class MultiVector:
         if len(grades) == 1 and isinstance(grades[0], tuple):
             grades = grades[0]
 
-        vals = {k: getattr(self, self.algebra.bin2canon[k])
-                for k in self.algebra.indices_for_grades[grades] if k in self.keys()}
-        return self.fromkeysvalues(self.algebra, tuple(vals.keys()), list(vals.values()))
+        items = {k: v for k, v in self.items() if _bit_count(k) in grades}
+        return self.fromkeysvalues(self.algebra, tuple(items.keys()), list(items.values()))
 
     @cached_property
     def issymbolic(self):
@@ -421,7 +432,7 @@ class MultiVector:
           even if the mutivector was already dense.
         """
         if canonical:
-            keys = self.algebra.indices_for_grades[tuple(range(self.algebra.d + 1))]
+            keys = self.algebra.indices_for_grades(tuple(range(self.algebra.d + 1)))
         else:
             keys = tuple(range(len(self.algebra)))
         values = [getattr(self, self.algebra.bin2canon[k]) for k in keys]
