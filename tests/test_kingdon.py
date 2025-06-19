@@ -1020,3 +1020,15 @@ def test_deep_copy_multivector(pga2d):
 
     mv.e1.append(1)
     assert copied_mv.e1[1] == [1]
+
+def test_87(pga2d):
+    # Test if MVs operators are used when one of the arguments is a numpy ndarray.
+    len_vector = len(pga2d.blades.grade(1))
+    uvals = np.random.random((len_vector, 2))
+    u = pga2d.vector(uvals)
+    one = np.ones(2)
+    expectedmv = pga2d.scalar(e=one) + pga2d.vector(uvals)
+    diff1 = (u + one) - expectedmv
+    diff2 = (one + u) - expectedmv
+    assert all(diff1.map(lambda v: np.allclose(v, 0.0)).values())
+    assert all(diff2.map(lambda v: np.allclose(v, 0.0)).values())
