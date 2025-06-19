@@ -112,12 +112,12 @@ class Algebra:
     # Mappings from binary to canonical reps. e.g. 0b01 = 1 <-> 'e1', 0b11 = 3 <-> 'e12'.
     canon2bin: dict = field(init=False, repr=False, compare=False)
     bin2canon: dict = field(init=False, repr=False, compare=False)
-    _bin2canon_prettystr: dict = field(init=False, repr=False, compare=False)
 
     # Options for the algebra
     cse: bool = field(default=True, repr=False)  # Common Subexpression Elimination (CSE)
     graded: bool = field(default=False, repr=False)  # If true, precompute products per grade.
     pretty_blade: str = field(default='𝐞', repr=False, compare=False)
+    pretty_digits: dict = field(default_factory=dict, init=False, repr=False, compare=False)
 
     # Codegen & call customization.
     # Wrapper function applied to the codegen generated functions.
@@ -162,19 +162,24 @@ class Algebra:
             self.bin2canon = {J: eJ for eJ, J in sorted(self.canon2bin.items(), key=lambda x: x[1])}
         else:
             self.bin2canon = {
-                eJ: 'e' + ''.join(hex(num + self.start_index - 1)[2:] for ei in range(0, self.d) if (num := (eJ & 2**ei).bit_length()))
+                eJ: 'e' + ''.join(format(num + self.start_index - 1, 'X') for ei in range(0, self.d) if (num := (eJ & 2**ei).bit_length()))
                 for eJ in range(2 ** self.d)
             }
             self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
 
-        def pretty_blade(blade):
-            if blade == 'e':
-                return '1'
-            blade = self.pretty_blade + blade[1:]
-            for old, new in tuple(zip("0123456789", "₀₁₂₃₄₅₆₇₈₉")):
-                blade = blade.replace(old, new)
-            return blade
-        self._bin2canon_prettystr = {k: pretty_blade(v) for k, v in self.bin2canon.items()}
+        if self.d + self.start_index <= 10:
+            self.pretty_digits = {'0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',}
+        else:
+            # Use superscript above 10 because that is almost the entire alphabet.
+            self.pretty_digits = {
+                '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+                '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+                'A': 'ᴬ', 'B': 'ᴮ', 'C': 'ᶜ', 'D': 'ᴰ', 'E': 'ᴱ',
+                'F': 'ᶠ', 'G': 'ᴳ', 'H': 'ᴴ', 'I': 'ᴵ', 'J': 'ᴶ',
+                'K': 'ᴷ', 'L': 'ᴸ', 'M': 'ᴹ', 'N': 'ᴺ', 'O': 'ᴼ',
+                'P': 'ᴾ', 'R': 'ᴿ', 'Q': 'Q', 'S': 'ˢ', 'T': 'ᵀ', 'U': 'ᵁ',
+                'V': 'ⱽ', 'W': 'ᵂ', 'X': 'ˣ', 'Y': 'ʸ', 'Z': 'ᶻ'
+            }
 
         self.signs = self._prepare_signs()
 

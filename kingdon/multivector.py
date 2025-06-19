@@ -285,7 +285,13 @@ class MultiVector:
                 return s
             return f'({s})'
 
-        canon_sorted_vals = {self.algebra._bin2canon_prettystr[key]: val for key, val in self.items()}
+        def print_key(blade):
+            if blade == 'e':
+                return '1'
+            return self.algebra.pretty_blade + ''.join(self.algebra.pretty_digits[num] for num in blade[1:])
+
+        canon_sorted_vals = {print_key(self.algebra.bin2canon[key]): val
+                             for key, val in self.items()}
         str_repr = ' + '.join(
             [f'{print_value(val)} {blade}' if blade != '1' else f'{print_value(val)}'
              for blade, val in canon_sorted_vals.items() if (val.any() if hasattr(val, 'any') else val)]
@@ -300,9 +306,7 @@ class MultiVector:
 
     def __format__(self, format_spec):
         if format_spec == 'keys_binary':
-            iden = '_'.join(''.join('1' if i in self.keys() else '0' for i in bin_blades)
-                            for bin_blades in self.algebra.indices_for_grade.values())
-            return iden
+            return bin(self.type_number)[2:].zfill(len(self.algebra))
         return str(self)
 
     def __getitem__(self, item):
