@@ -149,24 +149,6 @@ class Algebra:
 
         self.d = self.p + self.q + self.r
 
-        # Setup mapping from binary to canonical string rep and vise versa
-        if self.basis:
-            assert len(self.basis) == len(self)
-            assert self.basis == sorted(self.basis, key=len)  # The basis has to be ordered by grade.
-            assert all(eJ[0] == 'e' for eJ in self.basis)
-            vecs = [eJ[1:] for eJ in self.basis if len(eJ) == 2]
-            self.start_index = int(min(vecs))
-            vec2bin = {vec: 2 ** j for j, vec in enumerate(vecs)}
-            self.canon2bin = {eJ: reduce(operator.xor, (vec2bin[v] for v in eJ[1:]), 0)
-                              for eJ in self.basis}
-            self.bin2canon = {J: eJ for eJ, J in sorted(self.canon2bin.items(), key=lambda x: x[1])}
-        else:
-            self.bin2canon = {
-                eJ: 'e' + ''.join(format(num + self.start_index - 1, 'X') for ei in range(0, self.d) if (num := (eJ & 2**ei).bit_length()))
-                for eJ in range(2 ** self.d)
-            }
-            self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
-
         if self.d + self.start_index <= 10:
             self.pretty_digits = {'0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',}
         else:
@@ -180,6 +162,25 @@ class Algebra:
                 'P': 'ᴾ', 'R': 'ᴿ', 'Q': 'Q', 'S': 'ˢ', 'T': 'ᵀ', 'U': 'ᵁ',
                 'V': 'ⱽ', 'W': 'ᵂ', 'X': 'ˣ', 'Y': 'ʸ', 'Z': 'ᶻ'
             }
+
+        # Setup mapping from binary to canonical string rep and vise versa
+        if self.basis:
+            assert len(self.basis) == len(self)
+            assert self.basis == sorted(self.basis, key=len)  # The basis has to be ordered by grade.
+            assert all(eJ[0] == 'e' for eJ in self.basis)
+            vecs = [eJ[1:] for eJ in self.basis if len(eJ) == 2]
+            self.start_index = int(min(vecs))
+            vec2bin = {vec: 2 ** j for j, vec in enumerate(vecs)}
+            self.canon2bin = {eJ: reduce(operator.xor, (vec2bin[v] for v in eJ[1:]), 0)
+                              for eJ in self.basis}
+            self.bin2canon = {J: eJ for eJ, J in sorted(self.canon2bin.items(), key=lambda x: x[1])}
+        else:
+            digits = list(self.pretty_digits)
+            self.bin2canon = {
+                eJ: 'e' + ''.join(digits[ei + self.start_index] for ei in range(0, self.d) if eJ & 2**ei)
+                for eJ in range(2 ** self.d)
+            }
+            self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
 
         self.signs = self._prepare_signs()
 
@@ -285,7 +286,7 @@ class Algebra:
             # Remove even powers of basis-vectors.
             sign = -1 if swaps % 2 else 1
             for key in eliminated:
-                sign *= self.signature[int(key, base=16) - self.start_index]
+                sign *= self.signature[int(key, base=len(self.pretty_digits)) - self.start_index]
             return sign
 
         if self.d > 6:
@@ -578,7 +579,7 @@ class BladeDict(Mapping):
 
     def __getitem__(self, basis_blade):
         """ Blade must be in canonical form, e.g. 'e12'. """
-        if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
+        if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
             raise AttributeError(f'{basis_blade} is not a valid basis blade.')
         basis_blade, swaps = self.algebra._blade2canon(basis_blade)
         if basis_blade not in self.blades:

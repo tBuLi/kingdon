@@ -592,7 +592,7 @@ def do_codegen(codegen, *mvs) -> CodegenOutput:
         dependencies = res.dependencies
         res = res.expr_dict
     else:
-        funcname = f'{codegen.__name__}_' + '_x_'.join(f"{mv.type_number}" for mv in mvs)
+        funcname = f'{codegen.__name__}_' + '_x_'.join(f"{format(mv.type_number, 'X')}" for mv in mvs)
         args = {arg_name: arg.values() for arg_name, arg in zip(string.ascii_uppercase, mvs)}
         dependencies = None
 

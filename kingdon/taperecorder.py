@@ -24,7 +24,7 @@ class TapeRecorder:
         return int(''.join('1' if i in self.keys() else '0' for i in reversed(self.algebra.canon2bin.values())), 2)
 
     def __getattr__(self, basis_blade):
-        if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
+        if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
             raise AttributeError(f'{self.__class__.__name__} object has no attribute or basis blade {basis_blade}')
         if basis_blade not in self.algebra.canon2bin:
             return self.__class__(

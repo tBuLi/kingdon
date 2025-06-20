@@ -1027,4 +1027,9 @@ def test_101():
     # No news is good news, because with kingdon <= 1.5.1 this raised a MemoryError
     alg = Algebra(16)
     basisvectors = [alg.vector(keys=(2 ** i,), values=(1.0,)) for i in range(alg.d)]
-    assert basisvectors[0] * basisvectors[1] == basisvectors[0] ^ basisvectors[1]
+    e0, e1, e2, e3, *rest = basisvectors
+    e01, e02, e03 = e0 ^ e1, e0 ^ e2, e0 ^ e3
+    assert e01 == e0 * e1
+    spine = sum(basisvectors[2*i] * basisvectors[2*i+1] for i in range(alg.d // 2))
+    box = (1j*spine).outerexp().map(lambda v: v.real).filter()
+    assert e01 * e02 * box == - e03 * box

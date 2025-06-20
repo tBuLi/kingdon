@@ -339,7 +339,7 @@ class MultiVector:
         # TODO: if this first check is not true, raise hell instead?
         if basis_blade == '__array_priority__':
             return 0  # Numpy does this to decide the output type.
-        if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
+        if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
             raise AttributeError(f'{self.__class__.__name__} object has no attribute or basis blade {basis_blade}')
         basis_blade, swaps = self.algebra._blade2canon(basis_blade)
         if basis_blade not in self.algebra.canon2bin:
@@ -351,7 +351,7 @@ class MultiVector:
         return self._values[idx] if swaps % 2 == 0 else - self._values[idx]
 
     def __setattr__(self, basis_blade, value):
-        if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
+        if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
             return super().__setattr__(basis_blade, value)
         if (key := self.algebra.canon2bin[basis_blade]) in self.keys():
             self._values[key] = value
@@ -359,7 +359,7 @@ class MultiVector:
             raise TypeError("The keys of a MultiVector are immutable, please create a new MultiVector.")
 
     def __delattr__(self, basis_blade, value):
-        if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
+        if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
             return super().__setattr__(basis_blade, value)
         raise TypeError("The keys of a MultiVector are immutable, please create a new MultiVector.")
 
