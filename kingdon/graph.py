@@ -1,13 +1,16 @@
+import math
+from collections import defaultdict
 from collections.abc import Callable
-from functools import cached_property
 from types import GeneratorType
-import timeit
 from typing import List, Tuple
+import inspect
 
 import anywidget
 import traitlets
 import pathlib
 import numpy as np
+import sympy as sp
+from sympy.printing.glsl import GLSLPrinter
 
 from kingdon.multivector import MultiVector
 
@@ -39,7 +42,10 @@ def encode(o, tree_types=TREE_TYPES, root=False):
         yield from (encode(value) for value in o.itermv())
     elif isinstance(o, MultiVector):
         values = o._values.tobytes() if isinstance(o._values, np.ndarray) else o._values.copy()
-        if len(o) != len(o.algebra):
+        if o.algebra.d >= 6:
+            # In 6D and up ganja switches to graded mode.
+            yield {'mv': values, 'keys': o._keys, 'grades': o.grades}
+        elif len(o) != len(o.algebra):
             # If not full mv, also pass the keys and let ganja figure it out.
             yield {'mv': values, 'keys': o._keys}
         else:
@@ -91,7 +97,21 @@ class GraphWidget(anywidget.AnyWidget):
 
     @traitlets.default('key2idx')
     def get_key2idx(self):
-        return {k: i for i, k in enumerate(self.algebra.canon2bin.values())}
+        d = self.algebra.d
+        allkeys = list(self.algebra.canon2bin.values())
+        if d < 6:
+            return {k: i for i, k in enumerate(allkeys)}
+        # From 6 and up, ganja wants graded input. In this case we return indices by grade
+        key2idx = defaultdict(dict)
+        i = 0
+        tot = 0
+        for g in range(d + 1):
+            num = math.comb(d, g)
+            for _ in range(num):
+                key2idx[g][allkeys[i]] = i - tot
+                i += 1
+            tot += num
+        return key2idx
 
     @traitlets.default('signature')
     def get_signature(self):
@@ -115,6 +135,8 @@ class GraphWidget(anywidget.AnyWidget):
 
     @traitlets.default('draggable_points')
     def get_draggable_points(self):
+        if self.options.get('up'):
+            return []
         # Extract the draggable points.
         d = self.algebra.d
         points = [s for s in self.pre_subjects if isinstance(s, MultiVector)]
@@ -125,6 +147,8 @@ class GraphWidget(anywidget.AnyWidget):
 
     @traitlets.default('draggable_points_idxs')
     def get_draggable_points_idxs(self):
+        if self.options.get('up'):
+            return []  # TODO: support dragging point for conics etc.
         # Extract the draggable points. TODO: special treatment for CGA as well
         d = self.algebra.d
         if self.algebra.r == 1 and (d == 3 or d == 4):  # PGA
@@ -141,8 +165,12 @@ class GraphWidget(anywidget.AnyWidget):
     @traitlets.validate("options")
     def _valid_options(self, proposal):
         options = proposal['value']
-        if 'camera' in options:
-            options['camera'] = list(encode(options['camera']))[0]
+        if camera := options.get('camera'):
+            options['camera'] = list(encode(camera))[0]
+        if up := options.get('up'):
+            sig = inspect.signature(up)
+            up_glsl = up(*[sp.Symbol(param) for param in sig.parameters]).map(GLSLPrinter().doprint)
+            options['up'] = list(encode(up_glsl))[0]['mv']
         return options
 
     def inplacereplace(self, old_subjects, new_subjects: List[Tuple[int, dict]]):

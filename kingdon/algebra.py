@@ -462,7 +462,12 @@ class Algebra:
 
         :param `*subjects`: Subjects to be graphed.
             Can be strings, hexadecimal colors, (lists of) MultiVector, (lists of) callables.
-        :param `**options`: Options passed to :code:`ganja.js`'s :code:`Algebra.graph`.
+        :param camera: [optional] a motor that places the camera at the desired viewpoint.
+        :param up: [optional] the 'up' (C) function that takes a Euclidean point and casts it into a larger
+            embedding space. This will invoke ganja's OPNS renderer, which can be used to render any algebra.
+            Examples include 2D CSGA, 3D CCGA, 3D Mother Algebra, etc. See the teahouse for examples.
+        :param `**options`: Other options passed to :code:`ganja.js`'s :code:`Algebra.graph`.
+
         """
         return graph_widget(
             algebra=self,
