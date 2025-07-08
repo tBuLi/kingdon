@@ -91,10 +91,10 @@ class MultiVector:
             keys, values = zip(*values.items()) if values else (tuple(), list())
             values = list(values)
         elif len(values) == sum(math.comb(algebra.d, grade) for grade in grades) and not keys:
-            keys = algebra.indices_for_grades(grades)
+            keys = tuple(algebra.indices_for_grades(grades))
         elif name and not values:
             # values was not given, but we do have a name. So we are in symbolic mode.
-            keys = algebra.indices_for_grades(grades) if not keys else keys
+            keys = tuple(algebra.indices_for_grades(grades)) if not keys else keys
             values = list(symbolcls(f'{name}{algebra.bin2canon[k][1:]}') for k in keys)
         elif len(keys) != len(values):
             raise TypeError(f'Length of `keys` and `values` have to match.')

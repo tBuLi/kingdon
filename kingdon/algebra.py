@@ -117,7 +117,7 @@ class Algebra:
     cse: bool = field(default=True, repr=False)  # Common Subexpression Elimination (CSE)
     graded: bool = field(default=False, repr=False)  # If true, precompute products per grade.
     pretty_blade: str = field(default='𝐞', repr=False, compare=False)
-    pretty_digits: dict = field(default_factory=dict, init=False, repr=False, compare=False)
+    pretty_digits: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # TODO: this can be defined outside Algebra
 
     # Codegen & call customization.
     # Wrapper function applied to the codegen generated functions.
@@ -221,30 +221,30 @@ class Algebra:
     def __len__(self):
         return 2 ** self.d
 
-    def indices_for_grade(self, grade: int) -> tuple:
+    def indices_for_grade(self, grade: int):
         """
-        Function that generates all the indices for a given grade. E.g. in 2D VGA, this returns
+        Function that returns a generator for all the indices for a given grade. E.g. in 2D VGA, this returns
 
         .. code-block ::
 
             >>> alg = Algebra(2)
-            >>> alg.indices_for_grade(1)
+            >>> tuple(alg.indices_for_grade(1))
             (1, 2)
         """
-        return tuple((sum(2**bin for bin in bins)) for bins in combinations(range(self.d), r=grade))
+        return (sum(2**bin for bin in bins) for bins in combinations(range(self.d), r=grade))
 
-    def indices_for_grades(self, grades: Tuple[int]) -> tuple:
+    def indices_for_grades(self, grades: Tuple[int]):
         """
-        Function that generates indices from a sequence of grades.
+        Function that returns a generator for all the indices from a sequence of grades.
         E.g. in 2D VGA, this returns
 
         .. code-block ::
 
             >>> alg = Algebra(2)
-            >>> alg.indices_for_grades((1, 2))
+            >>> tuple(alg.indices_for_grades((1, 2)))
             (1, 2, 3)
         """
-        return tuple(chain.from_iterable(self.indices_for_grade(grade) for grade in sorted(grades)))
+        return (chain.from_iterable(self.indices_for_grade(grade) for grade in sorted(grades)))
 
     @cached_property
     def matrix_basis(self):

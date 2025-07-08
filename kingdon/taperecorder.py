@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from functools import cached_property, partial, partialmethod
+import re
 
 
 @dataclass(init=False)
@@ -51,7 +52,7 @@ class TapeRecorder:
         if len(grades) == 1 and isinstance(grades[0], tuple):
             grades = grades[0]
 
-        basis_blades = self.algebra.indices_for_grades(grades)
+        basis_blades = tuple(self.algebra.indices_for_grades(grades))
         indices_keys = [(idx, k) for idx, k in enumerate(self.keys()) if k in basis_blades]
         indices, keys = zip(*indices_keys) if indices_keys else (tuple(), tuple())
         expr = f"[{self.expr}[idx] for idx in {indices}]"
