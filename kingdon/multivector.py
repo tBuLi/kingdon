@@ -6,11 +6,23 @@ from functools import reduce, cached_property
 from typing import Generator, ClassVar
 from itertools import product
 import re
+import math
+import sys
 
 from sympy import Expr, Symbol, sympify, sinc, cos
 
 from kingdon.codegen import _lambdify_mv
 from kingdon.polynomial import RationalPolynomial
+
+if sys.version_info >= (3, 10):
+    _bit_count = int.bit_count
+else:
+    def _bit_count(n):
+        count = 0
+        while n:
+            n &= n - 1
+            count += 1
+        return count
 
 
 @dataclass(init=False)
@@ -61,7 +73,7 @@ class MultiVector:
         if keys is not None and not all(isinstance(k, int) for k in keys):
             keys = tuple(k if k in algebra.bin2canon else algebra.canon2bin[k] for k in keys)
         if grades is None and name and keys is not None:
-            grades = tuple(sorted({format(k, 'b').count('1') for k in keys}))
+            grades = tuple(sorted({_bit_count(k) for k in keys}))
         values = values if values is not None else list()
         keys = keys if keys is not None else tuple()
 
@@ -74,19 +86,19 @@ class MultiVector:
             else:
                 grades = tuple(range(algebra.d + 1))
 
-        if algebra.graded and keys and keys != algebra.indices_for_grades[grades]:
-            raise ValueError(f"In graded mode, the keys should be equal to "
+        if algebra.graded and keys and len(keys) != sum(math.comb(algebra.d, grade) for grade in grades):
+            raise ValueError(f"In graded mode, the number of keys should be equal to "
                              f"those expected for a multivector of {grades=}.")
 
         # Construct a new MV on the basis of the kind of input we received.
         if isinstance(values, Mapping):
             keys, values = zip(*values.items()) if values else (tuple(), list())
             values = list(values)
-        elif len(values) == len(algebra.indices_for_grades[grades]) and not keys:
-            keys = algebra.indices_for_grades[grades]
+        elif len(values) == sum(math.comb(algebra.d, grade) for grade in grades) and not keys:
+            keys = tuple(algebra.indices_for_grades(grades))
         elif name and not values:
             # values was not given, but we do have a name. So we are in symbolic mode.
-            keys = algebra.indices_for_grades[grades] if not keys else keys
+            keys = tuple(algebra.indices_for_grades(grades)) if not keys else keys
             values = list(symbolcls(f'{name}{algebra.bin2canon[k][1:]}') for k in keys)
         elif len(keys) != len(values):
             raise TypeError(f'Length of `keys` and `values` have to match.')
@@ -99,7 +111,7 @@ class MultiVector:
             values = list(val if not isinstance(val, str) else sympify(val)
                           for val in values)
 
-        if not set(keys) <= set(algebra.indices_for_grades[grades]):
+        if not all(_bit_count(k) in grades for k in keys):
             raise ValueError(f"All keys should be of grades {grades}.")
 
         return cls.fromkeysvalues(algebra, keys, values)
@@ -185,9 +197,8 @@ class MultiVector:
         if len(grades) == 1 and isinstance(grades[0], tuple):
             grades = grades[0]
 
-        vals = {k: getattr(self, self.algebra.bin2canon[k])
-                for k in self.algebra.indices_for_grades[grades] if k in self.keys()}
-        return self.fromkeysvalues(self.algebra, tuple(vals.keys()), list(vals.values()))
+        items = {k: v for k, v in self.items() if _bit_count(k) in grades}
+        return self.fromkeysvalues(self.algebra, tuple(items.keys()), list(items.values()))
 
     @cached_property
     def issymbolic(self):
@@ -278,7 +289,13 @@ class MultiVector:
                 return s
             return f'({s})'
 
-        canon_sorted_vals = {self.algebra._bin2canon_prettystr[key]: val for key, val in self.items()}
+        def print_key(blade):
+            if blade == 'e':
+                return '1'
+            return self.algebra.pretty_blade + ''.join(self.algebra.pretty_digits[num] for num in blade[1:])
+
+        canon_sorted_vals = {print_key(self.algebra.bin2canon[key]): val
+                             for key, val in self.items()}
         str_repr = ' + '.join(
             [f'{print_value(val)} {blade}' if blade != '1' else f'{print_value(val)}'
              for blade, val in canon_sorted_vals.items() if (val.any() if hasattr(val, 'any') else val)]
@@ -293,9 +310,7 @@ class MultiVector:
 
     def __format__(self, format_spec):
         if format_spec == 'keys_binary':
-            iden = '_'.join(''.join('1' if i in self.keys() else '0' for i in bin_blades)
-                            for bin_blades in self.algebra.indices_for_grade.values())
-            return iden
+            return bin(self.type_number)[2:].zfill(len(self.algebra))
         return str(self)
 
     def __getitem__(self, item):
@@ -326,7 +341,7 @@ class MultiVector:
 
     def __getattr__(self, basis_blade):
         # TODO: if this first check is not true, raise hell instead?
-        if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
+        if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
             raise AttributeError(f'{self.__class__.__name__} object has no attribute or basis blade {basis_blade}')
         basis_blade, swaps = self.algebra._blade2canon(basis_blade)
         if basis_blade not in self.algebra.canon2bin:
@@ -338,7 +353,7 @@ class MultiVector:
         return self._values[idx] if swaps % 2 == 0 else - self._values[idx]
 
     def __setattr__(self, basis_blade, value):
-        if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
+        if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
             return super().__setattr__(basis_blade, value)
         if (key := self.algebra.canon2bin[basis_blade]) in self.keys():
             self._values[key] = value
@@ -346,7 +361,7 @@ class MultiVector:
             raise TypeError("The keys of a MultiVector are immutable, please create a new MultiVector.")
 
     def __delattr__(self, basis_blade, value):
-        if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
+        if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
             return super().__setattr__(basis_blade, value)
         raise TypeError("The keys of a MultiVector are immutable, please create a new MultiVector.")
 
@@ -423,7 +438,7 @@ class MultiVector:
           even if the mutivector was already dense.
         """
         if canonical:
-            keys = self.algebra.indices_for_grades[tuple(range(self.algebra.d + 1))]
+            keys = self.algebra.indices_for_grades(tuple(range(self.algebra.d + 1)))
         else:
             keys = tuple(range(len(self.algebra)))
         values = [getattr(self, self.algebra.bin2canon[k]) for k in keys]

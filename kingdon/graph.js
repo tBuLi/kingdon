@@ -8,11 +8,27 @@ function render({ model, el }) {
         var key2idx = model.get('key2idx');
         var draggable_points_idxs = model.get('draggable_points_idxs');
         var options = model.get('options');
+        var d = model.get('signature').length;
+
+        function grade(key) {
+            var count = 0;
+            while (key) {
+                count += key & 1;
+                key >>= 1;
+            }
+            return count;
+        }
 
         // Define helper functions.
         var toElement = (o)=>{
             /* convert object to Element */
             var _values = o['mv'] instanceof DataView?new Float64Array(o['mv'].buffer):o['mv'];
+            if ('grades' in o) {
+                var values = new Element();
+                o['grades'].forEach(grade=>values[grade] = []);
+                o['keys'].forEach((k, j)=>{var g = grade(k); values[g][key2idx[g][k]] = _values[j]});
+                return values;
+            }
             if ('keys' in o) {
                 var values = Array(Object.keys(key2idx).length).fill(0);
                 o['keys'].forEach((k, j)=>values[key2idx[k]] = _values[j]);

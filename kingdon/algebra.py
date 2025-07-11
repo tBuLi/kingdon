@@ -1,11 +1,11 @@
 import operator
 import re
-from itertools import combinations, product, chain, groupby
+from itertools import combinations, product, chain
 from functools import partial, reduce
 from collections import Counter
 from dataclasses import dataclass, field, fields
 from collections.abc import Mapping, Callable
-from typing import List
+from typing import List, Tuple
 
 try:
     from functools import cached_property
@@ -25,9 +25,9 @@ from kingdon.codegen import (
     codegen_involute, codegen_conjugate, codegen_sub, codegen_sqrt,
     codegen_outerexp, codegen_outersin, codegen_outercos, codegen_outertan,
     codegen_polarity, codegen_unpolarity, codegen_hodge, codegen_unhodge,
-    mathstr
 )
-from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry
+from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry, do_operation, resolve_and_expand
+from kingdon.polynomial import mathstr
 from kingdon.matrixreps import matrix_rep
 from kingdon.multivector import MultiVector
 from kingdon.graph import GraphWidget
@@ -66,6 +66,11 @@ class Algebra:
         :class:`~kingdon.polynomial.RationalPolynomial` class.
     :param simp_func: This function is applied as a filter function to every multivector coefficient.
     :param pretty_blade: character to use for basis blades when pretty printing to string. Default is 𝐞.
+    :param large: if true this is considered a large algebra. This means various cashing options are removed to save
+        memory, and codegen is replaced by direct computation since codegen is very resource intensive for big
+        expressions. By default, algebras of :math:`d > 6` are considered large, but the user can override this setting
+        because also in large algebras it is still true that the generated code will perform order(s) of magnitude
+        better than direct computation.
     """
     p: int = 0
     q: int = 0
@@ -112,12 +117,13 @@ class Algebra:
     # Mappings from binary to canonical reps. e.g. 0b01 = 1 <-> 'e1', 0b11 = 3 <-> 'e12'.
     canon2bin: dict = field(init=False, repr=False, compare=False)
     bin2canon: dict = field(init=False, repr=False, compare=False)
-    _bin2canon_prettystr: dict = field(init=False, repr=False, compare=False)
 
     # Options for the algebra
     cse: bool = field(default=True, repr=False)  # Common Subexpression Elimination (CSE)
     graded: bool = field(default=False, repr=False)  # If true, precompute products per grade.
     pretty_blade: str = field(default='𝐞', repr=False, compare=False)
+    pretty_digits: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # TODO: this can be defined outside Algebra
+    large: bool = field(default=None, repr=False, compare=False)
 
     # Codegen & call customization.
     # Wrapper function applied to the codegen generated functions.
@@ -149,6 +155,20 @@ class Algebra:
 
         self.d = self.p + self.q + self.r
 
+        if self.d + self.start_index <= 10:
+            self.pretty_digits = {'0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',}
+        else:
+            # Use superscript above 10 because that is almost the entire alphabet.
+            self.pretty_digits = {
+                '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+                '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+                'A': 'ᴬ', 'B': 'ᴮ', 'C': 'ᶜ', 'D': 'ᴰ', 'E': 'ᴱ',
+                'F': 'ᶠ', 'G': 'ᴳ', 'H': 'ᴴ', 'I': 'ᴵ', 'J': 'ᴶ',
+                'K': 'ᴷ', 'L': 'ᴸ', 'M': 'ᴹ', 'N': 'ᴺ', 'O': 'ᴼ',
+                'P': 'ᴾ', 'R': 'ᴿ', 'Q': 'Q', 'S': 'ˢ', 'T': 'ᵀ', 'U': 'ᵁ',
+                'V': 'ⱽ', 'W': 'ᵂ', 'X': 'ˣ', 'Y': 'ʸ', 'Z': 'ᶻ'
+            }
+
         # Setup mapping from binary to canonical string rep and vise versa
         if self.basis:
             assert len(self.basis) == len(self)
@@ -161,33 +181,32 @@ class Algebra:
                               for eJ in self.basis}
             self.bin2canon = {J: eJ for eJ, J in sorted(self.canon2bin.items(), key=lambda x: x[1])}
         else:
+            digits = list(self.pretty_digits)
             self.bin2canon = {
-                eJ: 'e' + ''.join(hex(num + self.start_index - 1)[2:] for ei in range(0, self.d) if (num := (eJ & 2**ei).bit_length()))
+                eJ: 'e' + ''.join(digits[ei + self.start_index] for ei in range(0, self.d) if eJ & 2**ei)
                 for eJ in range(2 ** self.d)
             }
             self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
 
-        def pretty_blade(blade):
-            if blade == 'e':
-                return '1'
-            blade = self.pretty_blade + blade[1:]
-            for old, new in tuple(zip("0123456789", "₀₁₂₃₄₅₆₇₈₉")):
-                blade = blade.replace(old, new)
-            return blade
-        self._bin2canon_prettystr = {k: pretty_blade(v) for k, v in self.bin2canon.items()}
-
         self.signs = self._prepare_signs()
 
-        # Blades are not precomputed for algebras larger than 6D.
-        self.blades = BladeDict(algebra=self, lazy=self.d > 6)
+        if self.large is None:
+            self.large = self.d > 6
+        # Blades are not precomputed for large algebras.
+        self.blades = BladeDict(algebra=self, lazy=self.large)
 
         self.pss = self.blades[self.bin2canon[2 ** self.d - 1]]
 
-        # Prepare OperatorDict's
-        self.registry = {f.name: f.type(name=f.name, algebra=self, **f.metadata)
-                         for f in fields(self) if 'codegen' in f.metadata}
-        for name, operator_dict in self.registry.items():
-            setattr(self, name, operator_dict)
+        if self.large:
+            self.registry = {f.name: self.wrapper(resolve_and_expand(partial(do_operation, codegen=codegen, algebra=self)))
+                                     if self.wrapper else resolve_and_expand(partial(do_operation, codegen=codegen, algebra=self))
+                             for f in fields(self) if (codegen := f.metadata.get('codegen'))}
+        else:
+            # Prepare OperatorDict's
+            self.registry = {f.name: f.type(name=f.name, algebra=self, **f.metadata)
+                             for f in fields(self) if 'codegen' in f.metadata}
+        for name, op in self.registry.items():
+            setattr(self, name, op)
 
     @classmethod
     def fromname(cls, name: str, **kwargs):
@@ -215,32 +234,30 @@ class Algebra:
     def __len__(self):
         return 2 ** self.d
 
-    @cached_property
-    def indices_for_grade(self):
+    def indices_for_grade(self, grade: int):
         """
-        Mapping from the grades to the indices for that grade. E.g. in 2D VGA, this returns
+        Function that returns a generator for all the indices for a given grade. E.g. in 2D VGA, this returns
 
         .. code-block ::
 
-            {0: (0,), 1: (1, 2), 2: (3,)}
+            >>> alg = Algebra(2)
+            >>> tuple(alg.indices_for_grade(1))
+            (1, 2)
         """
-        return {length - 1: tuple(self.canon2bin[blade] for blade in blades)
-                for length, blades in groupby(self.canon2bin, key=len)}
+        return (sum(2**bin for bin in bins) for bins in combinations(range(self.d), r=grade))
 
-    @cached_property
-    def indices_for_grades(self):
+    def indices_for_grades(self, grades: Tuple[int]):
         """
-        Mapping from a sequence of grades to the corresponding indices.
+        Function that returns a generator for all the indices from a sequence of grades.
         E.g. in 2D VGA, this returns
 
         .. code-block ::
 
-            {(): (), (0,): (0,), (1,): (1, 2), (2,): (3,), (0, 1): (0, 1, 2),
-             (0, 2): (0, 3), (1, 2): (1, 2, 3), (0, 1, 2): (0, 1, 2, 3)}
+            >>> alg = Algebra(2)
+            >>> tuple(alg.indices_for_grades((1, 2)))
+            (1, 2, 3)
         """
-        all_grade_combs = chain(*(combinations(range(0, self.d + 1), r=j) for j in range(0, len(self) + 1)))
-        return {comb: sum((self.indices_for_grade[grade] for grade in comb), ())
-                for comb in all_grade_combs}
+        return (chain.from_iterable(self.indices_for_grade(grade) for grade in sorted(grades)))
 
     @cached_property
     def matrix_basis(self):
@@ -282,7 +299,7 @@ class Algebra:
             # Remove even powers of basis-vectors.
             sign = -1 if swaps % 2 else 1
             for key in eliminated:
-                sign *= self.signature[int(key, base=16) - self.start_index]
+                sign *= self.signature[int(key, base=len(self.pretty_digits)) - self.start_index]
             return sign
 
         if self.d > 6:
@@ -458,7 +475,12 @@ class Algebra:
 
         :param `*subjects`: Subjects to be graphed.
             Can be strings, hexadecimal colors, (lists of) MultiVector, (lists of) callables.
-        :param `**options`: Options passed to :code:`ganja.js`'s :code:`Algebra.graph`.
+        :param camera: [optional] a motor that places the camera at the desired viewpoint.
+        :param up: [optional] the 'up' (C) function that takes a Euclidean point and casts it into a larger
+            embedding space. This will invoke ganja's OPNS renderer, which can be used to render any algebra.
+            Examples include 2D CSGA, 3D CCGA, 3D Mother Algebra, etc. See the teahouse for examples.
+        :param `**options`: Other options passed to :code:`ganja.js`'s :code:`Algebra.graph`.
+
         """
         return graph_widget(
             algebra=self,
@@ -575,14 +597,14 @@ class BladeDict(Mapping):
 
     def __getitem__(self, basis_blade):
         """ Blade must be in canonical form, e.g. 'e12'. """
-        if not re.match(r'^e[0-9a-fA-F]*$', basis_blade):
+        if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
             raise AttributeError(f'{basis_blade} is not a valid basis blade.')
         basis_blade, swaps = self.algebra._blade2canon(basis_blade)
         if basis_blade not in self.blades:
             bin_blade = self.algebra.canon2bin[basis_blade]
             if self.algebra.graded:
                 g = format(bin_blade, 'b').count('1')
-                indices = self.algebra.indices_for_grade[g]
+                indices = self.algebra.indices_for_grade(g)
                 self.blades[basis_blade] = self.algebra.multivector(values=[int(bin_blade == i) for i in indices], grades=(g,))
             else:
                 self.blades[basis_blade] = MultiVector.fromkeysvalues(self.algebra, keys=(bin_blade,), values=[1])
@@ -607,4 +629,4 @@ class BladeDict(Mapping):
             grades = grades[0]
 
         return {(blade := self.algebra.bin2canon[k]): self[blade]
-                for k in self.algebra.indices_for_grades[grades]}
+                for k in self.algebra.indices_for_grades(grades)}

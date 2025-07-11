@@ -19,6 +19,36 @@ def compare(a, b):
     return la - lb
 
 
+class mathstr(str):
+    """ Lightweight string subclass that overloads maths operators to form expressions. """
+    def __add__(self, other: str):
+        if other[0] == '-':
+            return self.__class__(f'{self}{other}')
+        return self.__class__(f'{self}+{other}')
+
+    def __sub__(self, other: str):
+        if other[0] == '-':
+            return self.__class__(f'{self}+{other[1:]}')
+        return self.__class__(f'{self}-{other}')
+
+    def __neg__(self):
+        if self[0] == '-':
+            return self.__class__(self[1:])
+        return self.__class__('-'+self)
+
+    def __mul__(self, other: str):
+        if other[0] != '-':
+            return self.__class__(f'{self}*{other}')
+        elif self[0] == '-':
+            return self.__class__(f'{self[1:]}*{other[1:]}')
+        return self.__class__(f'-{self}*{other[1:]}')
+
+    def __pow__(self, power):
+        if power == 0.5:
+            return self.__class__(f'({self}**(1/2))')  # SymPy conversion needs 1/2 instead of 0.5
+        return self.__class__(f'({self}**{power})')
+
+
 @dataclass
 class Polynomial:
     args: List[list] = field(init=False)
@@ -147,7 +177,7 @@ class Polynomial:
         """ Return a sympy version of this Polynomial. """
         preprocessed = (monomial if len(monomial) == 1 else monomial[1:] if monomial[0] == 1 else monomial
                         for monomial in self.args)
-        sympified = ([Symbol(s) if s.__class__ == str else s for s in monomial]
+        sympified = ([Symbol(s) if isinstance(s, str) else s for s in monomial]
                      for monomial in preprocessed)
         terms = (Mul(*monomial, evaluate=True) for monomial in sympified)
         res = Add(*terms, evaluate=True)
@@ -279,6 +309,8 @@ class RationalPolynomial:
         if power < 0:
             *_, last = power_supply(self, -power)
             return 1 / last
+        if power == 0.5:
+            return self.fromname(mathstr(self)**0.5)
         *_, last = power_supply(self, power)
         return last
 
