@@ -365,6 +365,7 @@ def test_inv_div(pga2d):
     u_vals = np.random.random(4)
     assert res(*u_vals).e == pytest.approx(1.0)
     assert res.grades == (0,)
+    assert res.e == 1
     # Division by self is truly the scalar 1.
     res = u / u
     assert res(*u_vals).e == pytest.approx(1.0)
@@ -1026,6 +1027,7 @@ def test_deep_copy_multivector(pga2d):
 def test_101():
     # No news is good news, because with kingdon <= 1.5.1 this raised a MemoryError
     alg = Algebra(16)
+    assert alg.large
     basisvectors = [alg.vector(keys=(2 ** i,), values=(1.0,)) for i in range(alg.d)]
     e0, e1, e2, e3, *rest = basisvectors
     e01, e02, e03 = e0 ^ e1, e0 ^ e2, e0 ^ e3
@@ -1033,3 +1035,43 @@ def test_101():
     spine = sum(basisvectors[2*i] * basisvectors[2*i+1] for i in range(alg.d // 2))
     box = (1j*spine).outerexp().map(lambda v: v.real).filter()
     assert e01 * e02 * box == - e03 * box
+
+def test_large():
+    # Force large algebra mode, and compare the results
+    d = 2
+    alg_large = Algebra(d, large=True)
+    alg_small = Algebra(d, large=False)
+    x = alg_large.multivector(name='x')
+    y = alg_large.multivector(name='y')
+
+    for op_name, op_large in alg_large.registry.items():
+        op_small = alg_small.registry.get(op_name)
+        if op_name != 'sqrt':
+            continue
+
+        if isinstance(op_small, UnaryOperatorDict):
+            xy_large = op_large(x)
+            xy_small = op_small(x)
+        else:
+            xy_large = op_large(x, y)
+            xy_small = op_small(x, y)
+        assert not xy_large - xy_small
+
+def test_operators_api():
+    d = 2
+    alg_large = Algebra(d, large=True)
+    alg_small = Algebra(d, large=False)
+
+    # Check consistency of API for both small and large algebras
+    for alg in [alg_large, alg_small]:
+        x = alg.multivector(name='x')
+        y = alg.multivector(name='y')
+        # Binary operators should across lists and tuples
+        xy = [x, y]
+        assert alg.scalar(e=0.5) * xy == [alg.scalar(e=0.5) * z for z in xy]
+        # Unary operators can be called on lists as well
+        assert alg.normsq(xy) == [z.normsq() for z in xy]
+        # Multiplying a function with a MV is allowed
+        func = lambda: alg.scalar(e=0.5)
+        assert x * func == x * alg.scalar(e=0.5)
+        assert alg.normsq(func) == alg.normsq(alg.scalar(e=0.5))

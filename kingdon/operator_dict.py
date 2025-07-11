@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from collections.abc import Mapping
 from typing import Callable, Tuple
+from functools import wraps
+import inspect
 import string
 
 from sympy import Symbol, Expr, simplify
@@ -13,6 +15,84 @@ from kingdon.polynomial import RationalPolynomial
 
 class AlgebraError(Exception):
     pass
+
+
+def resolve_and_expand(func):
+    """
+    Decorator which makes :code:`func` compatible function over MVs compatible with the broader ganja.js style
+    broadcasting rules:
+    - binary and unary operators can be applied to lists & tuples, e.g. :code:`x * [y, z]` or :code:`alg.gp([y, z], x)`.
+    - binary and unary operators can be applied to functions without any arguments, e.g. :code:`x * lambda: y * z` or
+    :code:`alg.gp(lambda: y * z, x)`.
+    """
+    sig = inspect.signature(func)
+    params = list(sig.parameters.values())
+    is_method = len(params) > 0 and params[0].name == "self"
+
+    if is_method:
+        @wraps(func)
+        def wrapper(self, *mvs):
+            mvs = list(mvs)
+            for i in range(len(mvs)):
+                mv = mvs[i]
+                # Call until no longer callable.
+                while isinstance(mv, Callable) and not isinstance(mv, MultiVector):
+                    mv = mv()
+                mvs[i] = mv
+
+            for i in range(len(mvs)):
+                mv = mvs[i]
+                if isinstance(mv, (tuple, list)):
+                    return type(mv)(wrapper(self, *(mvs[:i] + [x] + mvs[i + 1:])) for x in mv)
+
+            return func(self, *mvs)
+        return wrapper
+
+    @wraps(func)
+    def wrapper(*mvs):
+        mvs = list(mvs)
+        for i in range(len(mvs)):
+            mv = mvs[i]
+            # Call until no longer callable.
+            while isinstance(mv, Callable) and not isinstance(mv, MultiVector):
+                mv = mv()
+            mvs[i] = mv
+
+        for i in range(len(mvs)):
+            mv = mvs[i]
+            if isinstance(mv, (tuple, list)):
+                return type(mv)(wrapper(*(mvs[:i] + [x] + mvs[i + 1:])) for x in mv)
+
+        return func(*mvs)
+
+    return wrapper
+
+
+def do_operation(*mvs, codegen, algebra) -> MultiVector:
+    """
+    This function just does the operation directly on the MV's, no codegen is performed.
+    This is used for large algebras, where codegen is too costly.
+    The result is the multivector resulting from codegen(*mvs).
+    """
+    mvs = [mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(algebra, (0,), (mv,))
+           for mv in mvs]
+    if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
+        raise AlgebraError("Cannot multiply elements of different algebra's.")
+
+    res = codegen(*mvs)
+    if isinstance(res, MultiVector):
+        return res
+    elif isinstance(res, dict):
+        # TODO: Can this sort be done without canon2bin?
+        res = {bin: res[bin] if isinstance(res, dict) else getattr(res, canon)
+               for canon, bin in algebra.canon2bin.items() if bin in res.keys()}
+        if not res:
+            return MultiVector.fromkeysvalues(algebra, tuple(), [])
+        keys, values = zip(*res.items())
+        return MultiVector.fromkeysvalues(algebra, keys, list(values)).filter()
+    else:
+        # TODO: there is probably something better than raising an error.
+        raise NotImplementedError(type(res))
 
 
 @dataclass
@@ -45,7 +125,7 @@ class OperatorDict(Mapping):
     def __getitem__(self, keys_in: Tuple[Tuple[int]]):
         if keys_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
-            mvs = [self.algebra.multivector(name=name, keys=keys, symbolcls=self.codegen_symbolcls)
+            mvs = [MultiVector.fromkeysvalues(self.algebra, keys, list(self.codegen_symbolcls(f'{name}{self.algebra.bin2canon[k][1:]}') for k in keys))
                    for name, keys in zip(string.ascii_lowercase, keys_in)]
             keys_out, func = do_codegen(self.codegen, *mvs)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
@@ -64,6 +144,7 @@ class OperatorDict(Mapping):
         keys, values = zip(*keysvalues) if keysvalues else (tuple(), list())
         return keys, list(values)
 
+    @resolve_and_expand
     def __call__(self, *mvs):
         if len(mvs) == 2:
             return self._call_binary(*mvs)
@@ -90,18 +171,6 @@ class OperatorDict(Mapping):
 
     def _call_binary(self, mv1, mv2):
         """ Specialization for binary operators. """
-        # Call until no longer callable.
-        while isinstance(mv1, Callable) and not isinstance(mv1, MultiVector):
-            mv1 = mv1()
-        while isinstance(mv2, Callable) and not isinstance(mv2, MultiVector):
-            mv2 = mv2()
-        # If mv2 is a list, apply mv1 to all elements in the list
-        if isinstance(mv2, (tuple, list)):
-            return type(mv2)(self._call_binary(mv1, mv) for mv in mv2)
-        # If mv1 is a list, apply mv2 to all elements in the list
-        if isinstance(mv1, (tuple, list)):
-            return type(mv1)(self._call_binary(mv, mv2) for mv in mv1)
-
         # Make sure all inputs are multivectors. If an input is not, assume its scalar.
         mv1 = mv1 if isinstance(mv1, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv1])
         mv2 = mv2 if isinstance(mv2, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv2])
@@ -130,12 +199,13 @@ class UnaryOperatorDict(OperatorDict):
     """
     def __getitem__(self, keys_in: Tuple[Tuple[int]]):
         if keys_in not in self.operator_dict:
-            mv = self.algebra.multivector(name='a', keys=keys_in, symbolcls=self.codegen_symbolcls)
+            mv = MultiVector.fromkeysvalues(self.algebra, keys_in, list(self.codegen_symbolcls(f'a{self.algebra.bin2canon[k][1:]}') for k in keys_in))
             keys_out, func = do_codegen(self.codegen, mv)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
             self.operator_dict[keys_in] = (keys_out, func)
         return self.operator_dict[keys_in]
 
+    @resolve_and_expand
     def __call__(self, mv):
         keys_out, func = self[mv.keys()]
 
@@ -162,15 +232,8 @@ class Registry(OperatorDict):
             self.operator_dict[keys_in] = (keys_out, func)
         return self.operator_dict[keys_in]
 
+    @resolve_and_expand
     def __call__(self, *mvs):
-        mvs = list(mvs)
-        for i in range(len(mvs)):
-            mv = mvs[i]
-            # Call until no longer callable.
-            while isinstance(mv, Callable) and not isinstance(mv, MultiVector):
-                mv = mv()
-            mvs[i] = mv
-
         if all(isinstance(mv, TapeRecorder) for mv in mvs):
             keys_in = tuple(mv.keys() for mv in mvs)
             keys_out, func = self[keys_in]

@@ -17,31 +17,6 @@ from sympy.utilities.iterables import iterable, flatten
 from sympy.printing.lambdarepr import LambdaPrinter
 
 
-class mathstr(str):
-    """ Lightweight subclass that overloads maths operators to form expressions. """
-    def __add__(self, other: str):
-        if other[0] == '-':
-            return self.__class__(f'{self}{other}')
-        return self.__class__(f'{self}+{other}')
-
-    def __sub__(self, other: str):
-        if other[0] == '-':
-            return self.__class__(f'{self}+{other[1:]}')
-        return self.__class__(f'{self}-{other}')
-
-    def __neg__(self):
-        if self[0] == '-':
-            return self.__class__(self[1:])
-        return self.__class__('-'+self)
-
-    def __mul__(self, other: str):
-        if other[0] != '-':
-            return self.__class__(f'{self}*{other}')
-        elif self[0] == '-':
-            return self.__class__(f'{self[1:]}*{other[1:]}')
-        return self.__class__(f'-{self}*{other[1:]}')
-
-
 @dataclass
 class AdditionChains:
     limit: int
@@ -239,7 +214,6 @@ def codegen_op(x, y):
     :return: dictionary with integer keys indicating the corresponding basis blade in binary convention,
         and values which are a 3-tuple of indices in `x`, indices in `y`, and a lambda function.
     """
-    algebra = x.algebra
     filter_func = lambda kx, ky, k_out: k_out == kx + ky
     return codegen_product(x, y, filter_func=filter_func)
 
@@ -287,31 +261,19 @@ class LambdifyInput(NamedTuple):
     dependencies: list
 
 
-def codegen_inv(y, x=None, symbolic=False):
+def codegen_inv(y, symbolic=False):
     alg = y.algebra
     if alg.d < 6:
         num, denom = codegen_hitzer_inv(y, symbolic=True)
     else:
         num, denom = codegen_shirokov_inv(y, symbolic=True)
-    num = num if x is None else x * num
 
     if symbolic:
         return Fraction(num, denom)
 
-    d = alg.scalar(name='d', symbolcls=alg.div.codegen_symbolcls)
-    denom_inv = alg.scalar([1 / denom])
-    yinv = num * d.e  #TODO: this multiply is too gready, would be better if it didnt distribute, & reinstate CSE
+    d = denom.e
+    return num.map(lambda v: v / d)
 
-    # Prepare all the input for lambdify
-    args = {'y': y.values()}
-    expr_dict = dict(yinv.items())
-    dependencies = list(zip(d.values(), denom_inv.values()))
-    return LambdifyInput(
-        funcname=f'codegen_inv_{y.type_number}',
-        expr_dict=expr_dict,
-        args=args,
-        dependencies=dependencies,
-    )
 
 def codegen_hitzer_inv(x, symbolic=False):
     """
@@ -341,11 +303,13 @@ def codegen_hitzer_inv(x, symbolic=False):
         num = combo * (x_combo - 2 * x_combo.grade(1, 4))
     else:
         raise NotImplementedError(f"Closed form inverses are not known in {d=} dimensions.")
-    denom = (x.sp(num)).e
+    denom = x.sp(num)
 
     if symbolic:
         return Fraction(num, denom)
-    return alg.multivector({k: v / denom for k, v in num.items()})
+    denom = denom.e
+    return num.map(lambda v: v / denom)
+
 
 def codegen_shirokov_inv(x, symbolic=False):
     """
@@ -376,32 +340,20 @@ def codegen_shirokov_inv(x, symbolic=False):
         adj = xs[-1] - cs[-1]
 
     if symbolic:
-        return Fraction(adj, xi.e)
-    return alg.multivector({k: v / xi.e for k, v in adj.items()})
+        return Fraction(adj, xi)
+    xi = xi.e
+    return adj.map(lambda v: v / xi)
 
 
 def codegen_div(x, y):
     """
     Generate code for :math:`x y^{-1}`.
     """
-    alg = x.algebra
-    num, denom = codegen_inv(y, x, symbolic=True)
+    num, denom = codegen_inv(y, symbolic=True)
     if not denom:
         raise ZeroDivisionError
-    d = alg.scalar(name='d', symbolcls=alg.div.codegen_symbolcls)
-    denom_inv = alg.scalar([1 / denom])
-    res = num * d.e
-
-    # Prepare all the input for lambdify
-    args = {'x': x.values(), 'y': y.values()}
-    expr_dict = dict(res.items())
-    dependencies = list(zip(d.values(), denom_inv.values()))
-    return LambdifyInput(
-        funcname=f'div_{x.type_number}_x_{y.type_number}',
-        expr_dict=expr_dict,
-        args=args,
-        dependencies=dependencies,
-    )
+    d = denom.e
+    return (x * num).map(lambda v: v / d)
 
 
 def codegen_normsq(x):
@@ -504,7 +456,7 @@ def codegen_sqrt(x):
     """
     alg = x.algebra
     if x.grades == (0,):
-        return {0: f'({str(x.e)}**0.5)'}
+        return x.map(lambda v: v**0.5)
     a, bI = x.grade(0), x - x.grade(0)
     has_solution = len(x.grades) <= 2 and 0 in x.grades
     if not has_solution:
@@ -512,25 +464,11 @@ def codegen_sqrt(x):
 
     bI_sq = bI * bI
     if not bI_sq:
-        cp = f'({str(a.e)}**0.5)'
+        cp = a.e**0.5
     else:
-        normS = (a * a - bI * bI).e
-        cp = f'(0.5 * ({str(a.e)} + {str(normS)}**0.5)) ** 0.5'
-    c = alg.scalar(name='c')
-    c2_inv = alg.scalar(name='c2_inv')
-    dI = bI * c2_inv
-    res = c + dI
-
-    # Prepare all the input for lambdify
-    args = {'x': x.values()}
-    expr_dict = dict(res.items())
-    dependencies = [*zip(c.values(), [cp]), *zip(c2_inv.values(), [f'0.5 / {cp}'])]
-    return LambdifyInput(
-        funcname=f'sqrt_{x.type_number}',
-        expr_dict=expr_dict,
-        args=args,
-        dependencies=dependencies,
-    )
+        normS = (a * a - bI_sq).e
+        cp = (0.5 * (a.e + normS**0.5))**0.5
+    return (0.5 * bI / cp) + cp
 
 
 def codegen_polarity(x, undual=False):

@@ -69,7 +69,7 @@ class MultiVector:
         if keys is not None and not all(isinstance(k, int) for k in keys):
             keys = tuple(k if k in algebra.bin2canon else algebra.canon2bin[k] for k in keys)
         if grades is None and name and keys is not None:
-            grades = tuple(sorted({format(k, 'b').count('1') for k in keys}))
+            grades = tuple(sorted({_bit_count(k) for k in keys}))
         values = values if values is not None else list()
         keys = keys if keys is not None else tuple()
 

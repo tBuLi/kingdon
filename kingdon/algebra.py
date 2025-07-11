@@ -25,9 +25,9 @@ from kingdon.codegen import (
     codegen_involute, codegen_conjugate, codegen_sub, codegen_sqrt,
     codegen_outerexp, codegen_outersin, codegen_outercos, codegen_outertan,
     codegen_polarity, codegen_unpolarity, codegen_hodge, codegen_unhodge,
-    mathstr
 )
-from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry
+from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry, do_operation, resolve_and_expand
+from kingdon.polynomial import mathstr
 from kingdon.matrixreps import matrix_rep
 from kingdon.multivector import MultiVector
 from kingdon.graph import GraphWidget
@@ -66,6 +66,11 @@ class Algebra:
         :class:`~kingdon.polynomial.RationalPolynomial` class.
     :param simp_func: This function is applied as a filter function to every multivector coefficient.
     :param pretty_blade: character to use for basis blades when pretty printing to string. Default is 𝐞.
+    :param large: if true this is considered a large algebra. This means various cashing options are removed to save
+        memory, and codegen is replaced by direct computation since codegen is very resource intensive for big
+        expressions. By default, algebras of :math:`d > 6` are considered large, but the user can override this setting
+        because also in large algebras it is still true that the generated code will perform order(s) of magnitude
+        better than direct computation.
     """
     p: int = 0
     q: int = 0
@@ -118,6 +123,7 @@ class Algebra:
     graded: bool = field(default=False, repr=False)  # If true, precompute products per grade.
     pretty_blade: str = field(default='𝐞', repr=False, compare=False)
     pretty_digits: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # TODO: this can be defined outside Algebra
+    large: bool = field(default=None, repr=False, compare=False)
 
     # Codegen & call customization.
     # Wrapper function applied to the codegen generated functions.
@@ -184,16 +190,23 @@ class Algebra:
 
         self.signs = self._prepare_signs()
 
-        # Blades are not precomputed for algebras larger than 6D.
-        self.blades = BladeDict(algebra=self, lazy=self.d > 6)
+        if self.large is None:
+            self.large = self.d > 6
+        # Blades are not precomputed for large algebras.
+        self.blades = BladeDict(algebra=self, lazy=self.large)
 
         self.pss = self.blades[self.bin2canon[2 ** self.d - 1]]
 
-        # Prepare OperatorDict's
-        self.registry = {f.name: f.type(name=f.name, algebra=self, **f.metadata)
-                         for f in fields(self) if 'codegen' in f.metadata}
-        for name, operator_dict in self.registry.items():
-            setattr(self, name, operator_dict)
+        if self.large:
+            self.registry = {f.name: self.wrapper(resolve_and_expand(partial(do_operation, codegen=codegen, algebra=self)))
+                                     if self.wrapper else resolve_and_expand(partial(do_operation, codegen=codegen, algebra=self))
+                             for f in fields(self) if (codegen := f.metadata.get('codegen'))}
+        else:
+            # Prepare OperatorDict's
+            self.registry = {f.name: f.type(name=f.name, algebra=self, **f.metadata)
+                             for f in fields(self) if 'codegen' in f.metadata}
+        for name, op in self.registry.items():
+            setattr(self, name, op)
 
     @classmethod
     def fromname(cls, name: str, **kwargs):
