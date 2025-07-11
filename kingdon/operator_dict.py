@@ -72,7 +72,7 @@ def do_operation(*mvs, codegen, algebra) -> MultiVector:
     """
     This function just does the operation directly on the MV's, no codegen is performed.
     This is used for large algebras, where codegen is too costly.
-    The result is the multivector resulting from codegen(*mvs).
+    The result is the multivector resulting from :code:`codegen(*mvs)`.
     """
     mvs = [mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(algebra, (0,), (mv,))
            for mv in mvs]
