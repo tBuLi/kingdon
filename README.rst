@@ -26,13 +26,13 @@ Pythonic Geometric Algebra Package
 Cite as::
 
     @misc{roelfs2025willingkingdoncliffordalgebra,
-          title={The Willing Kingdon Clifford Algebra Library}, 
+          title={The Willing Kingdon Clifford Algebra Library},
           author={Martin Roelfs},
           year={2025},
           eprint={2503.10451},
           archivePrefix={arXiv},
           primaryClass={cs.MS},
-          url={https://arxiv.org/abs/2503.10451}, 
+          url={https://arxiv.org/abs/2503.10451},
     }
 
 
@@ -99,6 +99,18 @@ A small selection of our items:
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_fivebar.ipynb
 
        Fivebar mechanism
+   * - .. image:: docs/_static/csga2d_opns.jpg
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=OPNS%2F2DCSGA.ipynb
+
+       2DCSGA!
+     - .. image:: docs/_static/mga3d_points_and_lines.jpg
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=OPNS%2FMotherAlgebra.ipynb
+
+       Mother Algebra
+     - .. image:: docs/_static/ccga3d_points_quadrics.jpg
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=OPNS%2F3DCCGA.ipynb
+
+       3DCCGA
 
 
 

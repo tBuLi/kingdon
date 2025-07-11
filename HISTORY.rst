@@ -74,3 +74,18 @@ Bugfixes to ganja.js integration:
 * Added `Algebra.fromname` alternative constructor, to initiate popular algebras with optimized bases, identical to `GAmphetamine.js`.
 * Codegen has been made 2-15 times faster for basic operators.
 * Updated the documentation.
+
+1.3.1 (2025-06-06)
+------------------
+Bugfix release:
+- matrix reps are now correct in all signatures (including custom signatures).
+- Fixed setattr discrepancy when trying to set a basis blade with setattr.
+- Support copying multivectors
+
+1.4.0 (2025-07-11)
+------------------
+Massive large algebra improvement!
+- In theory up to 36 dimensions are supported*
+- Above d > 6 kingdon switches to large algebra mode and attempts to make optimizations
+- Exotic algebras like 2DCSGA (R5,3), Mother Algebra (R4,4) and 3DCCGA (R6,3) are no longer out of reach, see teahouse!
+- Bugfix: multivectors now take priority over numpy arrays in binary operators even when the numpy array is on the left.
