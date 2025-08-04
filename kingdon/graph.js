@@ -1,9 +1,17 @@
-const Algebra = await fetch("https://enki.ws/ganja.js/ganja.js")
-                      .then(x=>x.text())
-                      .then(x=>{ const ctx = {}; (new Function('const define=1;'+x)).apply(ctx); return ctx.Algebra });
+const ganja_source = sessionStorage.ganja_source ||
+    await fetch("https://enki.ws/ganja.js/ganja.js")
+          .then(x => x.text());
+
+if (!sessionStorage.ganja_source) {sessionStorage.ganja_source = ganja_source};
+
+const Algebra = (() => {
+    const ctx = {};
+    (new Function('const define=1;' + ganja_source)).apply(ctx);
+    return ctx.Algebra;
+})();
 
 function render({ model, el }) {
-    var canvas = Algebra({metric: model.get('signature')}).inline((model)=>{
+    var canvas = Algebra({metric: model.get('signature'), graded: model.get('graded')}).inline((model)=>{
         // Define constants
         var key2idx = model.get('key2idx');
         var draggable_points_idxs = model.get('draggable_points_idxs');
