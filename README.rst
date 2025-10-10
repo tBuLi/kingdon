@@ -14,7 +14,8 @@ Kingdon
         :target: https://coveralls.io/github/tBuLi/kingdon?branch=master
 
 .. image:: https://img.shields.io/pypi/dm/kingdon
-   :alt: PyPI - Downloads
+        :target: https://pypi.python.org/pypi/kingdon
+        :alt: PyPI - Downloads
 
 
 
