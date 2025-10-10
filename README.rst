@@ -13,6 +13,10 @@ Kingdon
 .. image:: https://coveralls.io/repos/github/tBuLi/kingdon/badge.svg?branch=master
         :target: https://coveralls.io/github/tBuLi/kingdon?branch=master
 
+.. image:: https://img.shields.io/pypi/dm/kingdon
+   :alt: PyPI - Downloads
+
+
 
 
 Pythonic Geometric Algebra Package
