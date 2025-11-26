@@ -540,6 +540,13 @@ def test_sqrt():
     diff = Rsqrt - Rsqrt_direct
     np.testing.assert_almost_equal(diff.values(), np.zeros(len(alg) // 2))
 
+    # Addition by Hamish Todd: test 360 translations. TODO: finish
+    # sqrt_360 = (-1 + 4*e01).sqrt()
+    # expected = (1 + -2*e01)
+    # diff = sqrt_360 - expected
+    # np.testing.assert_almost_equal(diff.values(), np.zeros(len(alg) // 2))
+
+
 
 def test_clifford_involutions():
     alg = Algebra(8)
