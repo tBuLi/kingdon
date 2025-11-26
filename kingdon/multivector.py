@@ -235,7 +235,7 @@ class MultiVector:
 
         # Addition by Hamish Todd: handle the case of 360 translations, a necessity for PGA/CGA/STAP/STAC, see https://hamishtodd1.substack.com/p/360-translations-the-strangest-objects
         b = self.grade(2)
-        is_360_translation = self.e < 0 and b and not (b*b)
+        is_360_translation = isinstance(self.e, float) and self.e < 0 and b and not (b*b)
         if is_360_translation:
             print("Warning: 360 translation. Result of sqrt will be 'up to sign'")
             return self.algebra.sqrt(-self)
