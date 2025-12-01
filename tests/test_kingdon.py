@@ -654,7 +654,7 @@ def test_blade_dict():
     assert len(alg.blades) == 2
 
 
-def test_numregister_operator_existence():
+def test_numcompile_operator_existence():
     """ Test if all battery-included GA operators can be used in custum functions."""
     alg = Algebra(2, 0, 0)
     uvals = np.random.random(len(alg))
@@ -668,41 +668,41 @@ def test_numregister_operator_existence():
             def myfunc(x):
                 return getattr(x, op_name)()
 
-            myfunc_compiled = alg.register(myfunc)
+            myfunc_compiled = alg.compile(myfunc)
             assert myfunc_compiled(u) == myfunc(u)
 
         else:
             def myfunc(x, y):
                 return getattr(x, op_name)(y)
-            myfunc_compiled = alg.register(myfunc)
+            myfunc_compiled = alg.compile(myfunc)
             assert myfunc_compiled(u, v) == myfunc(u, v)
 
 
-def test_numregister_basics():
+def test_numcompile_basics():
     alg = Algebra(3, 0, 1)
     uvals = np.random.random(len(alg))
     vvals = np.random.random(len(alg))
     u = alg.multivector(uvals)
     v = alg.multivector(vvals)
 
-    @alg.register
+    @alg.compile
     def square(x):
         return x * x
 
-    @alg.register
+    @alg.compile
     def double(x):
         return 2 * x
 
-    @alg.register
+    @alg.compile
     def add(x, y):
         return x + y
 
-    @alg.register
+    @alg.compile
     def grade_select(x):
         return x.grade(1, 2)
 
-    # Test if we can nest registered expressions.
-    @alg.register
+    # Test if we can nest compiled expressions.
+    @alg.compile
     def coupled(u, v):
         uv = add(u, v)
         return square(uv) + double(u)
@@ -714,29 +714,29 @@ def test_numregister_basics():
     assert coupled(u, v) == (u + v)**2 + 2 * u
 
 
-def test_symregister_basics():
+def test_symcompile_basics():
     alg = Algebra(3, 0, 1)
     u = alg.multivector(name='u')
     v = alg.multivector(name='v')
 
-    @alg.register(symbolic=True)
+    @alg.compile(symbolic=True)
     def square(x):
         return x * x
 
-    @alg.register(symbolic=True)
+    @alg.compile(symbolic=True)
     def double(x):
         return 2 * x
 
-    @alg.register(symbolic=True)
+    @alg.compile(symbolic=True)
     def add(x, y):
         return x + y
 
-    @alg.register(symbolic=True)
+    @alg.compile(symbolic=True)
     def grade_select(x):
         return x.grade((1, 2))
 
-    # Test if we can nest registered expressions.
-    @alg.register(symbolic=True)
+    # Test if we can nest compiled expressions.
+    @alg.compile(symbolic=True)
     def coupled(u, v):
         uv = add(u, v)
         return square(uv) + double(u)

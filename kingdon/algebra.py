@@ -6,6 +6,7 @@ from collections import Counter
 from dataclasses import dataclass, field, fields
 from collections.abc import Mapping, Callable
 from typing import List, Tuple
+import warnings
 
 try:
     from functools import cached_property
@@ -324,15 +325,21 @@ class Algebra:
 
     def register(self, expr=None, /, *, name=None, symbolic=False):
         """
-        Register a function with the algebra to optimize its execution times.
+        Compile a function with the algebra to optimize its execution times. Deprecated in favor of :meth:`~kingdon.algebra.Algebra.compile`.
+        """
+        warnings.warn("Use @alg.compile instead of @alg.register", FutureWarning)
+        return self.compile(expr, name=name, symbolic=symbolic)
 
+    def compile(self, expr=None, /, *, name=None, symbolic=False):
+        """
+        Compile a function with the algebra to optimize its execution times. 
         The function must be a valid GA expression, not an arbitrary python function.
 
         Example:
 
         .. code-block ::
 
-            @alg.register
+            @alg.compile
             def myexpr(a, b):
                 return a @ b
 
@@ -348,7 +355,7 @@ class Algebra:
 
         When `symbolic=True` the expression is symbolically optimized before being turned
         into a numerical function. Beware that symbolic optimization of longer expressions
-        (currently) takes exorbitant amounts of time, and often isn't worth it if the end
+        can (currently) take exorbitant amounts of time, and often isn't worth it if the end
         goal is numerical computation.
 
         :param expr: Python function of a valid kingdon GA expression.
@@ -367,12 +374,12 @@ class Algebra:
                 self.registry[expr] = OperatorDict(name, codegen=expr, algebra=self)
             return self.registry[expr]
 
-        # See if we are being called as @register or @register()
+        # See if we are being called as @compile or @compile()
         if expr is None:
-            # Called as @register()
+            # Called as @compile()
             return partial(wrap, name=name, symbolic=symbolic)
 
-        # Called as @register
+        # Called as @compile
         return wrap(expr, name=name, symbolic=symbolic)
 
     def multivector(self, *args, **kwargs) -> MultiVector:

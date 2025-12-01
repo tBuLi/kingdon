@@ -588,7 +588,7 @@ def func_builder(res_vals: defaultdict, *mvs, funcname: str) -> CodegenOutput:
     if res_vals:
         body = ''
         for mv, arg in zip(mvs, args):
-            body += f'    [{", ".join(str(v) for v in mv.values())}] = {arg}\n'
+            body += f'    {", ".join(str(v) for v in mv.values())}, = {arg}\n'
         return_val = f'    return [{", ".join(res_vals.values())},]'
     else:
         body = ''
@@ -603,6 +603,7 @@ def func_builder(res_vals: defaultdict, *mvs, funcname: str) -> CodegenOutput:
     # Add the generated code to linecache such that it is inspect-safe.
     linecache.cache[funcname] = (len(func_source), None, func_source.splitlines(True), funcname)
     func = func_locals[funcname]
+    func.__module__ = __name__
     return CodegenOutput(tuple(res_vals.keys()), func)
 
 
@@ -696,6 +697,7 @@ def lambdify(args: dict, exprs: list, funcname: str, dependencies: tuple = None,
     linecache.cache[filename] = (len(funcstr), None, funcstr.splitlines(True), filename) # type: ignore
 
     func = funclocals[funcname]
+    func.__module__ = __name__
     return func
 
 
@@ -815,7 +817,7 @@ class KingdonPrinter:
         unpack to.
         """
         def unpack_lhs(lvalues):
-            return '[{}]'.format(', '.join(
+            return '({},)'.format(', '.join(
                 unpack_lhs(val) if iterable(val) else val for val in lvalues))
 
         return ['{} = {}'.format(unpack_lhs(unpackto), arg)]

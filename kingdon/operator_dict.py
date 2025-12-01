@@ -190,6 +190,18 @@ class OperatorDict(Mapping):
 
         return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)
 
+    def get_function(self, *mvs):
+        """ Convenience method to get the compiled function for a given set of multivectors. """
+        keys_in = tuple(mv.keys() for mv in mvs)
+        _, func = self[keys_in]
+        return func
+
+    def get_keys_out(self, *mvs):
+        """ Convenience method to get the keys out for a given set of multivectors. """
+        keys_in = tuple(mv.keys() for mv in mvs)
+        keys_out, _ = self[keys_in]
+        return keys_out
+
 
 class UnaryOperatorDict(OperatorDict):
     """
