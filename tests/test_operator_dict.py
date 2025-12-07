@@ -48,10 +48,6 @@ def test_codegen_weights():
     weights = alg.scalar(e=ws)
     x0, x1, x2 = x.grade(0), x.grade(1), x.grade(2)
     y0, y1, y2 = y.grade(0), y.grade(1), y.grade(2)
-    # keys_out, func = weighted_ip[x.keys(), y.keys(), weights.keys()]
     keys_out, func = weighted_ip[x, y, weights]
-    print(func)
     res = weighted_ip(x, y, weights)
-    print(res)
-    # assert res == w0*x0*y0 + w1*(x1|y1) + w2*x2*y2
     assert res == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0

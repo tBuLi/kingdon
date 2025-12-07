@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from collections.abc import Mapping
-from typing import Callable, Tuple
+from typing import Callable, Tuple, NamedTuple
 from functools import wraps, cached_property
 import inspect
 import string
@@ -95,6 +95,18 @@ def do_operation(*mvs, codegen, algebra) -> MultiVector:
         raise NotImplementedError(type(res))
 
 
+class OperatorDictOutput(NamedTuple):
+    """
+    Output of a codegen function.
+
+    :param keys_out: tuple with the output blades in binary rep.
+    :param func: callable that takes (several) sequence(s) of values
+        returns a tuple of :code:`len(keys_out)`.
+    """
+    keys_out: Tuple[int]
+    func: Callable
+
+
 @dataclass
 class OperatorDict(Mapping):
     """
@@ -144,7 +156,7 @@ class OperatorDict(Mapping):
             mvs = self.make_symbolic_mvs(keys_in)
             keys_out, func = do_codegen(self.codegen, *mvs)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
-            self.operator_dict[keys_in] = (keys_out, func)
+            self.operator_dict[keys_in] = OperatorDictOutput(keys_out, func)
         return self.operator_dict[keys_in]
 
     def __contains__(self, mvs: Tuple[MultiVector]):
@@ -216,16 +228,6 @@ class OperatorDict(Mapping):
 
         return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)
 
-    def get_function(self, *mvs):
-        """ Convenience method to get the compiled function for a given set of multivectors. """
-        _, func = self[mvs]
-        return func
-
-    def get_keys_out(self, *mvs):
-        """ Convenience method to get the keys out for a given set of multivectors. """
-        keys_out, _ = self[mvs]
-        return keys_out
-
 
 class UnaryOperatorDict(OperatorDict):
     """
@@ -243,7 +245,7 @@ class UnaryOperatorDict(OperatorDict):
             mv = self.make_symbolic_mvs((keys_in,))[0]
             keys_out, func = do_codegen(self.codegen, mv)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
-            self.operator_dict[keys_in] = (keys_out, func)
+            self.operator_dict[keys_in] = OperatorDictOutput(keys_out, func)
         return self.operator_dict[keys_in]
 
     @resolve_and_expand
@@ -272,7 +274,7 @@ class Registry(OperatorDict):
                      for name, keys in zip(string.ascii_lowercase, keys_in)]
             keys_out, func = do_compile(self.codegen, *tapes)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
-            self.operator_dict[keys_in] = (keys_out, func)
+            self.operator_dict[keys_in] = OperatorDictOutput(keys_out, func)
         return self.operator_dict[keys_in]
 
     @resolve_and_expand
