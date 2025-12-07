@@ -25,8 +25,15 @@ else:
         return count
 
 
+class MultiVectorType(type):
+    """
+    MultiVector type allows typehinting for arrays of MultiVectors.
+    For example, :code:`MultiVector[3]` is interpreted as a tuple of 3 MultiVectors by :code:`Algebra.compile`.
+    """
+    def __getitem__(cls, item): return cls, item
+
 @dataclass(init=False)
-class MultiVector:
+class MultiVector(metaclass=MultiVectorType):
     algebra: "Algebra"
     _values: list = field(default_factory=list)
     _keys: tuple = field(default_factory=tuple)
@@ -314,13 +321,12 @@ class MultiVector:
         return str(self)
 
     def __getitem__(self, item):
-        if not isinstance(item, tuple):
-            item = (item,)
-
         values = self.values()
         if isinstance(values, (tuple, list)):
             return_values = values.__class__(value[item] for value in values)
         else:
+            if not isinstance(item, tuple):
+                item = (item,)
             return_values = values[(slice(None), *item)]
         return self.__class__.fromkeysvalues(self.algebra, keys=self.keys(), values=return_values)
 

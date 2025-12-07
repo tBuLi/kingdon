@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import string
-from itertools import product, combinations, groupby
+from itertools import product, combinations, groupby, chain
 from collections import namedtuple, defaultdict
 from typing import NamedTuple, Callable, Tuple, Dict
 from functools import reduce, cached_property
@@ -530,8 +530,9 @@ def do_codegen(codegen, *mvs) -> CodegenOutput:
         dependencies = res.dependencies
         res = res.expr_dict
     else:
-        funcname = f'{codegen.__name__}_' + '_x_'.join(f"{format(mv.type_number, 'X')}" for mv in mvs)
-        args = {arg_name: arg.values() for arg_name, arg in zip(string.ascii_uppercase, mvs)}
+        funcname = f'{codegen.__name__}_' + '_x_'.join(f"{format(mv[0].type_number if isinstance(mv, list) else mv.type_number, 'X')}" for mv in mvs)
+        args = {arg_name: [tuple(chain(*(x.values() for x in arg)))] if isinstance(arg, list) else arg.values()
+                for arg_name, arg in zip(string.ascii_uppercase, mvs)}
         dependencies = None
 
     # Sort the keys in canonical order
@@ -744,8 +745,10 @@ class KingdonPrinter:
         funcargs = []
         unpackings = []
 
-        for name, argstr in zip(names, argstrs):
-            if iterable(argstr):
+        for name, argstr, arg in zip(names, argstrs, args):
+            if not arg:
+                funcargs.append(name)
+            elif iterable(argstr):
                 funcargs.append(name)
                 unpackings.extend(self._print_unpacking(argstr, funcargs[-1]))
             else:

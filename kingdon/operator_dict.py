@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from collections.abc import Mapping
 from typing import Callable, Tuple
-from functools import wraps
+from functools import wraps, cached_property
 import inspect
 import string
 
@@ -122,17 +122,33 @@ class OperatorDict(Mapping):
     def __len__(self):
         return len(self.operator_dict)
 
-    def __getitem__(self, keys_in: Tuple[Tuple[int]]):
+    def _make_symbolic_mv(self, name, MVType, keys):
+        MVType, depth = MVType if isinstance(MVType, tuple) else (MVType, 0)
+        names = list(f'{name}{self.algebra.bin2canon[k][1:]}' for k in keys)
+        if not depth:
+            return MVType.fromkeysvalues(self.algebra, keys, list(self.codegen_symbolcls(name) for name in names))
+        mvs = []
+        for j in range(depth):
+            _names = [f'{name}_{j}' for name in names]
+            values = list(self.codegen_symbolcls(name) for name in _names)
+            mvs.append(MVType.fromkeysvalues(self.algebra, keys, values))
+        return mvs
+
+    def make_symbolic_mvs(self, keys_in: Tuple[Tuple[int]]) -> tuple[MultiVector]:
+        return tuple(self._make_symbolic_mv(name, MVType, keys) for (name, MVType), keys in zip(self.codegen_types.items(), keys_in))
+
+    def __getitem__(self, mvs: Tuple[MultiVector]):
+        keys_in = tuple(mv.keys() for mv in mvs)
         if keys_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
-            mvs = [MultiVector.fromkeysvalues(self.algebra, keys, list(self.codegen_symbolcls(f'{name}{self.algebra.bin2canon[k][1:]}') for k in keys))
-                   for name, keys in zip(string.ascii_lowercase, keys_in)]
+            mvs = self.make_symbolic_mvs(keys_in)
             keys_out, func = do_codegen(self.codegen, *mvs)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
             self.operator_dict[keys_in] = (keys_out, func)
         return self.operator_dict[keys_in]
 
-    def __contains__(self, keys_in: Tuple[Tuple[int]]):
+    def __contains__(self, mvs: Tuple[MultiVector]):
+        keys_in = tuple(mv.keys() for mv in mvs)
         return keys_in in self.operator_dict
 
     def __iter__(self):
@@ -144,20 +160,37 @@ class OperatorDict(Mapping):
         keys, values = zip(*keysvalues) if keysvalues else (tuple(), list())
         return keys, list(values)
 
+    @cached_property
+    def codegen_types(self):
+        return {name: MultiVector if p.annotation == inspect.Parameter.empty else p.annotation
+                for name, p in inspect.signature(self.codegen).parameters.items()}
+
+    def _sanitize_mvs(self, mvs: tuple[MultiVector]):
+        """ Make sure all inputs are multivectors. If an input is not, assume its scalar."""
+        if len(mvs) == 1:
+            mv = mvs[0]
+            mv = mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv])
+            return (mv,)
+        if len(mvs) == 2:
+            mv1, mv2 = mvs
+            mv1 = mv1 if isinstance(mv1, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv1])
+            mv2 = mv2 if isinstance(mv2, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv2])
+            mvs = (mv1, mv2)
+        else:
+            mvs = [mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv])
+                   for mv in mvs]
+        if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
+            raise AlgebraError("Cannot multiply elements of different algebra's.")
+        return mvs
+
     @resolve_and_expand
     def __call__(self, *mvs):
+        mvs = self._sanitize_mvs(mvs)
         if len(mvs) == 2:
             return self._call_binary(*mvs)
 
-        # Make sure all inputs are multivectors. If an input is not, assume its scalar.
-        mvs = [mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), (mv,))
-               for mv in mvs]
-        if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
-            raise AlgebraError("Cannot multiply elements of different algebra's.")
-
-        keys_in = tuple(mv.keys() for mv in mvs)
+        keys_out, func = self[mvs]
         values_in = tuple(mv.values() for mv in mvs)
-        keys_out, func = self[keys_in]
         issymbolic = any(mv.issymbolic for mv in mvs)
         if issymbolic or not mvs[0].algebra.wrapper:
             values_out = func(*values_in)
@@ -171,14 +204,7 @@ class OperatorDict(Mapping):
 
     def _call_binary(self, mv1, mv2):
         """ Specialization for binary operators. """
-        # Make sure all inputs are multivectors. If an input is not, assume its scalar.
-        mv1 = mv1 if isinstance(mv1, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv1])
-        mv2 = mv2 if isinstance(mv2, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv2])
-        # Check is written to be fast, not readable. Typically, the first check is true.
-        if not (mv1.algebra is mv2.algebra or mv1.algebra == mv2.algebra):
-            raise AlgebraError("Cannot multiply elements of different algebra's.")
-
-        keys_out, func = self[mv1.keys(), mv2.keys()]
+        keys_out, func = self[mv1, mv2]
         issymbolic = (mv1.issymbolic or mv2.issymbolic)
         if issymbolic or not mv1.algebra.wrapper:
             values_out = func(mv1.values(), mv2.values())
@@ -192,14 +218,12 @@ class OperatorDict(Mapping):
 
     def get_function(self, *mvs):
         """ Convenience method to get the compiled function for a given set of multivectors. """
-        keys_in = tuple(mv.keys() for mv in mvs)
-        _, func = self[keys_in]
+        _, func = self[mvs]
         return func
 
     def get_keys_out(self, *mvs):
         """ Convenience method to get the keys out for a given set of multivectors. """
-        keys_in = tuple(mv.keys() for mv in mvs)
-        keys_out, _ = self[keys_in]
+        keys_out, _ = self[mvs]
         return keys_out
 
 
@@ -209,9 +233,14 @@ class UnaryOperatorDict(OperatorDict):
     case of unary operators, we can do away with all of the overhead that is necessary for
     operators that act on multiple multivectors.
     """
-    def __getitem__(self, keys_in: Tuple[Tuple[int]]):
+    def __contains__(self, mv: MultiVector):
+        keys_in = mv.keys()
+        return keys_in in self.operator_dict
+
+    def __getitem__(self, mv: MultiVector):
+        keys_in = mv.keys()
         if keys_in not in self.operator_dict:
-            mv = MultiVector.fromkeysvalues(self.algebra, keys_in, list(self.codegen_symbolcls(f'a{self.algebra.bin2canon[k][1:]}') for k in keys_in))
+            mv = self.make_symbolic_mvs((keys_in,))[0]
             keys_out, func = do_codegen(self.codegen, mv)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
             self.operator_dict[keys_in] = (keys_out, func)
@@ -219,7 +248,8 @@ class UnaryOperatorDict(OperatorDict):
 
     @resolve_and_expand
     def __call__(self, mv):
-        keys_out, func = self[mv.keys()]
+        mv = self._sanitize_mvs((mv,))[0]
+        keys_out, func = self[mv]
 
         issymbolic = mv.issymbolic
         if issymbolic or not mv.algebra.wrapper:
@@ -234,7 +264,8 @@ class UnaryOperatorDict(OperatorDict):
 
 
 class Registry(OperatorDict):
-    def __getitem__(self, keys_in: Tuple[Tuple[int]]):
+    def __getitem__(self, mvs: Tuple[MultiVector]):
+        keys_in = tuple(mv.keys() for mv in mvs)
         if keys_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
             tapes = [TapeRecorder(algebra=self.algebra, expr=name, keys=keys)
@@ -247,8 +278,7 @@ class Registry(OperatorDict):
     @resolve_and_expand
     def __call__(self, *mvs):
         if all(isinstance(mv, TapeRecorder) for mv in mvs):
-            keys_in = tuple(mv.keys() for mv in mvs)
-            keys_out, func = self[keys_in]
+            keys_out, func = self[mvs]
             expr = f"{func.__name__}({', '.join(mv.expr for mv in mvs)})"
             return TapeRecorder(self.algebra, keys=keys_out, expr=expr)
 
@@ -258,9 +288,8 @@ class Registry(OperatorDict):
         if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
             raise AlgebraError("Cannot multiply elements of different algebra's.")
 
-        keys_in = tuple(mv.keys() for mv in mvs)
         values_in = tuple(mv.values() for mv in mvs)
-        keys_out, func = self[keys_in]
+        keys_out, func = self[mvs]
 
         if not mvs[0].algebra.wrapper:
             values_out = func(*values_in)

@@ -67,17 +67,22 @@ class TapeRecorder:
         return self.expr
 
     def binary_operator(self, other, operator: str):
+        operator_dict = getattr(self.algebra, operator)
         if not isinstance(other, self.__class__):
             # Assume scalar
-            keys_out, func = getattr(self.algebra, operator)[self.keys(), (0,)]
+            mvs = operator_dict.make_symbolic_mvs((self.keys(), (0,)))
+            keys_out, func = operator_dict[mvs]
             expr = f'{func.__name__}({self.expr}, ({other},))'
         else:
-            keys_out, func = getattr(self.algebra, operator)[self.keys(), other.keys()]
+            mvs = operator_dict.make_symbolic_mvs((self.keys(), other.keys()))
+            keys_out, func = operator_dict[mvs]
             expr = f'{func.__name__}({self.expr}, {other.expr})'
         return self.__class__(algebra=self.algebra, expr=expr, keys=keys_out)
 
     def unary_operator(self, operator: str):
-        keys_out, func = getattr(self.algebra, operator)[self.keys()]
+        operator_dict = getattr(self.algebra, operator)
+        mv = operator_dict.make_symbolic_mvs((self.keys(),))[0]
+        keys_out, func = operator_dict[mv]
         expr = f'{func.__name__}({self.expr})'
         return self.__class__(algebra=self.algebra, expr=expr, keys=keys_out)
 
