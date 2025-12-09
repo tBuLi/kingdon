@@ -139,15 +139,11 @@ class OperatorDict(Mapping):
         names = list(f'{name}{self.algebra.bin2canon[k][1:]}' for k in keys)
         if not depth:
             return MVType.fromkeysvalues(self.algebra, keys, list(self.codegen_symbolcls(name) for name in names))
-        mvs = []
-        for j in range(depth):
-            _names = [f'{name}_{j}' for name in names]
-            values = list(self.codegen_symbolcls(name) for name in _names)
-            mvs.append(MVType.fromkeysvalues(self.algebra, keys, values))
-        return mvs
+        mv_values = [[self.codegen_symbolcls(f'{name}_{j}') for j in range(depth)] for name in names]
+        return MVType.fromkeysvalues(self.algebra, keys, mv_values)
 
     def make_symbolic_mvs(self, keys_in: Tuple[Tuple[int]]) -> tuple[MultiVector]:
-        return tuple(self._make_symbolic_mv(name, MVType, keys) for (name, MVType), keys in zip(self.codegen_types.items(), keys_in))
+        return tuple(self._make_symbolic_mv(name, MVType, keys) for (name, MVType), keys in zip(self.codegen_input_types.items(), keys_in))
 
     def __getitem__(self, mvs: Tuple[MultiVector]):
         keys_in = tuple(mv.keys() for mv in mvs)
@@ -173,9 +169,14 @@ class OperatorDict(Mapping):
         return keys, list(values)
 
     @cached_property
-    def codegen_types(self):
+    def codegen_input_types(self):
         return {name: MultiVector if p.annotation == inspect.Parameter.empty else p.annotation
                 for name, p in inspect.signature(self.codegen).parameters.items()}
+
+    @cached_property
+    def codegen_output_type(self):
+        return_annotation = inspect.signature(self.codegen).return_annotation
+        return MultiVector if return_annotation == inspect.Signature.empty else return_annotation
 
     def _sanitize_mvs(self, mvs: tuple[MultiVector]):
         """ Make sure all inputs are multivectors. If an input is not, assume its scalar."""

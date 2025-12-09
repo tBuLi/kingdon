@@ -27,8 +27,9 @@ else:
 
 class MultiVectorType(type):
     """
-    MultiVector type allows typehinting for arrays of MultiVectors.
-    For example, :code:`MultiVector[3]` is interpreted as a tuple of 3 MultiVectors by :code:`Algebra.compile`.
+    MultiVector type allows typehinting for MultiVectors of a given shape.
+    For example, :code:`MultiVector[3]` is interpreted as a MultiVectors of shape (N, 3) by :code:`Algebra.compile`,
+    where N is the number of blades in the multivector.
     """
     def __getitem__(cls, item): return cls, item
 
@@ -186,6 +187,10 @@ class MultiVector(metaclass=MultiVectorType):
             return self._values.shape
         elif hasattr(self._values[0], 'shape'):
             return len(self), *self._values[0].shape
+        elif isinstance(self._values[0], (tuple, list)):
+            if not all(len(v) == len(self._values[0]) for v in self._values):
+                raise ValueError("All values of a Multivectors must have the same length in order for the mulivector to have a consistent shape.")
+            return len(self), len(self._values[0])
         else:
             return len(self),
 

@@ -15,6 +15,8 @@ import keyword
 
 from sympy.utilities.iterables import iterable, flatten
 from sympy.printing.lambdarepr import LambdaPrinter
+from sympy.simplify.cse_main import numbered_symbols
+from sympy import Symbol
 
 
 @dataclass
@@ -251,14 +253,6 @@ Fraction = namedtuple('Fraction', ['numer', 'denom'])
 Fraction.__doc__ = """
 Tuple representing a fraction.
 """
-
-
-class LambdifyInput(NamedTuple):
-    """ Strike package for the Lambdify function. """
-    funcname: str
-    args: dict
-    expr_dict: dict
-    dependencies: list
 
 
 def codegen_inv(y, symbolic=False):
@@ -521,19 +515,18 @@ def do_codegen(codegen, *mvs) -> CodegenOutput:
 
     res = codegen(*mvs)
 
-    if isinstance(res, CodegenOutput):
-        return res
+    # Turn a list of Multivectors into a single Multivector of lists.
+    if isinstance(res, (list, tuple)):
+        reshaped_res = defaultdict(list)
+        for mv in res:
+            for k, v in mv.items():
+                reshaped_res[k].append(v)
+        res = reshaped_res
 
-    if isinstance(res, LambdifyInput):
-        funcname = res.funcname
-        args = res.args
-        dependencies = res.dependencies
-        res = res.expr_dict
-    else:
-        funcname = f'{codegen.__name__}_' + '_x_'.join(f"{format(mv[0].type_number if isinstance(mv, list) else mv.type_number, 'X')}" for mv in mvs)
-        args = {arg_name: [tuple(chain(*(x.values() for x in arg)))] if isinstance(arg, list) else arg.values()
-                for arg_name, arg in zip(string.ascii_uppercase, mvs)}
-        dependencies = None
+    funcname = f'{codegen.__name__}_' + '_x_'.join(f"{format(mv[0].type_number if isinstance(mv, list) else mv.type_number, 'X')}" for mv in mvs)
+    args = {arg_name: [tuple(chain(*(x.values() for x in arg)))] if isinstance(arg, list) else arg.values()
+            for arg_name, arg in zip(string.ascii_uppercase, mvs)}
+    dependencies = None
 
     # Sort the keys in canonical order
     res = {bin: res[bin] if isinstance(res, dict) else getattr(res, canon)
@@ -661,27 +654,37 @@ def lambdify(args: dict, exprs: list, funcname: str, dependencies: tuple = None,
     args = {name: [tosympy(v) for v in values]
             for name, values in args.items()}
     exprs = [tosympy(expr) for expr in exprs]
-    if dependencies is not None:
+    if dependencies:
         dependencies = [(tosympy(y), tosympy(x)) for y, x in dependencies]
     names = tuple(arg if isinstance(arg, str) else arg.name for arg in args.keys())
     iterable_args = tuple(args.values())
 
     funcprinter = KingdonPrinter(printer, dummify)
 
+    def unflatten(template, flat):
+        it = iter(flat)
+        def walk(t):
+            return type(t)(walk(x) for x in t) if isinstance(t, (list, tuple)) else next(it)
+        return walk(template)
+
     # TODO: Extend CSE to include the dependencies.
     lhsides, rhsides = zip(*dependencies) if dependencies else ([], [])
-    if cse and not any(isinstance(expr, str) for expr in exprs):
+    flat_exprs = flatten(exprs)
+    symbols = numbered_symbols(cls=Symbol, prefix='_x')
+    if cse and not any(isinstance(expr, str) for expr in flat_exprs):
         if not callable(cse):
             from sympy.simplify.cse_main import cse
         if dependencies:
-            all_exprs = [*exprs, *rhsides]
-            cses, _all_exprs = cse(all_exprs, list=False, order='none', ignore=lhsides)
-            _exprs, _rhsides = _all_exprs[:-len(rhsides)], _all_exprs[len(exprs):]
+            flat_rhsides = flatten(rhsides)
+            cses, _all_exprs = cse([*flat_exprs, *flat_rhsides], list=False, order='none', ignore=lhsides, symbols=symbols)
+            _flat_exprs = _all_exprs[:len(flat_exprs)]
+            _rhsides = unflatten(rhsides, _all_exprs[len(flat_exprs):])
             cses.extend(list(zip(flatten(lhsides), flatten(_rhsides))))
         else:
-            cses, _exprs = cse(exprs, list=False)
+            cses, _flat_exprs = cse(flat_exprs, list=False, symbols=symbols)
     else:
-        cses, _exprs = list(zip(flatten(lhsides), flatten(rhsides))), exprs
+        cses, _flat_exprs = list(zip(flatten(lhsides), flatten(rhsides))), flat_exprs
+    _exprs = unflatten(exprs, _flat_exprs)
 
     if not any(_exprs):
         _exprs = list('0' for expr in _exprs)
@@ -748,9 +751,14 @@ class KingdonPrinter:
         for name, argstr, arg in zip(names, argstrs, args):
             if not arg:
                 funcargs.append(name)
+            elif iterable(argstr) and iterable(argstr[0]):
+                funcargs.append(name)
+                unpackings.extend(self._print_unpacking([f'{name}_{i}' for i in range(len(argstr))], name))
+                for i, subargstr in enumerate(argstr):
+                    unpackings.extend(self._print_unpacking(subargstr, f'{name}_{i}'))
             elif iterable(argstr):
                 funcargs.append(name)
-                unpackings.extend(self._print_unpacking(argstr, funcargs[-1]))
+                unpackings.extend(self._print_unpacking(argstr, name))
             else:
                 funcargs.append(argstr)
 
