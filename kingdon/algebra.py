@@ -330,7 +330,7 @@ class Algebra:
         warnings.warn("Use @alg.compile instead of @alg.register", FutureWarning)
         return self.compile(expr, name=name, symbolic=symbolic)
 
-    def compile(self, expr=None, /, *, name=None, symbolic=False):
+    def compile(self, expr=None, /, *, name=None, symbolic=False, codegen_symbolcls=None):
         """
         Compile a function with the algebra to optimize its execution times. 
         The function must be a valid GA expression, not an arbitrary python function.
@@ -363,6 +363,8 @@ class Algebra:
             By default, this is the `expr.__name__`.
         :param symbolic: (optional) If true, the expression is symbolically optimized.
             By default this is False, given the cost of optimizing large expressions.
+        :param codegen_symbolcls: (optional) The class to use for symbolic multivectors.
+            By default the codegen_symbolcls from Algebra is used.
         """
         def wrap(expr, name=None, symbolic=False):
             if name is None:
@@ -371,7 +373,7 @@ class Algebra:
             if not symbolic:
                 self.registry[expr] = Registry(name, codegen=expr, algebra=self)
             else:
-                self.registry[expr] = OperatorDict(name, codegen=expr, algebra=self)
+                self.registry[expr] = OperatorDict(name, codegen=expr, algebra=self, codegen_symbolcls=codegen_symbolcls or OperatorDict.codegen_symbolcls)
             return self.registry[expr]
 
         # See if we are being called as @compile or @compile()
