@@ -44,7 +44,7 @@ def test_codegen_weights():
     assert weighted_gp.codegen_output_type == MultiVector
     x = alg.multivector(name='x')
     y = alg.multivector(name='y')
-    ws = symbols('w0, w1, w2, w3, w4, w5, w6, w7, w8, w9')
+    ws = symbols('w:10')
     w0, w1, w2, w3, w4, w5, w6, w7, w8, w9 = ws
     weights = alg.scalar(e=ws)
     x0, x1, x2 = x.grade(0), x.grade(1), x.grade(2)

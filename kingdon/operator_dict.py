@@ -134,22 +134,24 @@ class OperatorDict(Mapping):
     def __len__(self):
         return len(self.operator_dict)
 
-    def _make_symbolic_mv(self, name, MVType, keys):
+    def _make_symbolic_mv(self, name, MVType, keys, shape):
         MVType, depth = MVType if isinstance(MVType, tuple) else (MVType, 0)
+        depth = shape[1] if depth is int else depth
         names = list(f'{name}{self.algebra.bin2canon[k][1:]}' for k in keys)
         if not depth:
             return MVType.fromkeysvalues(self.algebra, keys, list(self.codegen_symbolcls(name) for name in names))
         mv_values = [[self.codegen_symbolcls(f'{name}_{j}') for j in range(depth)] for name in names]
         return MVType.fromkeysvalues(self.algebra, keys, mv_values)
 
-    def make_symbolic_mvs(self, keys_in: Tuple[Tuple[int]]) -> tuple[MultiVector]:
-        return tuple(self._make_symbolic_mv(name, MVType, keys) for (name, MVType), keys in zip(self.codegen_input_types.items(), keys_in))
+    def make_symbolic_mvs(self, keys_in: Tuple[Tuple[int]], shapes_in: Tuple[Tuple[int]]) -> tuple[MultiVector]:
+        return tuple(self._make_symbolic_mv(name, MVType, keys, shape) for (name, MVType), keys, shape in zip(self.codegen_input_types.items(), keys_in, shapes_in))
 
     def __getitem__(self, mvs: Tuple[MultiVector]):
         keys_in = tuple(mv.keys() for mv in mvs)
+        shapes_in = tuple(mv.shape for mv in mvs)
         if keys_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
-            mvs = self.make_symbolic_mvs(keys_in)
+            mvs = self.make_symbolic_mvs(keys_in, shapes_in)
             keys_out, func = do_codegen(self.codegen, *mvs)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
             self.operator_dict[keys_in] = OperatorDictOutput(keys_out, func)
@@ -242,8 +244,9 @@ class UnaryOperatorDict(OperatorDict):
 
     def __getitem__(self, mv: MultiVector):
         keys_in = mv.keys()
+        shape_in = mv.shape
         if keys_in not in self.operator_dict:
-            mv = self.make_symbolic_mvs((keys_in,))[0]
+            mv = self.make_symbolic_mvs((keys_in,), (shape_in,))[0]
             keys_out, func = do_codegen(self.codegen, mv)
             self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
             self.operator_dict[keys_in] = OperatorDictOutput(keys_out, func)

@@ -185,6 +185,8 @@ class MultiVector(metaclass=MultiVectorType):
         """ Return the shape of the .values() attribute of this multivector. """
         if hasattr(self._values, 'shape'):
             return self._values.shape
+        elif not len(self):
+            return ()
         elif hasattr(self._values[0], 'shape'):
             return len(self), *self._values[0].shape
         elif isinstance(self._values[0], (tuple, list)):
