@@ -1,4 +1,5 @@
 import pytest
+import itertools
 
 from sympy import symbols, Symbol
 
@@ -80,3 +81,41 @@ def test_codegen_weights():
     go_wgp = go.sp(weighted_gp_output)
     for s, grad in zip([*x.values(), *y.values(), *weights.e], grads.e):
         assert grad == go_wgp.map(lambda v: v.diff(s)).e
+
+def test_codegen_wgp_generic():
+    """
+    Similar to test_codegen_weights, but with an unspecified number of weights.
+    This is meant to test the type-hinting syntax for a new dimension of unknown size.
+    """
+    alg = Algebra(2)
+
+    @alg.compile(symbolic=True)
+    def wgp(X: MultiVector, Y: MultiVector, weights: MultiVector[None]) -> MultiVector:
+        """
+        Compute the weighted geometric product between X and Y.
+        The multivectors are mutiplied grade-wise, and a unique weight
+        is applied to each grade in the output.
+        """
+        tot = 0
+        i = 0
+        for gx, gy in itertools.product(X.grades, Y.grades):
+            Z = X.grade(gx) * Y.grade(gy)
+            for gz in Z.grades:
+                tot += weights[i] * Z.grade(gz)
+                i += 1
+        return tot
+
+
+    assert wgp.codegen_input_types == {'X': MultiVector, 'Y': MultiVector, 'weights': (MultiVector, None)}
+    assert wgp.codegen_output_type == MultiVector
+
+    x = alg.multivector(name='x')
+    y = alg.multivector(name='y')
+    ws = symbols('w:10')
+    w0, w1, w2, w4, w3, w6, w5, w9, w8, w7 = ws
+    weights = alg.scalar(e=ws)
+    x0, x1, x2 = x.grade(0), x.grade(1), x.grade(2)
+    y0, y1, y2 = y.grade(0), y.grade(1), y.grade(2)
+    keys_out, func = wgp[x, y, weights]
+    wgp_output = wgp(x, y, weights)
+    assert wgp_output == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0

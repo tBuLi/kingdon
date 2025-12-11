@@ -136,7 +136,7 @@ class OperatorDict(Mapping):
 
     def _make_symbolic_mv(self, name, MVType, keys, shape):
         MVType, depth = MVType if isinstance(MVType, tuple) else (MVType, 0)
-        depth = shape[1] if depth is int else depth
+        depth = shape[1] if depth is None else depth
         names = list(f'{name}{self.algebra.bin2canon[k][1:]}' for k in keys)
         if not depth:
             return MVType.fromkeysvalues(self.algebra, keys, list(self.codegen_symbolcls(name) for name in names))
