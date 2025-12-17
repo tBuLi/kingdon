@@ -137,13 +137,16 @@ def test_codegen_printer():
     def my_wrapper(func):
         return func
     
-    @alg.compile(symbolic=True, printer=MyPrinter, evaluator_printer=MyEvaluatorPrinter, wrapper=my_wrapper)
+    my_printer = MyPrinter()
+    my_func_printer = MyEvaluatorPrinter(my_printer)
+    
+    @alg.compile(symbolic=True, printer=my_printer, func_printer=my_func_printer, wrapper=my_wrapper)
     def my_gp(x, y):
         return x*y
     res = my_gp(x, y)
     assert res == x*y
-    assert my_gp.printer == MyPrinter
-    assert my_gp.evaluator_printer == MyEvaluatorPrinter
+    assert my_gp.printer == my_printer
+    assert my_gp.func_printer == my_func_printer
     assert my_gp.wrapper == my_wrapper
 
 def test_codegen_set():
@@ -177,8 +180,3 @@ def test_codegen_set():
     res = weighted_gp_set(x, y, weights, z)
     assert res == alg.multivector()
     assert z == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0
-
-    import inspect
-    source = inspect.getsource(weighted_gp_set[x, y, weights, z].func)
-    print(source)
-    pass

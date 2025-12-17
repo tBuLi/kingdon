@@ -505,13 +505,13 @@ def _lambdify_mv(mv):
     return CodegenOutput(tuple(mv.keys()), func)
 
 
-def do_codegen(codegen, *mvs, printer=None, evaluator_printer=None) -> CodegenOutput:
+def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
     """
     :param codegen: callable that performs codegen for the given :code:`mvs`. This can be any callable
         that returns either a :class:`~kingdon.multivector.MultiVector`, a dictionary, or an instance of :class:`CodegenOutput`.
     :param mvs: Any remaining positional arguments are taken to be symbolic :class:`~kingdon.multivector.MultiVector`'s.
     :param printer: The sympy style printer used to generate the code with sympy-style printing.
-    :param evaluator_printer: The sympy style evaluator printer used to generate the code with sympy-style printing.
+    :param func_printer: The sympy style evaluator printer used to generate the code with sympy-style printing.
     :return: Instance of :class:`CodegenOutput`.
     """
     algebra = mvs[0].algebra
@@ -547,14 +547,14 @@ def do_codegen(codegen, *mvs, printer=None, evaluator_printer=None) -> CodegenOu
            for canon, bin in algebra.canon2bin.items() if bin in res.keys()}
 
     if not algebra.cse and any(isinstance(v, str) for v in res.values()):
-        return func_builder(res, *mvs, funcname=funcname)
+        return func_builder(res, *mvs, funcname=funcname)  # TODO: add output_mv_idx support
 
 
     keys, exprs = tuple(res.keys()), list(res.values())
     if output_mv_idx is not None:
         keys = ()
     func = lambdify(args, exprs, funcname=funcname, 
-                    cse=algebra.cse, dependencies=dependencies, printer=printer, evaluator_printer=evaluator_printer,
+                    cse=algebra.cse, dependencies=dependencies, printer=printer, func_printer=func_printer,
                     output_mv_idx=output_mv_idx
                     )
     return CodegenOutput(
@@ -626,8 +626,7 @@ def lambdify(
         funcname: str, 
         dependencies: tuple = None, 
         printer=None, 
-        evaluator_printer=None,
-        dummify=False, 
+        func_printer=None,
         cse=False,
         output_mv_idx: int = None
     ):
@@ -668,6 +667,8 @@ def lambdify(
         For example, in the inverse of a multivector, this is used to compute the scalar denominator only once,
         after which all values in expr are multiplied by it. When :code:`cse = True`, these dependencies are also
         included in the CSE process.
+    :param printer: Instance of the sympy style printer used to print individual sympy expressions.
+    :param func_printer: Instance of the sympy style printer used to generate functions using the `printer`.
     :param cse: If :code:`True` (default), CSE is applied to the expressions and dependencies.
         This typically greatly improves performance and reduces numba's initialization time.
     :param output_mv_idx: Index of the multivector that stores the result returned by the codegen function.
@@ -675,8 +676,8 @@ def lambdify(
     :return: Function that represents that can be used to calculate the values of exprs.
     """
     # TODO: the printers should be instances, not classes, for proper dependency injection.
-    if evaluator_printer is None:
-        evaluator_printer = KingdonPrinter
+    if func_printer is None:
+        func_printer = KingdonPrinter(printer)
     if printer is None:
         printer = LambdaPrinter(
             {'fully_qualified_modules': False, 'inline': True,
@@ -693,7 +694,7 @@ def lambdify(
     names = tuple(arg if isinstance(arg, str) else arg.name for arg in args.keys())
     iterable_args = tuple(args.values())
 
-    funcprinter = evaluator_printer(printer, dummify, output_mv_idx=output_mv_idx)
+    # funcprinter = func_printer(printer, dummify, output_mv_idx=output_mv_idx)
 
     def unflatten(template, flat):
         it = iter(flat)
@@ -715,14 +716,14 @@ def lambdify(
             _rhsides = unflatten(rhsides, _all_exprs[len(flat_exprs):])
             cses.extend(list(zip(flatten(lhsides), flatten(_rhsides))))
         else:
-            cses, _flat_exprs = cse(flat_exprs, list=False, symbols=symbols)
+            cses, _flat_exprs = cse(flat_exprs, list=False, order='none', symbols=symbols)
     else:
         cses, _flat_exprs = list(zip(flatten(lhsides), flatten(rhsides))), flat_exprs
     _exprs = unflatten(exprs, _flat_exprs)
 
     if not any(_exprs):
         _exprs = list('0' for expr in _exprs)
-    funcstr = funcprinter.doprint(funcname, iterable_args, names, _exprs, cses=cses)
+    funcstr = func_printer.doprint(funcname, iterable_args, names, _exprs, cses=cses, output_mv_idx=output_mv_idx)
 
     # Provide lambda expression with builtins, and compatible implementation of range
     namespace = {'builtins': builtins, 'range': range, **(printer.namespace if hasattr(printer, 'namespace') else {})}
@@ -740,9 +741,8 @@ def lambdify(
 
 
 class KingdonPrinter:
-    def __init__(self, printer=None, dummify=False, output_mv_idx=None):
+    def __init__(self, printer=None, dummify=False):
         self._dummify = dummify
-        self._output_mv_idx = output_mv_idx
 
         #XXX: This has to be done here because of circular imports
         from sympy.printing.lambdarepr import LambdaPrinter
@@ -761,7 +761,7 @@ class KingdonPrinter:
         # Used to print the generated function arguments in a standard way
         self._argrepr = LambdaPrinter().doprint
 
-    def doprint(self, funcname, args, names, expr, *, cses=()):
+    def doprint(self, funcname, args, names, expr, *, cses=(), output_mv_idx=None):
         """
         Returns the function definition code as a string.
         """
@@ -783,17 +783,18 @@ class KingdonPrinter:
         funcargs = []
         unpackings = []
 
-        for name, argstr, arg in zip(names, argstrs, args):
+        for i, (name, argstr, arg) in enumerate(zip(names, argstrs, args)):
             if not arg:
                 funcargs.append(name)
-            elif iterable(argstr) and iterable(argstr[0]):
-                funcargs.append(name)
-                unpackings.extend(self._print_unpacking([f'{name}_{i}' for i in range(len(argstr))], name))
-                for i, subargstr in enumerate(argstr):
-                    unpackings.extend(self._print_unpacking(subargstr, f'{name}_{i}'))
             elif iterable(argstr):
                 funcargs.append(name)
-                unpackings.extend(self._print_unpacking(argstr, name))
+                if i == output_mv_idx: continue
+                if iterable(argstr[0]):
+                    unpackings.extend(self._print_unpacking([f'{name}_{i}' for i in range(len(argstr))], name))
+                    for i, subargstr in enumerate(argstr):
+                        unpackings.extend(self._print_unpacking(subargstr, f'{name}_{i}'))
+                else:
+                    unpackings.extend(self._print_unpacking(argstr, name))
             else:
                 funcargs.append(argstr)
 
@@ -814,8 +815,8 @@ class KingdonPrinter:
 
         if '\n' in str_expr:
             str_expr = '({})'.format(str_expr)
-        if self._output_mv_idx is not None:
-            funcbody.append(f'{names[self._output_mv_idx]}[:] = {str_expr}')
+        if output_mv_idx is not None:
+            funcbody.append(f'{names[output_mv_idx]}[:] = {str_expr}')
             funcbody.append('return ()')
         else:
             funcbody.append('return {}'.format(str_expr))

@@ -133,7 +133,7 @@ class Algebra:
     codegen_symbolcls: object = field(default=None, repr=False, compare=False)
     # The sympy style printer and evaluator printer used to generate the code with sympy-style printing.
     printer: sympy.printing.lambdarepr.LambdaPrinter = field(default=None, repr=False, compare=False)
-    evaluator_printer: KingdonPrinter = field(default=None, repr=False, compare=False)
+    func_printer: KingdonPrinter = field(default=None, repr=False, compare=False)
     # Wrapper function applied to the codegen generated functions.
     wrapper: Callable = field(default=None, repr=False, compare=False)
     
@@ -336,7 +336,7 @@ class Algebra:
         warnings.warn("Use @alg.compile instead of @alg.register", FutureWarning)
         return self.compile(expr, name=name, symbolic=symbolic)
 
-    def compile(self, expr=None, /, *, name=None, symbolic=False, codegen_symbolcls=None, printer=None, evaluator_printer=None, wrapper=None):
+    def compile(self, expr=None, /, *, name=None, symbolic=False, codegen_symbolcls=None, printer=None, func_printer=None, wrapper=None):
         """
         Compile a function with the algebra to optimize its execution times. 
         The function must be a valid GA expression, not an arbitrary python function.
@@ -373,8 +373,8 @@ class Algebra:
             By default the codegen_symbolcls from Algebra is used.
         :param printer: (optional) The sympy style printer used to generate the code with sympy-style printing.
             By default the printer from Algebra is used.
-        :param evaluator_printer: (optional) The sympy style evaluator printer used to generate the code with sympy-style printing.
-            By default the evaluator_printer from Algebra is used.
+        :param func_printer: (optional) The sympy style evaluator printer used to generate the code with sympy-style printing.
+            By default the func_printer from Algebra is used.
         :param wrapper: (optional) The wrapper function used to wrap the compiled function.
             By default the wrapper from Algebra is used.
         """
@@ -388,7 +388,7 @@ class Algebra:
                 self.registry[expr] = OperatorDict(
                     name, codegen=expr, algebra=self, 
                     codegen_symbolcls=codegen_symbolcls or OperatorDict.codegen_symbolcls, 
-                    printer=printer, evaluator_printer=evaluator_printer, wrapper=wrapper)
+                    printer=printer, func_printer=func_printer, wrapper=wrapper)
             return self.registry[expr]
 
         # See if we are being called as @compile or @compile()

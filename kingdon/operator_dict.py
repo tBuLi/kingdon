@@ -127,7 +127,7 @@ class OperatorDict(Mapping):
     operator_dict: dict = field(default_factory=dict, init=False)
     codegen_symbolcls: Callable = field(default=RationalPolynomial.fromname, repr=False)
     printer: LambdaPrinter = field(default=None, repr=False)
-    evaluator_printer: KingdonPrinter = field(default=None, repr=False)
+    func_printer: KingdonPrinter = field(default=None, repr=False)
     wrapper: Callable = field(default=None, repr=False)
 
     def __post_init__(self):
@@ -136,8 +136,8 @@ class OperatorDict(Mapping):
             self.codegen_symbolcls = self.algebra.codegen_symbolcls
         if not self.printer and self.algebra.printer:
             self.printer = self.algebra.printer
-        if not self.evaluator_printer and self.algebra.evaluator_printer:
-            self.evaluator_printer = self.algebra.evaluator_printer
+        if not self.func_printer and self.algebra.func_printer:
+            self.func_printer = self.algebra.func_printer
         if not self.wrapper and self.algebra.wrapper:
             self.wrapper = self.algebra.wrapper
 
@@ -162,7 +162,7 @@ class OperatorDict(Mapping):
         if keys_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
             mvs = self.make_symbolic_mvs(keys_in, shapes_in)
-            keys_out, func = do_codegen(self.codegen, *mvs, printer=self.printer, evaluator_printer=self.evaluator_printer)
+            keys_out, func = do_codegen(self.codegen, *mvs, printer=self.printer, func_printer=self.func_printer)
             self.algebra.numspace[func.__name__] = self.wrapper(func) if self.wrapper else func
             self.operator_dict[keys_in] = OperatorDictOutput(keys_out, func)
         return self.operator_dict[keys_in]
