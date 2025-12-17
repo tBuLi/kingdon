@@ -3,7 +3,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import reduce, cached_property
-from typing import Generator, ClassVar
+from typing import Generator, ClassVar, Self
 from itertools import product
 import re
 import math
@@ -337,7 +337,7 @@ class MultiVector(metaclass=MultiVectorType):
             return_values = values[(slice(None), *item)]
         return self.__class__.fromkeysvalues(self.algebra, keys=self.keys(), values=return_values)
 
-    def __setitem__(self, indices, values):
+    def __setitem__(self, indices, values: 'MultiVector'):
         if isinstance(values, MultiVector):
             if self.keys() != values.keys():
                 raise ValueError('setitem with a multivector is only possible for equivalent MVs.')
@@ -351,6 +351,13 @@ class MultiVector(metaclass=MultiVectorType):
                 self_values[indices] = other_value
         else:
             self.values()[(slice(None), *indices)] = values
+    
+    def set(self, other: 'MultiVector') -> Self:
+        """Overwrite the values of this MV with the values of another MV."""
+        if self.keys() != other.keys():
+            raise ValueError('set is only possible for MVs with the same keys.')
+        self._values[:] = other._values[:]
+        return self
 
     def __getattr__(self, basis_blade):
         # TODO: if this first check is not true, raise hell instead?

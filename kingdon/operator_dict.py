@@ -6,9 +6,10 @@ import inspect
 import string
 
 from sympy import Symbol, Expr, simplify
+from sympy.printing.lambdarepr import LambdaPrinter
 
 from kingdon.multivector import MultiVector
-from kingdon.codegen import do_codegen, do_compile
+from kingdon.codegen import do_codegen, do_compile, KingdonPrinter
 from kingdon.taperecorder import TapeRecorder
 from kingdon.polynomial import RationalPolynomial
 
@@ -125,11 +126,20 @@ class OperatorDict(Mapping):
     algebra: "Algebra"
     operator_dict: dict = field(default_factory=dict, init=False)
     codegen_symbolcls: Callable = field(default=RationalPolynomial.fromname, repr=False)
+    printer: LambdaPrinter = field(default=None, repr=False)
+    evaluator_printer: KingdonPrinter = field(default=None, repr=False)
+    wrapper: Callable = field(default=None, repr=False)
 
     def __post_init__(self):
-        if self.algebra.codegen_symbolcls is not None:
-            # If the user forces a different codegen_symbolcls then give them what they want.
+         # If the user forces a different codegen settings for this operator then give them what they want.
+        if not self.codegen_symbolcls and self.algebra.codegen_symbolcls:
             self.codegen_symbolcls = self.algebra.codegen_symbolcls
+        if not self.printer and self.algebra.printer:
+            self.printer = self.algebra.printer
+        if not self.evaluator_printer and self.algebra.evaluator_printer:
+            self.evaluator_printer = self.algebra.evaluator_printer
+        if not self.wrapper and self.algebra.wrapper:
+            self.wrapper = self.algebra.wrapper
 
     def __len__(self):
         return len(self.operator_dict)
@@ -152,8 +162,8 @@ class OperatorDict(Mapping):
         if keys_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
             mvs = self.make_symbolic_mvs(keys_in, shapes_in)
-            keys_out, func = do_codegen(self.codegen, *mvs)
-            self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
+            keys_out, func = do_codegen(self.codegen, *mvs, printer=self.printer, evaluator_printer=self.evaluator_printer)
+            self.algebra.numspace[func.__name__] = self.wrapper(func) if self.wrapper else func
             self.operator_dict[keys_in] = OperatorDictOutput(keys_out, func)
         return self.operator_dict[keys_in]
 
@@ -248,7 +258,7 @@ class UnaryOperatorDict(OperatorDict):
         if keys_in not in self.operator_dict:
             mv = self.make_symbolic_mvs((keys_in,), (shape_in,))[0]
             keys_out, func = do_codegen(self.codegen, mv)
-            self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
+            self.algebra.numspace[func.__name__] = self.wrapper(func) if self.wrapper else func
             self.operator_dict[keys_in] = OperatorDictOutput(keys_out, func)
         return self.operator_dict[keys_in]
 
@@ -277,7 +287,7 @@ class Registry(OperatorDict):
             tapes = [TapeRecorder(algebra=self.algebra, expr=name, keys=keys)
                      for name, keys in zip(string.ascii_lowercase, keys_in)]
             keys_out, func = do_compile(self.codegen, *tapes)
-            self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
+            self.algebra.numspace[func.__name__] = self.wrapper(func) if self.wrapper else func
             self.operator_dict[keys_in] = OperatorDictOutput(keys_out, func)
         return self.operator_dict[keys_in]
 

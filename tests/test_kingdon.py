@@ -796,9 +796,29 @@ def test_setitem():
     point_vals = np.zeros((alg.d, l + 1))
     point_vals[0] = 1
     point_vals[1] = np.arange(l + 1) * d - 1.5
+    # Test with the 2d array first
+    lines = alg.vector(point_vals)
+    lines[-1] = lines[-2]
+    assert lines[-1].keys() == lines[-2].keys()
+    assert np.allclose(lines[-1].values(), lines[-2].values())
+    lines[:3] = lines[4:]
+    assert np.allclose(lines[:3].values(), lines[4:].values())
+
+    # Dualization turns the 2d array into a list of 1d arrays, so we need to test with that as well.
     points = alg.vector(point_vals).dual()
     points[-1] = points[-2]
-    assert points[-1] == points[-2]
+    assert points[-1].keys() == points[-2].keys()
+    assert np.allclose(points[-1].values(), points[-2].values())
+    points[:3] = points[4:]
+    assert np.allclose(points[:3].values(), points[4:].values())
+
+def test_set_mv():
+    alg = Algebra(2, 0, 1)
+    x = alg.multivector(name='x')
+    y = alg.multivector(name='y')
+    x.set(y)
+    assert x == y
+    assert x._values is not y._values
 
 def test_mv_times_func():
     """If a mv is binaried with a function, we simply call it until it returns a multivector. """

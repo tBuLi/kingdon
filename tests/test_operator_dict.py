@@ -119,3 +119,66 @@ def test_codegen_wgp_generic():
     keys_out, func = wgp[x, y, weights]
     wgp_output = wgp(x, y, weights)
     assert wgp_output == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0
+
+def test_codegen_printer():
+    alg = Algebra(2)
+    x = alg.multivector(name='x')
+    y = alg.multivector(name='y')
+
+    from sympy.printing.lambdarepr import LambdaPrinter
+    from kingdon.codegen import KingdonPrinter
+    
+    class MyPrinter(LambdaPrinter):
+        pass
+
+    class MyEvaluatorPrinter(KingdonPrinter):
+        pass
+
+    def my_wrapper(func):
+        return func
+    
+    @alg.compile(symbolic=True, printer=MyPrinter, evaluator_printer=MyEvaluatorPrinter, wrapper=my_wrapper)
+    def my_gp(x, y):
+        return x*y
+    res = my_gp(x, y)
+    assert res == x*y
+    assert my_gp.printer == MyPrinter
+    assert my_gp.evaluator_printer == MyEvaluatorPrinter
+    assert my_gp.wrapper == my_wrapper
+
+def test_codegen_set():
+    alg = Algebra(2)
+    x = alg.multivector(name='x')
+    y = alg.multivector(name='y')
+    z = alg.multivector(name='z')
+    ws = symbols('w:10')
+    w0, w1, w2, w3, w4, w5, w6, w7, w8, w9 = ws
+    weights = alg.scalar(e=ws)
+
+    @alg.compile(symbolic=True)
+    def set_gp(x, y, z):
+        z.set(x*y)
+    
+    res = set_gp(x, y, z)
+    assert res == alg.multivector()
+    assert z == x*y
+
+    @alg.compile(symbolic=True)
+    def weighted_gp_set(x, y, weights: MultiVector[10], z):
+        w0,w1,w2,w3,w4,w5,w6,w7,w8,w9 = weights
+        X0, X1, X2 = (x.grade(g) for g in range(alg.d + 1))
+        Y0, Y1, Y2 = (y.grade(g) for g in range(alg.d + 1))
+        z.set(w0*X0*Y0 + w3*(X1|Y1) + w7*X2*Y2 \
+            + w1*X0*Y1 + w4*X1*Y0 + w5*X1*Y2 + w8*X2*Y1 \
+            + w2*X0*Y2 + w6*(X1^Y1) + w9*X2*Y0)
+    
+    x0, x1, x2 = x.grade(0), x.grade(1), x.grade(2)
+    y0, y1, y2 = y.grade(0), y.grade(1), y.grade(2)
+    res = weighted_gp_set(x, y, weights, z)
+    assert res == alg.multivector()
+    assert z == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0
+
+    import inspect
+    source = inspect.getsource(weighted_gp_set[x, y, weights, z].func)
+    print(source)
+    pass

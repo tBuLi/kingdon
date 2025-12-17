@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import inspect
 import builtins
 import keyword
+import copy
 
 from sympy.utilities.iterables import iterable, flatten
 from sympy.printing.lambdarepr import LambdaPrinter
@@ -504,16 +505,29 @@ def _lambdify_mv(mv):
     return CodegenOutput(tuple(mv.keys()), func)
 
 
-def do_codegen(codegen, *mvs) -> CodegenOutput:
+def do_codegen(codegen, *mvs, printer=None, evaluator_printer=None) -> CodegenOutput:
     """
     :param codegen: callable that performs codegen for the given :code:`mvs`. This can be any callable
         that returns either a :class:`~kingdon.multivector.MultiVector`, a dictionary, or an instance of :class:`CodegenOutput`.
     :param mvs: Any remaining positional arguments are taken to be symbolic :class:`~kingdon.multivector.MultiVector`'s.
+    :param printer: The sympy style printer used to generate the code with sympy-style printing.
+    :param evaluator_printer: The sympy style evaluator printer used to generate the code with sympy-style printing.
     :return: Instance of :class:`CodegenOutput`.
     """
     algebra = mvs[0].algebra
+    mvs_orig = [copy.deepcopy(mv) for mv in mvs]
 
     res = codegen(*mvs)
+
+    output_mv_idx = None
+    if res is None:
+        output_mv_idx = [i for i, mv in enumerate(mvs) if mv != mvs_orig[i]][0]
+        # if not len(output_mvs):
+        #     return CodegenOutput(tuple(), lambda *args: None)
+        # if len(output_mvs) != 1:
+        #     raise ValueError("Cannot set multiple multivectors when the output of the codegen function is None.")
+        res = mvs[output_mv_idx]
+        mvs = mvs_orig
 
     # Turn a list of Multivectors into a single Multivector of lists.
     if isinstance(res, (list, tuple)):
@@ -537,7 +551,12 @@ def do_codegen(codegen, *mvs) -> CodegenOutput:
 
 
     keys, exprs = tuple(res.keys()), list(res.values())
-    func = lambdify(args, exprs, funcname=funcname, cse=algebra.cse, dependencies=dependencies)
+    if output_mv_idx is not None:
+        keys = ()
+    func = lambdify(args, exprs, funcname=funcname, 
+                    cse=algebra.cse, dependencies=dependencies, printer=printer, evaluator_printer=evaluator_printer,
+                    output_mv_idx=output_mv_idx
+                    )
     return CodegenOutput(
         keys, func
     )
@@ -601,7 +620,17 @@ def func_builder(res_vals: defaultdict, *mvs, funcname: str) -> CodegenOutput:
     return CodegenOutput(tuple(res_vals.keys()), func)
 
 
-def lambdify(args: dict, exprs: list, funcname: str, dependencies: tuple = None, printer=LambdaPrinter, dummify=False, cse=False):
+def lambdify(
+        args: dict, 
+        exprs: list, 
+        funcname: str, 
+        dependencies: tuple = None, 
+        printer=None, 
+        evaluator_printer=None,
+        dummify=False, 
+        cse=False,
+        output_mv_idx: int = None
+    ):
     """
     Function that turns symbolic expressions into Python functions. Heavily inspired by
     :mod:`sympy`'s function by the same name, but adapted for the needs of :code:`kingdon`.
@@ -641,9 +670,14 @@ def lambdify(args: dict, exprs: list, funcname: str, dependencies: tuple = None,
         included in the CSE process.
     :param cse: If :code:`True` (default), CSE is applied to the expressions and dependencies.
         This typically greatly improves performance and reduces numba's initialization time.
+    :param output_mv_idx: Index of the multivector that stores the result returned by the codegen function.
+        If :code:`None`, the generated function will return the values of the multivector.
     :return: Function that represents that can be used to calculate the values of exprs.
     """
-    if printer is LambdaPrinter:
+    # TODO: the printers should be instances, not classes, for proper dependency injection.
+    if evaluator_printer is None:
+        evaluator_printer = KingdonPrinter
+    if printer is None:
         printer = LambdaPrinter(
             {'fully_qualified_modules': False, 'inline': True,
              'allow_unknown_functions': True,
@@ -659,7 +693,7 @@ def lambdify(args: dict, exprs: list, funcname: str, dependencies: tuple = None,
     names = tuple(arg if isinstance(arg, str) else arg.name for arg in args.keys())
     iterable_args = tuple(args.values())
 
-    funcprinter = KingdonPrinter(printer, dummify)
+    funcprinter = evaluator_printer(printer, dummify, output_mv_idx=output_mv_idx)
 
     def unflatten(template, flat):
         it = iter(flat)
@@ -691,7 +725,7 @@ def lambdify(args: dict, exprs: list, funcname: str, dependencies: tuple = None,
     funcstr = funcprinter.doprint(funcname, iterable_args, names, _exprs, cses=cses)
 
     # Provide lambda expression with builtins, and compatible implementation of range
-    namespace = {'builtins': builtins, 'range': range}
+    namespace = {'builtins': builtins, 'range': range, **(printer.namespace if hasattr(printer, 'namespace') else {})}
 
     funclocals = {}
     filename = f'<{funcname}>'
@@ -706,8 +740,9 @@ def lambdify(args: dict, exprs: list, funcname: str, dependencies: tuple = None,
 
 
 class KingdonPrinter:
-    def __init__(self, printer=None, dummify=False):
+    def __init__(self, printer=None, dummify=False, output_mv_idx=None):
         self._dummify = dummify
+        self._output_mv_idx = output_mv_idx
 
         #XXX: This has to be done here because of circular imports
         from sympy.printing.lambdarepr import LambdaPrinter
@@ -779,7 +814,11 @@ class KingdonPrinter:
 
         if '\n' in str_expr:
             str_expr = '({})'.format(str_expr)
-        funcbody.append('return {}'.format(str_expr))
+        if self._output_mv_idx is not None:
+            funcbody.append(f'{names[self._output_mv_idx]}[:] = {str_expr}')
+            funcbody.append('return ()')
+        else:
+            funcbody.append('return {}'.format(str_expr))
 
         funclines = [funcsig]
         funclines.extend(['    ' + line for line in funcbody])

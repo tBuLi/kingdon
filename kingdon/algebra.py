@@ -26,6 +26,7 @@ from kingdon.codegen import (
     codegen_involute, codegen_conjugate, codegen_sub, codegen_sqrt,
     codegen_outerexp, codegen_outersin, codegen_outercos, codegen_outertan,
     codegen_polarity, codegen_unpolarity, codegen_hodge, codegen_unhodge,
+    KingdonPrinter,
 )
 from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry, do_operation, resolve_and_expand
 from kingdon.polynomial import mathstr
@@ -65,6 +66,7 @@ class Algebra:
         using :code:`numba.njit` as a wrapper will ensure that all kingdon code is jitted using numba.
     :param codegen_symbolcls: The symbol class used during codegen. By default, this is our own fast
         :class:`~kingdon.polynomial.RationalPolynomial` class.
+    :param printer: Sympy code printer used for codegen, see `https://docs.sympy.org/latest/modules/printing.html`.
     :param simp_func: This function is applied as a filter function to every multivector coefficient.
     :param pretty_blade: character to use for basis blades when pretty printing to string. Default is 𝐞.
     :param large: if true this is considered a large algebra. This means various cashing options are removed to save
@@ -127,10 +129,14 @@ class Algebra:
     large: bool = field(default=None, repr=False, compare=False)
 
     # Codegen & call customization.
-    # Wrapper function applied to the codegen generated functions.
-    wrapper: Callable = field(default=None, repr=False, compare=False)
     # The symbol class used in codegen. By default, use our own fast RationalPolynomial class.
     codegen_symbolcls: object = field(default=None, repr=False, compare=False)
+    # The sympy style printer and evaluator printer used to generate the code with sympy-style printing.
+    printer: sympy.printing.lambdarepr.LambdaPrinter = field(default=None, repr=False, compare=False)
+    evaluator_printer: KingdonPrinter = field(default=None, repr=False, compare=False)
+    # Wrapper function applied to the codegen generated functions.
+    wrapper: Callable = field(default=None, repr=False, compare=False)
+    
     # This simplify func is applied to every component after a symbolic expression is called, to simplify and filter by.
     simp_func: Callable = field(default=lambda v: v if not isinstance(v, sympy.Expr) else sympy.simplify(sympy.expand(v)), repr=False, compare=False)
 
@@ -330,7 +336,7 @@ class Algebra:
         warnings.warn("Use @alg.compile instead of @alg.register", FutureWarning)
         return self.compile(expr, name=name, symbolic=symbolic)
 
-    def compile(self, expr=None, /, *, name=None, symbolic=False, codegen_symbolcls=None):
+    def compile(self, expr=None, /, *, name=None, symbolic=False, codegen_symbolcls=None, printer=None, evaluator_printer=None, wrapper=None):
         """
         Compile a function with the algebra to optimize its execution times. 
         The function must be a valid GA expression, not an arbitrary python function.
@@ -365,15 +371,24 @@ class Algebra:
             By default this is False, given the cost of optimizing large expressions.
         :param codegen_symbolcls: (optional) The class to use for symbolic multivectors.
             By default the codegen_symbolcls from Algebra is used.
+        :param printer: (optional) The sympy style printer used to generate the code with sympy-style printing.
+            By default the printer from Algebra is used.
+        :param evaluator_printer: (optional) The sympy style evaluator printer used to generate the code with sympy-style printing.
+            By default the evaluator_printer from Algebra is used.
+        :param wrapper: (optional) The wrapper function used to wrap the compiled function.
+            By default the wrapper from Algebra is used.
         """
         def wrap(expr, name=None, symbolic=False):
             if name is None:
                 name = expr.__name__
 
             if not symbolic:
-                self.registry[expr] = Registry(name, codegen=expr, algebra=self)
+                self.registry[expr] = Registry(name, codegen=expr, algebra=self, wrapper=wrapper)
             else:
-                self.registry[expr] = OperatorDict(name, codegen=expr, algebra=self, codegen_symbolcls=codegen_symbolcls or OperatorDict.codegen_symbolcls)
+                self.registry[expr] = OperatorDict(
+                    name, codegen=expr, algebra=self, 
+                    codegen_symbolcls=codegen_symbolcls or OperatorDict.codegen_symbolcls, 
+                    printer=printer, evaluator_printer=evaluator_printer, wrapper=wrapper)
             return self.registry[expr]
 
         # See if we are being called as @compile or @compile()
