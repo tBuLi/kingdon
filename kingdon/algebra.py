@@ -431,6 +431,58 @@ class Algebra:
     def pseudoquadvector(self, *args, **kwargs) -> MultiVector:
         return self.purevector(*args, grade=self.d - 4, **kwargs)
 
+    def random_vector(self) -> MultiVector:
+        """ Generate a random vector (grade 1 multivector). """
+        grade1_count = len(list(self.indices_for_grade(1))) if 1 <= self.d else 0
+        if grade1_count > 0:
+            return self.vector(np.random.random(grade1_count))
+        else:
+            return self.multivector()
+
+    def random_multivector(self, grade=None) -> MultiVector:
+        """
+        Generate a random multivector of specified grade, or full multivector if grade=None.
+
+        :param grade: Grade of the multivector to create. If None, generates a full multivector.
+        """
+        if grade is None:
+            return self.multivector(np.random.random(len(self)))
+        else:
+            if grade <= self.d:
+                grade_count = len(list(self.indices_for_grade(grade)))
+                if grade_count > 0:
+                    return self.purevector(np.random.random(grade_count), grade=grade)
+            return self.multivector()
+
+    def random_bivector(self) -> MultiVector:
+        """ Generate a random bivector (grade 2 multivector). """
+        return self.random_multivector(grade=2)
+
+    def random_trivector(self) -> MultiVector:
+        """ Generate a random trivector (grade 3 multivector). """
+        return self.random_multivector(grade=3)
+
+    def blades_of_grade(self, grade: int) -> list:
+        """
+        Create basis blades for a specific grade.
+
+        :param grade: Grade of multivector basis elements to create.
+        :return: List of basis blade multivectors for the specified grade.
+        """
+        grade_indices = list(self.indices_for_grade(grade)) if grade <= self.d else []
+
+        if not grade_indices:
+            return []
+
+        blades = []
+        for idx in grade_indices:
+            blade_mv = self.multivector()
+            blade_mv._keys = (idx,)
+            blade_mv._values = [1.0]
+            blades.append(blade_mv)
+
+        return blades
+
     def graph(self, *subjects, graph_widget=GraphWidget, **options):
         """
         The graph function outputs :code:`ganja.js` renders and is meant
@@ -522,6 +574,7 @@ class Algebra:
         t ^= t >> 8
         t ^= t >> 4
         return [res, 1 - 2 * (27030 >> (t & 15) & 1)]
+
 
 
 def _swap_blades(blade1: str, blade2: str, target: str = '') -> (int, str, str):
