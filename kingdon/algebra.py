@@ -431,14 +431,6 @@ class Algebra:
     def pseudoquadvector(self, *args, **kwargs) -> MultiVector:
         return self.purevector(*args, grade=self.d - 4, **kwargs)
 
-    def random_vector(self) -> MultiVector:
-        """ Generate a random vector (grade 1 multivector). """
-        grade1_count = len(list(self.indices_for_grade(1))) if 1 <= self.d else 0
-        if grade1_count > 0:
-            return self.vector(np.random.random(grade1_count))
-        else:
-            return self.multivector()
-
     def random_multivector(self, grade=None) -> MultiVector:
         """
         Generate a random multivector of specified grade, or full multivector if grade=None.
@@ -452,6 +444,14 @@ class Algebra:
                 grade_count = len(list(self.indices_for_grade(grade)))
                 if grade_count > 0:
                     return self.purevector(np.random.random(grade_count), grade=grade)
+            return self.multivector()
+        
+    def random_vector(self) -> MultiVector:
+        """ Generate a random vector (grade 1 multivector). """
+        grade1_count = len(list(self.indices_for_grade(1))) if 1 <= self.d else 0
+        if grade1_count > 0:
+            return self.vector(np.random.random(grade1_count))
+        else:
             return self.multivector()
 
     def random_bivector(self) -> MultiVector:
