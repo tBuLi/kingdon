@@ -9,6 +9,7 @@ import re
 import math
 import sys
 
+import numpy as np
 from sympy import Expr, Symbol, sympify, sinc, cos
 
 from kingdon.codegen import _lambdify_mv
@@ -171,6 +172,17 @@ class MultiVector:
             )
         else:
             raise NotImplementedError
+
+    def flatten(self):
+        """
+        Flatten a multidimensional multivector into a list of 1D multivectors.
+        
+        Useful for handling broadcasted multivector arrays. Returns a list where each element
+        is a multivector corresponding to one element from the multidimensional array.
+        
+        :return: List of flattened multivectors.
+        """
+        return [self[i] for i in np.ndindex(self.shape[1:])]
 
     @property
     def shape(self):
@@ -651,3 +663,4 @@ class MultiVector:
             raise Exception('Cannot select a suitable undual in auto mode for this algebra.')
         else:
             raise ValueError(f'No undual found for kind={kind}.')
+

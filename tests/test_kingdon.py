@@ -574,6 +574,17 @@ def test_itermv():
     assert i + 1 == nrows
 
 
+def test_flatten():
+    alg = Algebra(4)
+    shape = (len(tuple(alg.indices_for_grade(2))), 3, 4)
+    bvals = np.random.random(shape)
+    B = alg.bivector(bvals)
+    flat = B.flatten()
+    assert len(flat) == 12
+    for i, (idx, flat_mv) in enumerate(zip(np.ndindex((3, 4)), flat)):
+        np.testing.assert_allclose(flat_mv.values(), B[idx].values())
+
+
 def test_fromsignature():
     alg = Algebra(signature=[0, -1, 1, 1])
     assert alg.start_index == 0
