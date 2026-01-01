@@ -12,6 +12,7 @@ import numpy as np
 from sympy import Symbol, expand, sympify, cos, sin, sinc
 from kingdon import Algebra, MultiVector, symbols
 from kingdon.operator_dict import UnaryOperatorDict
+from kingdon.numerical import exp as numerical_exp, is_close
 
 import timeit
 
@@ -880,6 +881,19 @@ def test_simple_exp():
     R = B.exp()
     l = (-(B | B).e) ** 0.5
     assert R == cos(l) + sinc(l) * B
+
+def test_numerical_exp_simple_bivector(sta):
+    """Test numerical.exp() on a simple bivector matches MultiVector.exp()"""
+    B = sta.bivector([1.0, 0, 0, 0, 0, 0])
+    mv_exp = B.exp()
+    num_exp = numerical_exp(B, n=20)
+    assert is_close(mv_exp, num_exp, tol=1e-10)
+
+def test_numerical_exp_non_simple_bivector(sta):
+    """Test numerical.exp() on a non-simple bivector doesn't raise an error"""
+    B = sta.bivector([1.0, 2.0, 0, 0, 0, 0])
+    result = numerical_exp(B, n=20)
+    assert result is not None
 
 def test_dual_numbers():
     alg = Algebra(r=1)
