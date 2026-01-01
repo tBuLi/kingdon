@@ -1087,3 +1087,31 @@ def test_87(pga2d):
     diff2 = (one + u) - expectedmv
     assert all(diff1.map(lambda v: np.allclose(v, 0.0)).values())
     assert all(diff2.map(lambda v: np.allclose(v, 0.0)).values())
+
+
+def test_even_odd_properties(vga2d, vga3d):
+    """Test the even and odd properties for extracting graded parts."""
+    # Test even property in 2D
+    mv = vga2d.scalar(e=2) + vga2d.vector(e1=3, e2=4) + vga2d.bivector(e12=5)
+    even = mv.even
+    assert even.grades == (0, 2)
+    assert 2 in even.values()
+    assert 5 in even.values()
+
+    # Test odd property in 2D
+    odd = mv.odd
+    assert odd.grades == (1,)
+    assert 3 in odd.values()
+    assert 4 in odd.values()
+
+    # Test odd property with only even grades present
+    mv_even_only = vga2d.scalar(e=3) + vga2d.bivector(e12=4)
+    odd_empty = mv_even_only.odd
+    assert len(odd_empty.keys()) == 0
+
+    # Test even and odd in higher dimensions
+    mv_3d = vga3d.scalar(e=1) + vga3d.vector(e1=1, e2=2, e3=3) + vga3d.bivector(e12=1, e13=2, e23=3) + vga3d.trivector(e123=4)
+    even_3d = mv_3d.even
+    odd_3d = mv_3d.odd
+    assert 0 in even_3d.grades and 2 in even_3d.grades
+    assert 1 in odd_3d.grades and 3 in odd_3d.grades

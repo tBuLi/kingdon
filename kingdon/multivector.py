@@ -201,6 +201,28 @@ class MultiVector:
         return self.fromkeysvalues(self.algebra, tuple(items.keys()), list(items.values()))
 
     @cached_property
+    def even(self):
+        """
+        Returns a new :class:`~kingdon.multivector.MultiVector` instance with
+        only the even-graded parts (grades 0, 2, 4, ...) from `self`.
+        """
+        even_grades = tuple(g for g in self.grades if g % 2 == 0)
+        if not even_grades:
+            return MultiVector(self.algebra)
+        return self.grade(even_grades)
+
+    @cached_property
+    def odd(self):
+        """
+        Returns a new :class:`~kingdon.multivector.MultiVector` instance with
+        only the odd-graded parts (grades 1, 3, 5, ...) from `self`.
+        """
+        odd_grades = tuple(g for g in self.grades if g % 2 == 1)
+        if not odd_grades:
+            return MultiVector(self.algebra)
+        return self.grade(odd_grades)
+
+    @cached_property
     def issymbolic(self):
         """ True if this mv contains Symbols, False otherwise. """
         symbol_classes = (Expr, RationalPolynomial)

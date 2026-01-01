@@ -16,12 +16,52 @@ class BladeMap:
     
     Examples
     --------
+    **sub-algebra example:**
+    
     >>> from kingdon import Algebra
     >>> pga3d = Algebra(3, 0, 1, start_index=0)
     >>> pga2d = Algebra(2, 0, 1, start_index=0)
     >>> bm = BladeMap(alg1=pga3d, alg2=pga2d)
     >>> bm(pga3d.e1) # Maps e1 from pga3d to pga2d
     >>> bm(pga2d.e1) # Maps e1 from pga2d back to pga3d
+    
+    **Space-time algebra example (Electromagnetic field decomposition):**
+    
+    This example shows how to decompose an electromagnetic field bivector in 
+    spacetime algebra (STA) into electric and magnetic field components in 
+    3D space algebra, based on:
+    https://clifford.readthedocs.io/en/latest/tutorials/space-time-algebra.html
+    
+    >>> from kingdon import Algebra
+    >>> sta = Algebra(1, 3, 0, start_index=0)  # spacetime algebra
+    >>> vga3 = Algebra(3, 0, 0, start_index=1)  # space algebra
+    >>> D = sta.blades  # Dirac basis
+    >>> P = vga3.blades  # Pauli basis
+    >>> 
+    >>> bm = BladeMap([(D.e01, P.e1),
+    ...                (D.e02, P.e2),
+    ...                (D.e03, P.e3),
+    ...                (D.e12, P.e12),
+    ...                (D.e23, P.e23),
+    ...                (D.e13, P.e13),
+    ...                (D.e0123, P.e123)])
+    >>> 
+    >>> def split(X):  # space-time split
+    ...     return bm(X.odd * D.e0 + X.even)
+    >>> 
+    >>> # Space-time vector decomposition
+    >>> X = sta.vector([1, 2, 3, 4])
+    >>> xt = bm(X * D.e0)
+    >>> x, t = xt.odd, xt.even  # space and time components
+    >>> 
+    >>> # Electromagnetic field decomposition
+    >>> F = sta.bivector([1, 2, 3, 4, 5, 6])
+    >>> EiB = split(F)
+    >>> E, B = EiB.odd, EiB.even.dual()  # electric and magnetic fields
+    >>> 
+    >>> # Invariants of the electromagnetic field
+    >>> i = P.e123
+    >>> split(F**2), E**2 - B**2 + (2*E|B)*i
     """
 
     def __init__(self, blade_map=None, alg1=None, alg2=None, map_scalars=True):
