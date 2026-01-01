@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kingdon"
+version = "1.4.0"
+description = "Pythonic Geometric Algebra Package"
+readme = "README.rst"
+requires-python = ">=3.8"
+license = {text = "MIT license"}
+authors = [
+    {name = "Martin Roelfs", email = "martinroelfs@yahoo.com"}
+]
+keywords = ["kingdon", "geometric algebra"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "numpy",
+    "sympy",
+    "anywidget",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pip>=21.1",
+    "bump2version==0.5.11",
+    "wheel==0.38.1",
+    "flake8==3.7.8",
+    "tox==3.14.0",
+    "coverage==4.5.4",
+    "Sphinx==1.8.5",
+    "twine==1.14.0",
+    "pytest==6.2.4",
+]
+
+docs = [
+    "sphinx",
+    "nbsphinx",
+    "ipykernel",
+    "symfit",
+    "matplotlib",
+    "clifford",
+]
+
+[project.urls]
+Homepage = "https://github.com/tbuli/kingdon"
+Repository = "https://github.com/tbuli/kingdon"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["kingdon*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+collect_ignore = ["setup.py"]
+
+[tool.bumpversion]
+current_version = "1.4.0"
+commit = true
+tag = false
+
+[[tool.bumpversion.files]]
+filename = "setup.py"
+search = "version='{current_version}'"
+replace = "version='{new_version}'"
+
+[[tool.bumpversion.files]]
+filename = "kingdon/__init__.py"
+search = "__version__ = '{current_version}'"
+replace = "__version__ = '{new_version}'"
