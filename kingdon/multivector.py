@@ -173,6 +173,50 @@ class MultiVector:
         else:
             raise NotImplementedError
 
+    def broadcast(self) -> "MultiVector":
+        """
+        Broadcast all blade coefficients to a common shape using numpy broadcasting rules.
+        
+        If the coefficients of different blades have different shapes, this method reshapes them
+        so that all blades have the same shape. This is useful when you have array-like coefficients
+        with inconsistent shapes that can be broadcast together.
+        
+        :return: A new MultiVector with all coefficients broadcast to a common shape.
+        :raises ValueError: If the coefficients cannot be broadcast together.
+        """
+        if len(self._values) == 0:
+            return self
+        
+        # Get shapes of all values
+        shapes = []
+        for v in self._values:
+            if hasattr(v, 'shape'):
+                shapes.append(v.shape)
+            else:
+                shapes.append(())
+        
+        # If all shapes are the same, no need to broadcast
+        if len(set(shapes)) == 1:
+            return self
+        
+        # Determine the broadcast shape using numpy's broadcasting rules
+        try:
+            broadcast_shape = np.broadcast_shapes(*shapes)
+        except ValueError as e:
+            raise ValueError(f"Cannot broadcast coefficients with shapes {shapes}: {e}")
+        
+        # Broadcast each value to the common shape
+        broadcasted_values = []
+        for v in self._values:
+            if hasattr(v, 'shape'):
+                # It's array-like, use numpy broadcasting
+                broadcasted_values.append(np.broadcast_to(v, broadcast_shape))
+            else:
+                # It's a scalar, broadcast to the target shape
+                broadcasted_values.append(np.full(broadcast_shape, v))
+        
+        return self.fromkeysvalues(self.algebra, keys=self._keys, values=broadcasted_values)
+
     def flatten(self):
         """
         Flatten a multidimensional multivector into a list of 1D multivectors.
@@ -182,7 +226,8 @@ class MultiVector:
         
         :return: List of flattened multivectors.
         """
-        return [self[i] for i in np.ndindex(self.shape[1:])]
+        mv = self.broadcast()
+        return [mv[i] for i in np.ndindex(mv.shape[1:])]
 
     @property
     def shape(self):

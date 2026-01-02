@@ -133,6 +133,30 @@ def test_broadcasting(vga2d):
         Rx = R.sw(vga2d.vector(xrow))
         assert Rx.e1 == Z3.e1[i]
 
+def test_broadcast(vga2d):
+    # Test broadcast with mixed shapes - some scalars, some arrays
+    mv = vga2d.multivector({0: 1, 1: np.array([1, 2, 3]), 2: np.array([[4], [5]])})
+    broadcasted = mv.broadcast()
+    
+    # After broadcast, all coefficients should have shape (2, 3)
+    assert broadcasted.e.shape == (2, 3)
+    assert broadcasted.e1.shape == (2, 3)
+    assert broadcasted.e2.shape == (2, 3)
+    
+    # Check that scalar was broadcast correctly
+    assert np.all(broadcasted.e == 1)
+    
+    # Check that 1D array was broadcast correctly
+    assert np.all(broadcasted.e1 == np.array([1, 2, 3]))
+    
+    # Check that 2D array was broadcast correctly
+    assert np.all(broadcasted.e2 == np.array([[4, 4, 4], [5, 5, 5]]))
+    
+    # Test that broadcast with uniform shapes returns self
+    vals = np.random.random((2, 3))
+    mv_uniform = vga2d.vector(vals)
+    assert mv_uniform.broadcast() is mv_uniform
+
 def test_reverse(R6):
     X = R6.multivector(np.arange(0, 2 ** 6))
     Xrev = ~X
