@@ -14,10 +14,10 @@ def test_operator_dict():
     y = alg.multivector(name='y')
 
     gp = OperatorDict('gp', codegen=codegen_gp, algebra=alg)
-    # assert gp.codegen_input_types == {'x': MultiVector, 'y': MultiVector}
+    assert gp.codegen_input_types == {'x': MultiVector, 'y': MultiVector}
     assert len(gp) == 0
     with pytest.raises(TypeError):
-        gp[(x, y)] = 2
+        gp[x, y] = 2
     xy = gp(x, y)
     assert len(gp) == 1  # size of gp has grown by one
     assert (x, y) in gp
