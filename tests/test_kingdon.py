@@ -1087,3 +1087,128 @@ def test_87(pga2d):
     diff2 = (one + u) - expectedmv
     assert all(diff1.map(lambda v: np.allclose(v, 0.0)).values())
     assert all(diff2.map(lambda v: np.allclose(v, 0.0)).values())
+
+def test_random_vector(vga2d, vga3d, pga1d):
+    # Test random_vector creates grade 1 multivector
+    vec = vga2d.random_vector()
+    assert isinstance(vec, MultiVector)
+    assert vec.grades == (1,)
+    
+    vec3 = vga3d.random_vector()
+    assert vec3.grades == (1,)
+    
+    # Test in 1D algebra
+    vec1 = pga1d.random_vector()
+    assert isinstance(vec1, MultiVector)
+    assert vec1.grades == (1,)
+
+def test_random_multivector_full(vga2d, vga3d):
+    # Test random_multivector with grade=None creates full multivector
+    mv = vga2d.random_multivector()
+    assert isinstance(mv, MultiVector)
+    assert len(mv) <= len(vga2d)
+    
+    mv3 = vga3d.random_multivector()
+    assert len(mv3) <= len(vga3d)
+
+def test_random_multivector_graded(vga2d, vga3d, pga2d):
+    # Test random_multivector with specific grades
+    mv_grade0 = vga2d.random_multivector(grade=0)
+    assert isinstance(mv_grade0, MultiVector)
+    assert mv_grade0.grades == (0,)
+    
+    mv_grade1 = vga2d.random_multivector(grade=1)
+    assert mv_grade1.grades == (1,)
+    
+    mv_grade2 = vga2d.random_multivector(grade=2)
+    assert mv_grade2.grades == (2,)
+    
+    # Test grade 3 in 3D algebra
+    mv_grade3 = vga3d.random_multivector(grade=3)
+    assert mv_grade3.grades == (3,)
+    
+    # Test with out-of-range grade returns empty multivector
+    mv_invalid = vga2d.random_multivector(grade=10)
+    assert len(mv_invalid) == 0
+
+def test_random_bivector(vga2d, vga3d):
+    # Test random_bivector creates grade 2 multivector
+    biv = vga2d.random_bivector()
+    assert isinstance(biv, MultiVector)
+    assert biv.grades == (2,)
+    
+    biv3 = vga3d.random_bivector()
+    assert biv3.grades == (2,)
+
+def test_random_trivector(vga3d, R6):
+    # Test random_trivector creates grade 3 multivector
+    triv = vga3d.random_trivector()
+    assert isinstance(triv, MultiVector)
+    assert triv.grades == (3,)
+    
+    triv6 = R6.random_trivector()
+    assert triv6.grades == (3,)
+
+def test_random_multivector_values(vga2d):
+    # Test that random multivectors have reasonable values
+    np.random.seed(42)
+    vec = vga2d.random_vector()
+    values = list(vec.values())
+    # All values should be between 0 and 1 (from np.random.random)
+    assert all(0 <= v <= 1 for v in values)
+    
+    # Different calls should produce different results (high probability)
+    vec2 = vga2d.random_vector()
+    # Check that at least one coefficient is different
+    diff = vec - vec2
+    assert len(diff) > 0  # They are different multivectors
+
+def test_blades_of_grade_single(vga2d):
+    # Test blades_of_grade for grade 0 (scalar)
+    blades_g0 = vga2d.blades_of_grade(0)
+    assert len(blades_g0) == 1
+    assert blades_g0[0] == vga2d.blades['e']
+    
+    # Test blades_of_grade for grade 1 (vectors)
+    blades_g1 = vga2d.blades_of_grade(1)
+    assert len(blades_g1) == 2
+    assert blades_g1[0] == vga2d.blades['e1']
+    assert blades_g1[1] == vga2d.blades['e2']
+    
+    # Test blades_of_grade for grade 2 (bivectors)
+    blades_g2 = vga2d.blades_of_grade(2)
+    assert len(blades_g2) == 1
+    assert blades_g2[0] == vga2d.blades['e12']
+
+def test_blades_of_grade_3d(vga3d):
+    # Test blades_of_grade in 3D
+    blades_g0 = vga3d.blades_of_grade(0)
+    assert len(blades_g0) == 1
+    
+    blades_g1 = vga3d.blades_of_grade(1)
+    assert len(blades_g1) == 3
+    
+    blades_g2 = vga3d.blades_of_grade(2)
+    assert len(blades_g2) == 3  # e12, e13, e23
+    assert blades_g2[0] == vga3d.blades['e12']
+    assert blades_g2[1] == vga3d.blades['e13']
+    assert blades_g2[2] == vga3d.blades['e23']
+    
+    blades_g3 = vga3d.blades_of_grade(3)
+    assert len(blades_g3) == 1
+    assert blades_g3[0] == vga3d.blades['e123']
+
+def test_blades_of_grade_invalid(vga2d):
+    # Test blades_of_grade with invalid grade
+    blades_invalid = vga2d.blades_of_grade(10)
+    assert len(blades_invalid) == 0
+
+def test_blades_of_grade_properties(vga2d):
+    # Test that blades_of_grade returns proper basis blades (coefficient 1)
+    for grade in range(vga2d.d + 1):
+        blades = vga2d.blades_of_grade(grade)
+        for blade in blades:
+            # Each blade should be pure (single component)
+            assert len(blade) == 1
+            # Each blade should have coefficient 1
+            assert list(blade.values())[0] == 1.0
