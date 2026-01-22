@@ -1,4 +1,4 @@
-def da(f, a, tau=1e-9):
+def da(f, a, tau=1e-9,direction='forward'):
     """
     The a-differential of function :code:`f()` in direction of :code:`a`.
 
@@ -10,9 +10,17 @@ def da(f, a, tau=1e-9):
     :param tau: Small increment for numerical differentiation. Default is :code:`1e-9`.
     :return: Function that computes the directional derivative.
     """
-    return lambda x: (f(x + tau * a) - f(x)) / tau
-
-
+    funcs = {
+        'forward': lambda x: (f(x + tau*a) - f(x)) / tau,
+        'backward': lambda x: (f(x) - f(x - tau*a)) / tau,
+        'central': lambda x: (f(x + tau*a) - f(x - tau*a)) / (2*tau),
+    }
+    
+    if direction not in funcs:
+        raise ValueError("Invalid direction specified. Use 'forward', 'backward', or 'central'.")
+    
+    return funcs[direction]
+    
 def d(alg, f, grade=1, tau=1e-9, prod=None):
     """
     The grade-derivative of :code:`f`, returns :code:`df()`, a function.
