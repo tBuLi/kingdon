@@ -654,7 +654,7 @@ def test_blade_dict():
     assert len(alg.blades) == 2
 
 
-def test_numregister_operator_existence():
+def test_numcompile_operator_existence():
     """ Test if all battery-included GA operators can be used in custum functions."""
     alg = Algebra(2, 0, 0)
     uvals = np.random.random(len(alg))
@@ -668,41 +668,41 @@ def test_numregister_operator_existence():
             def myfunc(x):
                 return getattr(x, op_name)()
 
-            myfunc_compiled = alg.register(myfunc)
+            myfunc_compiled = alg.compile(myfunc)
             assert myfunc_compiled(u) == myfunc(u)
 
         else:
             def myfunc(x, y):
                 return getattr(x, op_name)(y)
-            myfunc_compiled = alg.register(myfunc)
+            myfunc_compiled = alg.compile(myfunc)
             assert myfunc_compiled(u, v) == myfunc(u, v)
 
 
-def test_numregister_basics():
+def test_numcompile_basics():
     alg = Algebra(3, 0, 1)
     uvals = np.random.random(len(alg))
     vvals = np.random.random(len(alg))
     u = alg.multivector(uvals)
     v = alg.multivector(vvals)
 
-    @alg.register
+    @alg.compile
     def square(x):
         return x * x
 
-    @alg.register
+    @alg.compile
     def double(x):
         return 2 * x
 
-    @alg.register
+    @alg.compile
     def add(x, y):
         return x + y
 
-    @alg.register
+    @alg.compile
     def grade_select(x):
         return x.grade(1, 2)
 
-    # Test if we can nest registered expressions.
-    @alg.register
+    # Test if we can nest compiled expressions.
+    @alg.compile
     def coupled(u, v):
         uv = add(u, v)
         return square(uv) + double(u)
@@ -714,29 +714,29 @@ def test_numregister_basics():
     assert coupled(u, v) == (u + v)**2 + 2 * u
 
 
-def test_symregister_basics():
+def test_symcompile_basics():
     alg = Algebra(3, 0, 1)
     u = alg.multivector(name='u')
     v = alg.multivector(name='v')
 
-    @alg.register(symbolic=True)
+    @alg.compile(symbolic=True)
     def square(x):
         return x * x
 
-    @alg.register(symbolic=True)
+    @alg.compile(symbolic=True)
     def double(x):
         return 2 * x
 
-    @alg.register(symbolic=True)
+    @alg.compile(symbolic=True)
     def add(x, y):
         return x + y
 
-    @alg.register(symbolic=True)
+    @alg.compile(symbolic=True)
     def grade_select(x):
         return x.grade((1, 2))
 
-    # Test if we can nest registered expressions.
-    @alg.register(symbolic=True)
+    # Test if we can nest compiled expressions.
+    @alg.compile(symbolic=True)
     def coupled(u, v):
         uv = add(u, v)
         return square(uv) + double(u)
@@ -796,9 +796,29 @@ def test_setitem():
     point_vals = np.zeros((alg.d, l + 1))
     point_vals[0] = 1
     point_vals[1] = np.arange(l + 1) * d - 1.5
+    # Test with the 2d array first
+    lines = alg.vector(point_vals)
+    lines[-1] = lines[-2]
+    assert lines[-1].keys() == lines[-2].keys()
+    assert np.allclose(lines[-1].values(), lines[-2].values())
+    lines[:3] = lines[4:]
+    assert np.allclose(lines[:3].values(), lines[4:].values())
+
+    # Dualization turns the 2d array into a list of 1d arrays, so we need to test with that as well.
     points = alg.vector(point_vals).dual()
     points[-1] = points[-2]
-    assert points[-1] == points[-2]
+    assert points[-1].keys() == points[-2].keys()
+    assert np.allclose(points[-1].values(), points[-2].values())
+    points[:3] = points[4:]
+    assert np.allclose(points[:3].values(), points[4:].values())
+
+def test_set_mv():
+    alg = Algebra(2, 0, 1)
+    x = alg.multivector(name='x')
+    y = alg.multivector(name='y')
+    x.set(y)
+    assert x == y
+    assert x._values is not y._values
 
 def test_mv_times_func():
     """If a mv is binaried with a function, we simply call it until it returns a multivector. """

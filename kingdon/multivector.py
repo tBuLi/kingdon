@@ -3,7 +3,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import reduce, cached_property
-from typing import Generator, ClassVar
+from typing import Generator, ClassVar, Self
 from itertools import product
 import re
 import math
@@ -25,8 +25,16 @@ else:
         return count
 
 
+class MultiVectorType(type):
+    """
+    MultiVector type allows typehinting for MultiVectors of a given shape.
+    For example, :code:`MultiVector[3]` is interpreted as a MultiVectors of shape (N, 3) by :code:`Algebra.compile`,
+    where N is the number of blades in the multivector.
+    """
+    def __getitem__(cls, item): return cls, item
+
 @dataclass(init=False)
-class MultiVector:
+class MultiVector(metaclass=MultiVectorType):
     algebra: "Algebra"
     _values: list = field(default_factory=list)
     _keys: tuple = field(default_factory=tuple)
@@ -177,8 +185,14 @@ class MultiVector:
         """ Return the shape of the .values() attribute of this multivector. """
         if hasattr(self._values, 'shape'):
             return self._values.shape
+        elif not len(self):
+            return ()
         elif hasattr(self._values[0], 'shape'):
             return len(self), *self._values[0].shape
+        elif isinstance(self._values[0], (tuple, list)):
+            if not all(len(v) == len(self._values[0]) for v in self._values):
+                raise ValueError("All values of a Multivectors must have the same length in order for the mulivector to have a consistent shape.")
+            return len(self), len(self._values[0])
         else:
             return len(self),
 
@@ -314,17 +328,16 @@ class MultiVector:
         return str(self)
 
     def __getitem__(self, item):
-        if not isinstance(item, tuple):
-            item = (item,)
-
         values = self.values()
         if isinstance(values, (tuple, list)):
             return_values = values.__class__(value[item] for value in values)
         else:
+            if not isinstance(item, tuple):
+                item = (item,)
             return_values = values[(slice(None), *item)]
         return self.__class__.fromkeysvalues(self.algebra, keys=self.keys(), values=return_values)
 
-    def __setitem__(self, indices, values):
+    def __setitem__(self, indices, values: 'MultiVector'):
         if isinstance(values, MultiVector):
             if self.keys() != values.keys():
                 raise ValueError('setitem with a multivector is only possible for equivalent MVs.')
@@ -338,6 +351,13 @@ class MultiVector:
                 self_values[indices] = other_value
         else:
             self.values()[(slice(None), *indices)] = values
+    
+    def set(self, other: 'MultiVector') -> Self:
+        """Overwrite the values of this MV with the values of another MV."""
+        if self.keys() != other.keys():
+            raise ValueError('set is only possible for MVs with the same keys.')
+        self._values[:] = other._values[:]
+        return self
 
     def __getattr__(self, basis_blade):
         # TODO: if this first check is not true, raise hell instead?

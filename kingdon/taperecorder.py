@@ -24,6 +24,14 @@ class TapeRecorder:
     def type_number(self) -> int:
         return int(''.join('1' if i in self.keys() else '0' for i in reversed(self.algebra.canon2bin.values())), 2)
 
+    def __len__(self):
+        return len(self._keys)
+
+    @property
+    def shape(self):
+        """ Return the shape of the .values() attribute of this multivector. """
+        return len(self),
+
     def __getattr__(self, basis_blade):
         if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
             raise AttributeError(f'{self.__class__.__name__} object has no attribute or basis blade {basis_blade}')
@@ -67,17 +75,22 @@ class TapeRecorder:
         return self.expr
 
     def binary_operator(self, other, operator: str):
+        operator_dict = getattr(self.algebra, operator)
         if not isinstance(other, self.__class__):
             # Assume scalar
-            keys_out, func = getattr(self.algebra, operator)[self.keys(), (0,)]
+            mvs = operator_dict.make_symbolic_mvs((self.keys(), (0,)), (self.shape, (1,)))
+            keys_out, func = operator_dict[mvs]
             expr = f'{func.__name__}({self.expr}, ({other},))'
         else:
-            keys_out, func = getattr(self.algebra, operator)[self.keys(), other.keys()]
+            mvs = operator_dict.make_symbolic_mvs((self.keys(), other.keys()), (self.shape, other.shape))
+            keys_out, func = operator_dict[mvs]
             expr = f'{func.__name__}({self.expr}, {other.expr})'
         return self.__class__(algebra=self.algebra, expr=expr, keys=keys_out)
 
     def unary_operator(self, operator: str):
-        keys_out, func = getattr(self.algebra, operator)[self.keys()]
+        operator_dict = getattr(self.algebra, operator)
+        mv = operator_dict.make_symbolic_mvs((self.keys(),), (self.shape,))[0]
+        keys_out, func = operator_dict[mv]
         expr = f'{func.__name__}({self.expr})'
         return self.__class__(algebra=self.algebra, expr=expr, keys=keys_out)
 
