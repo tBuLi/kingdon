@@ -310,6 +310,22 @@ The strings can be simple labels, or valid SVG syntax.
     kingdon supports :code:`ganja.js`'s animation and interactivity in jupyter notebooks,
     `try kingdon in your browser <https://tbuli.github.io/teahouse/>`_ to give it a go!
 
+Large Algebra's
+---------------
+In theory :code:`kingdon` supports algebra's up to 36D, but your computer might go up in smoke 
+if you push it that far. In order to make large's algebras feasible, :code:`kingdon` no longer 
+performs symbolic optimization and caching because this consumes to much memory, and instead 
+just computes naively.
+By default any algebra of :math:`d > 6` is considered large, but it can be forced manually with
+the `large` option to :class:`~kingdon.algebra.Algebra` depending on your needs:
+
+.. code-block::
+
+    >>> alg = Algebra(3, large=True)
+    >>> alg = Algebra(8, large=False)
+
+For examples of large algebra's, see the OPNS section of the `teahouse <https://tbuli.github.io/teahouse>`_.
+
 Performance Tips
 ----------------
 Because :code:`kingdon` attempts to symbolically optimize expressions the first time they are called, the first

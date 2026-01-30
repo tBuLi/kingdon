@@ -163,7 +163,7 @@ def test_gp_symbolic(vga2d):
     usq = u*u
     # Square of a vector should be purely scalar.
     assert usq.e == u1**2 + u2**2
-    assert len(usq) == 1
+    assert len(usq.values()) == 1
     assert 'e12' not in usq
     assert 0 in usq
     # Asking for an element that is not there always returns zero.
@@ -180,7 +180,7 @@ def test_gp_symbolic(vga2d):
     # The norm of a bireflection is a scalar.
     Rnormsq = R*~R
     assert expand(Rnormsq.e - ((u1*v1 + u2*v2)**2 + (u1*v2 - u2*v1)**2)) == 0
-    assert len(Rnormsq) == 1
+    assert len(Rnormsq.values()) == 1
     assert 'e12' not in Rnormsq
     assert 0 in Rnormsq
     assert Rnormsq.e12 == 0
@@ -569,9 +569,12 @@ def test_itermv():
     shape = (len(tuple(alg.indices_for_grade(2))), nrows)
     bvals = np.random.random(shape)
     B = alg.bivector(bvals)
-    for i, b in enumerate(B.itermv()):
+    for i, b in enumerate(B):
         np.testing.assert_allclose(b.values(), bvals[:, i])
     assert i + 1 == nrows
+
+    with pytest.deprecated_call():
+        B.itermv()
 
 
 def test_fromsignature():
@@ -638,19 +641,19 @@ def test_blade_dict():
     alg = Algebra(2, graded=True)
     assert not alg.blades.lazy
     assert len(alg.blades) == len(alg)
-    assert len(alg.blades['e1']) == 2
+    assert len(alg.blades['e1'].values()) == 2
 
     # In algebras larger than 6, lazy is the default.
     alg = Algebra(7)
     assert alg.blades.lazy
     assert len(alg.blades) == 1  # PSS is calculated by default
-    assert len(alg.blades['e12']) == 1
+    assert len(alg.blades['e12'].values()) == 1
     assert len(alg.blades) == 2
 
     alg = Algebra(7, graded=True)
     assert alg.blades.lazy
     assert len(alg.blades) == 1  # PSS is calculated by default
-    assert len(alg.blades['e12']) == len(tuple(alg.indices_for_grade(2)))
+    assert len(alg.blades['e12'].values()) == len(tuple(alg.indices_for_grade(2)))
     assert len(alg.blades) == 2
 
 
@@ -1087,3 +1090,38 @@ def test_87(pga2d):
     diff2 = (one + u) - expectedmv
     assert all(diff1.map(lambda v: np.allclose(v, 0.0)).values())
     assert all(diff2.map(lambda v: np.allclose(v, 0.0)).values())
+
+def test_115_116():
+    alg = Algebra(3, 0, 1)
+    N = 500
+    x = np.random.random_sample(N)
+    y = np.random.random_sample(N)
+    z = np.random.random_sample(N)
+    points = alg.vector(e0=np.ones(N), e1=x, e2=y, e3=z).dual()
+
+    assert points.shape == (4, N)
+    assert len(points) == N
+
+    i = 0
+    for point in points:
+        i += 1
+    assert i == N
+
+    point = points[0]
+    assert point.shape == (4,)
+    assert len(point) == 0
+    assert bool(point) == True
+
+    for p in point:
+        raise AssertionError("This should not be reached since the length of the point is 0.")
+
+    point = point.map(float)  # Cast to float because numpy floats are still slicable.
+    for p in point:
+        raise AssertionError("This should not be reached since the length of the point is 0.")
+
+    empty = alg.multivector()
+    assert empty.shape == (0,)
+    assert len(empty) == 0
+    assert bool(empty) == False
+    for p in empty:
+        raise AssertionError("This should not be reached since the length of the empty mv is 0.")

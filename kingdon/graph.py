@@ -39,12 +39,12 @@ def encode(o, tree_types=TREE_TYPES, root=False, graded=False):
     #         ovals = o._values.T
     #         yield {'mvs': ovals.tobytes(), 'shape': ovals.shape}
     #     else:
-        yield from (encode(value, graded=graded) for value in o.itermv())
+        yield from (encode(value, graded=graded) for value in o)
     elif isinstance(o, MultiVector):
         values = o._values.tobytes() if isinstance(o._values, np.ndarray) else o._values.copy()
         if graded:  # In >6D ganja switches to graded mode.
             yield {'mv': values, 'keys': o._keys, 'grades': o.grades}
-        elif len(o) != len(o.algebra):
+        elif len(o.keys()) != len(o.algebra):
             # If not full mv, also pass the keys and let ganja figure it out.
             yield {'mv': values, 'keys': o._keys}
         else:

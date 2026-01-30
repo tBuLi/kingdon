@@ -10,6 +10,7 @@ import math
 import sys
 
 from sympy import Expr, Symbol, sympify, sinc, cos
+from sympy.utilities.iterables import iterable
 
 from kingdon.codegen import _lambdify_mv
 from kingdon.polynomial import RationalPolynomial
@@ -147,7 +148,7 @@ class MultiVector:
         return zip(self._keys, self._values)
 
     def __len__(self):
-        return len(self._values)
+        return self.shape[1] if len(self.shape) > 1 else 0
 
     @cached_property
     def type_number(self) -> int:
@@ -156,11 +157,15 @@ class MultiVector:
 
     def itermv(self, axis=None) -> Generator["MultiVector", None, None]:
         """
+        Deprecated, do `for x in mv:` instead.
+
         Returns an iterator over the multivectors within this multivector, if it is a multidimensional multivector.
         For example, if you have a pointcloud of N points, itermv will iterate over these points one at a time.
 
         :param axis: Axis over which to iterate. Default is to iterate over all possible mv.
         """
+        import warnings
+        warnings.warn('itermv is deprecated, simply iterate over the multivector directly instead.', DeprecationWarning)
         shape = self.shape[1:]
         if not shape:
             return self
@@ -173,14 +178,13 @@ class MultiVector:
             raise NotImplementedError
 
     @property
-    def shape(self):
+    def shape(self) -> tuple:
         """ Return the shape of the .values() attribute of this multivector. """
         if hasattr(self._values, 'shape'):
             return self._values.shape
-        elif hasattr(self._values[0], 'shape'):
-            return len(self), *self._values[0].shape
-        else:
-            return len(self),
+        if self._values and all(hasattr(v, 'shape') and v.shape == self._values[0].shape for v in self._values):
+            return len(self._values), *self._values[0].shape
+        return len(self._values),
 
     @cached_property
     def grades(self):
@@ -318,10 +322,12 @@ class MultiVector:
             item = (item,)
 
         values = self.values()
-        if isinstance(values, (tuple, list)):
+        if not isinstance(values, (tuple, list)):  # Assume it obeys the python array API
+            return_values = values[(slice(None), *item)]
+        elif values and all(iterable(value) for value in values):
             return_values = values.__class__(value[item] for value in values)
         else:
-            return_values = values[(slice(None), *item)]
+            raise IndexError("Cannot index a multivector with a non-iterable value.")
         return self.__class__.fromkeysvalues(self.algebra, keys=self.keys(), values=return_values)
 
     def __setitem__(self, indices, values):
