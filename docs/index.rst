@@ -98,6 +98,7 @@ A small selection of our items:
 
    installation
    usage
+   arrays
    workings
    examples/index
    contributing
