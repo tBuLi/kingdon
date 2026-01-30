@@ -9,8 +9,8 @@ In order to facilitate working with multivectors over arrays, `kingdon` fully
 supports `numpy`'s array indexing and masking syntax, which results in compact yet performant code.
 
 .. note::
-These design choices were made in part because working with a multivector of arrays is *much* faster 
-than working with an array of multivectors.
+    These design choices were made in part because working with a multivector of arrays is *much* faster 
+    than working with an array of multivectors.
 
 
 The Shape of MultiVectors
@@ -106,11 +106,11 @@ any other magic your coefficients might do with `__getitem__` overloading.
 
 Mesh
 ~~~~
+
 As an example of this powerful syntax, consider a mesh defined by two arrays:
-- `vertices`: a float array of shape :code:`(N, 4)` that defines the :math:`(x, y, z, 1)` homogenous 
-  coordinates of :math:`N` vertices.
-- `faces`: an integer array of shape :code:`(M, 3)` that defines the topology of the faces of the mesh.
-  The integers are indices into the `vertices` array, and hence in the range :math:`[0, N)`.
+- :code:`vertices`: a float array of shape :code:`(N, 4)` that defines the :math:`(x, y, z, 1)` homogenous coordinates of :math:`N` vertices.
+- :code:`faces`: an integer array of shape :code:`(M, 3)` that defines the topology of the faces of the mesh. The integers are indices into the :code:`vertices` array, and hence in the range :math:`[0, N)`.
+
 
 In order to convert the vertices to multivectors (in 3DPGA), we need to transpose `vertices` such that the 
 `x,y,z`-coordinates can be matched up with the :math:`\mathbf{e}_i^*` directions:
