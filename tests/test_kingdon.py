@@ -573,6 +573,9 @@ def test_itermv():
         np.testing.assert_allclose(b.values(), bvals[:, i])
     assert i + 1 == nrows
 
+    with pytest.deprecated_call():
+        B.itermv()
+
 
 def test_fromsignature():
     alg = Algebra(signature=[0, -1, 1, 1])

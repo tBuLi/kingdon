@@ -157,11 +157,15 @@ class MultiVector:
 
     def itermv(self, axis=None) -> Generator["MultiVector", None, None]:
         """
+        Deprecated, do `for x in mv:` instead.
+
         Returns an iterator over the multivectors within this multivector, if it is a multidimensional multivector.
         For example, if you have a pointcloud of N points, itermv will iterate over these points one at a time.
 
         :param axis: Axis over which to iterate. Default is to iterate over all possible mv.
         """
+        import warnings
+        warnings.warn('itermv is deprecated, simply iterate over the multivector directly instead.', DeprecationWarning)
         shape = self.shape[1:]
         if not shape:
             return self
