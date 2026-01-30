@@ -4,9 +4,9 @@ Array Syntax
 (`interactive example <https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_boids.ipynb>`_)
 
 Kingdon was designed to be agnostic to coefficient types, and therefore it is compatible with 
-popular array types such as `numpy` or `torch`.
-In order to facilitate working with multivectors over arrays, `kingdon` fully 
-supports `numpy`'s array indexing and masking syntax, which results in compact yet performant code.
+popular array types such as :code:`numpy` or :code:`torch`.
+In order to facilitate working with multivectors over arrays, :code:`kingdon` fully 
+supports :code:`numpy`'s array indexing and masking syntax, which results in compact yet performant code.
 
 .. note::
     These design choices were made in part because working with a multivector of arrays is *much* faster 
@@ -38,12 +38,12 @@ However, the length of :code:`x` is :code:`0`:
     >>> len(x)
     0
 
-This reflects that `x` is a single vector, and therefore not iterable. You might have expected 
-iteration over a multivector to iterate over its coefficients, but in `kingdon` multivectors are 
+This reflects that :code:`x` is a single vector, and therefore not iterable. You might have expected 
+iteration over a multivector to iterate over its coefficients, but in :code:`kingdon` multivectors are 
 treated as geometric numbers, similar to how complex numbers are treated in complex analysis.
 
 .. note::
-    If you need to iterate over the coefficients anyway use `x.map` to map a function on all the 
+    If you need to iterate over the coefficients anyway use :code:`x.map` to map a function on all the 
     coefficients of the multivector.
     For individual access, use attributes access instead, e.g. :code:`x.e1` returns the 
     :math:`\mathbf{e}_1` coefficient.
@@ -62,8 +62,8 @@ Now lets make a collection of :math:`N` vectors, and see what changes:
     >>> len(x)
     5
 
-Hence, we see that the length of the multivector is :code:`5`, and hence we can iterate over the 
-multivector to get the individual vectors in `x`:
+Hence, we see that the length of the multivector is :code:`5`, and therefore we can iterate over the 
+multivector to get the individual vectors in :code:`x`:
 
 .. code-block::
 
@@ -76,7 +76,7 @@ multivector to get the individual vectors in `x`:
     0.156 𝐞₁ + 0.708 𝐞₂ + 0.182 𝐞₃
 
 A huge benefit of multidimensional multivectors is that the resulting code is very compact. 
-For example, to compute the norm of (all vectors in) `x`, we simply do
+For example, to compute the norm of (all vectors in) :code:`x`, we simply do
 
 .. code-block::
 
@@ -96,24 +96,27 @@ we can use numpy's masking syntax to do
     >>> large_x
     [0.95071431 0.73199394] 𝐞₁ + [0.05808361 0.86617615] 𝐞₂ + [0.96990985 0.83244264] 𝐞₃
 
-First, `d.e` selects the scalar coefficient of the multivector `d`.
-Then, `d.e > 1` creates the boolean array `[False  True  True False False]`, indicating 
-which elements satisfy the condition. Lastly, `x[d.e > 1]` passes this condition on to the 
-multivector coefficients, which are all arrays of shape `(5,)`.
-Importantly, `kingdon` passes the thing between the square brackets (`x[...]`) on to the 
+First, :code:`d.e` selects the scalar coefficient of the multivector :code:`d`.
+Then, :code:`d.e > 1` creates the boolean array :code:`[False  True  True False False]`, indicating 
+which elements satisfy the condition. Lastly, :code:`x[d.e > 1]` passes this condition on to the 
+multivector coefficients, which are all arrays of shape :code:`(5,)`.
+Importantly, :code:`kingdon` passes the thing between the square brackets (:code:`x[...]`) on to the 
 coefficients *unseen*, thus enabling not only numpy style indexing and masking, but also 
-any other magic your coefficients might do with `__getitem__` overloading.
+any other magic your coefficients might do with :code:`__getitem__` overloading.
 
 Mesh
 ~~~~
 
 As an example of this powerful syntax, consider a mesh defined by two arrays:
-- :code:`vertices`: a float array of shape :code:`(N, 4)` that defines the :math:`(x, y, z, 1)` homogenous coordinates of :math:`N` vertices.
-- :code:`faces`: an integer array of shape :code:`(M, 3)` that defines the topology of the faces of the mesh. The integers are indices into the :code:`vertices` array, and hence in the range :math:`[0, N)`.
+
+- :code:`vertices`: a float array of shape :code:`(N, 4)` that defines the :math:`(x, y, z, 1)` 
+  homogenous coordinates of :math:`N` vertices.
+- :code:`faces`: an integer array of shape :code:`(M, 3)` that defines the topology of the faces 
+  of the mesh. The integers are indices into the :code:`vertices` array, and hence in the range :math:`[0, N)`.
 
 
-In order to convert the vertices to multivectors (in 3DPGA), we need to transpose `vertices` such that the 
-`x,y,z`-coordinates can be matched up with the :math:`\mathbf{e}_i^*` directions:
+In order to convert the vertices to multivectors (in 3DPGA), we need to transpose :code:`vertices` such that the 
+:code:`x,y,z`-coordinates can be matched up with the :math:`\mathbf{e}_i^*` directions:
 
 .. code-block::
 
