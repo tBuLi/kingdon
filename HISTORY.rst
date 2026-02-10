@@ -89,3 +89,10 @@ Massive large algebra improvement!
 * Above d > 6 kingdon switches to large algebra mode and attempts to make optimizations
 * Exotic algebras like 2DCSGA (R5,3), Mother Algebra (R4,4) and 3DCCGA (R6,3) are no longer out of reach, see teahouse!
 * Bugfix: multivectors now take priority over numpy arrays in binary operators even when the numpy array is on the left.
+
+2.0.0 (2026-02-10)
+------------------
+* Length of a multivector is now defined such that multivectors are sequences if their coefficients are arrays.
+  This allows users to iterate over e.g. point clouds naturally.
+* Improved documentation for array syntax.
+* Large algebra performance improvements.
