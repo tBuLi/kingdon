@@ -209,7 +209,7 @@ Below is an overview:
      - :code:`a & b`
      - :code:`a.rp(b)`
    * - Conjugate :code:`a` by :code:`b`
-     - :math:`b a \widetilde{b}`
+     - :math:`(-1)^{\text{grade}(b) \text{grade}(a)} b a \widetilde{b}`
      - :code:`b >> a`
      - :code:`b.sw(a)`
    * - Project :code:`a` onto :code:`b`

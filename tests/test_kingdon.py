@@ -343,7 +343,7 @@ def test_regressive(pga3d):
     assert x_regr_y == known
 
 
-def test_projection(pga3d):
+def test_projection_3d(pga3d):
     x1, x2, x3 = symbols('x1, x2, x3')
     x = pga3d.trivector([x1, x2, x3, 1])
     y1, y2, y3, y4 = symbols('y1, y2, y3, y4')
@@ -453,22 +453,40 @@ def test_anticommutator():
 
 
 def test_conjugation():
-    alg = Algebra(1, 1, 1)
+    alg = Algebra(2, 0, 1)
     x = alg.multivector(name='x')  # multivector
     y = alg.multivector(name='y')
+    with pytest.raises(TypeError):
+        x >> y
 
+    x = alg.evenmv(name='x')
     # Check if the built-in conjugation formula is what we expect it to be.
     xconjy_expected = x * y * ~x
     xconjy = x >> y
     diff = (xconjy_expected - xconjy)
     assert not diff
 
+    x = alg.oddmv(name='x')
+    xconjy_expected = (x * y.grade(0) * ~x) - (x * y.grade(1) * ~x) + (x * y.grade(2) * ~x) - (x * y.grade(3) * ~x)
+    xconjy = x >> y
+    diff = (xconjy_expected - xconjy)
+    assert not diff
+
 
 def test_projection():
-    alg = Algebra(1, 1, 1)
+    alg = Algebra(2, 0, 1)
     x = alg.multivector(name='x')  # multivector
     y = alg.multivector(name='y')
+    with pytest.raises(TypeError):
+        x @ y
 
+    y = alg.evenmv(name='y')
+    xprojy_expected = (x | y) * ~y
+    xprojy = x @ y
+    diff = (xprojy_expected - xprojy)
+    assert not diff
+
+    y = alg.oddmv(name='y')
     xprojy_expected = (x | y) * ~y
     xprojy = x @ y
     diff = (xprojy_expected - xprojy)
@@ -663,7 +681,7 @@ def test_numregister_operator_existence():
     uvals = np.random.random(len(alg))
     vvals = np.random.random(len(alg))
     u = alg.multivector(uvals).grade((0, 2))
-    v = alg.multivector(vvals)
+    v = alg.multivector(vvals).grade(1)
 
     operators = alg.registry.copy()
     for op_name, op_dict in operators.items():
@@ -806,8 +824,8 @@ def test_setitem():
 def test_mv_times_func():
     """If a mv is binaried with a function, we simply call it until it returns a multivector. """
     alg = Algebra(2, 0, 1)  # Smallest non-Abelian algebra, that property is important.
-    x = alg.multivector(name='x')
-    y = alg.multivector(name='x')
+    x = alg.evenmv(name='x')
+    y = alg.oddmv(name='x')
     yfunc = lambda: lambda: y
     # See if binary operators have been overloaded correctly!
     assert x + y == x + yfunc
@@ -1051,6 +1069,8 @@ def test_large():
         op_small = alg_small.registry.get(op_name)
         if op_name == 'sqrt':
             continue  # Sqrt is a bit of a Heisenbug due to numerical errors
+        if op_name in ['proj', 'sw']:
+            continue # These are defined in terms of other operators and thus do not have to be tested separately.
 
         if isinstance(op_small, UnaryOperatorDict):
             xy_large = op_large(x)

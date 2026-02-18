@@ -225,10 +225,10 @@ Overview of Operators
      - $a \\vee b$
      - :code:`a & b`
      - :code:`a.rp(b)`
-   * - Conjugate :code:`b` by :code:`a`
-     - $a b \\widetilde{a}$
-     - :code:`a >> b`
-     - :code:`a.sw(b)`
+   * - Conjugate :code:`a` by :code:`b`
+     - $\\left(-1\\right)^{\\text{grade}\\left(b\\right) \\text{grade}\\left(a\\right)} b a \\widetilde{b}$
+     - :code:`b >> a`
+     - :code:`b.sw(a)`
    * - Project :code:`a` onto :code:`b`
      - $(a \\cdot b) \\widetilde{b}$
      - :code:`a @ b`
