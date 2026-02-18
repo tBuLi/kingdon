@@ -42,9 +42,9 @@ For example, let us create two symbolic vectors :code:`u` and :code:`v` in this 
     >>> u = alg.multivector(name='u', grades=(1,))
     >>> v = alg.multivector(name='v', grades=(1,))
     >>> u
-    (u1) * e1 + (u2) * e2
+    u1 𝐞₁ + u2 𝐞₂
     >>> v
-    (v1) * e1 + (v2) * e2
+    v1 𝐞₁ + v2 𝐞₂
 
 The return type of :meth:`~kingdon.algebra.Algebra.multivector` is an instance of :class:`~kingdon.multivector.MultiVector`.
 
@@ -62,9 +62,9 @@ The return type of :meth:`~kingdon.algebra.Algebra.multivector` is an instance o
 .. code-block::
 
     >>> u + v
-    (u1 + v1) * e1 + (u2 + v2) * e2
+    (u1 + v1) 𝐞₁ + (u2 + v2) 𝐞₂
     >>> u * v
-    (u1*v1 + u2*v2) + (u1*v2 - u2*v1) * e12
+    (u1*v1 + u2*v2) + (u1*v2 - u2*v1) 𝐞₁₂
 
 We also have the inner and exterior "products":
 
@@ -73,7 +73,7 @@ We also have the inner and exterior "products":
     >>> u | v
     (u1*v1 + u2*v2)
     >>> u ^ v
-    (u1*v2 - u2*v1) * e12
+    (u1*v2 - u2*v1) 𝐞₁₂
 
 We see that *in the case of vectors* the product is equal to the sum of the inner and exterior.
 
@@ -83,7 +83,7 @@ line :code:`v` in the line :code:`u` by using conjugation:
 .. code-block::
 
     >>> u >> v
-    (u1**2*v1 + 2*u1*u2*v2 - u2**2*v1) * e1 + (-u1**2*v2 + 2*u1*u2*v1 + u2**2*v2) * e2
+    (-u1**2*v1 - 2*u1*u2*v2 + u2**2*v1) 𝐞₁ + (u1**2*v2 - 2*u1*u2*v1 - u2**2*v2) 𝐞₂
 
 we see that the result is again a vector, as it should be.
 
@@ -118,7 +118,7 @@ but with specific blades, we can do so by providing the :code:`keys` argument.
 .. code-block::
 
     >>> x = alg.multivector(name='x', keys=('e1', 'e12'))
-    >>> (x1) * e1 + (x12) * e12
+    >>> x1 𝐞₁ + x12 𝐞₁₂
 
 This can be done either by providing a tuple of strings which indicate which basis-vectors should be present,
 or by passing them as integers, i.e. :code:`keys=(0b01, 0b11)` is equivalent to the example above.
@@ -139,7 +139,7 @@ For example, to repeat some of the examples above with numerical values, we coul
     >>> u = alg.vector(uvals)
     >>> v = alg.vector(vvals)
     >>> u * v
-    (0.1541) + (0.0886) * e12
+    (0.1541) + (0.0886) 𝐞₁₂
 
 A big performance bottleneck that we suffer from in Python, is that arrays over objects are very slow.
 So while we could make a numpy array filled with :code:`~kingdon.multivector.MultiVector`'s, this would tank our performance.
@@ -152,7 +152,7 @@ So while we could make a numpy array filled with :code:`~kingdon.multivector.Mul
     >>> uvals = np.random.random((2, 3))
     >>> u = alg.vector(uvals)
     >>> u
-    ([0.82499172 0.71181276 0.98052928]) * e1 + ([0.53395072 0.07312351 0.42464341]) * e2
+    ([0.82499172 0.71181276 0.98052928]) 𝐞₁ + ([0.53395072 0.07312351 0.42464341]) 𝐞₂
 
 what is important here is that the first dimension of the array has to have the expected length: 2 for a vector.
 All other dimensions are not used by :code:`kingdon`. Now we can reflect this multivector in the :code:`e1` line:
@@ -161,7 +161,7 @@ All other dimensions are not used by :code:`kingdon`. Now we can reflect this mu
 
     >>> v = alg.vector((1, 0))
     >>> v >> u
-    ([0.82499172 0.71181276 0.98052928]) * e1 + ([-0.53395072 -0.07312351 -0.42464341]) * e2
+    ([0.82499172 0.71181276 0.98052928]) 𝐞₁ + ([-0.53395072 -0.07312351 -0.42464341]) 𝐞₂
 
 Despite the different shapes, broadcasting is done correctly in the background thanks to the magic of numpy,
 and with only minor performance penalties.
