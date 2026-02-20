@@ -17,7 +17,7 @@ def test_widget():
     assert g.draggable_points == [
         [{'keys': x.keys(), 'mv': x.values()}],
     ]
-    assert all(type(s) == int for s in g.signature)
+    assert all(isinstance(s, int) for s in g.signature)
     subjects = [
         0xD0FFE1,
         {'keys': x.keys(), 'mv': x.values()},
@@ -28,6 +28,10 @@ def test_widget():
         *({'keys': wi.keys(), 'mv': wi.values()} for wi in w),
     ]
     assert g.subjects == subjects
+
+    # Test if graph has the right basis and signature.
+    assert g.basis == [b if b != 'e' else '1' for b in alg.basis]
+    assert g.signature == alg.signature
 
     # Simulte dragging a point and see if the point updates. Ganja supplies a full multivector.
     x_prime = alg.vector([1, 1.01, 1]).dual().asfullmv()

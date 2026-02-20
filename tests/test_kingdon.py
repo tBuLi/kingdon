@@ -17,17 +17,17 @@ import timeit
 
 @pytest.fixture
 def pga1d():
-    return Algebra(signature=np.array([1, 0]), start_index=1)
+    return Algebra(signature=[1, 0], start_index=1)
 
 
 @pytest.fixture
 def pga2d():
-    return Algebra(signature=np.array([1, 1, 0]), start_index=1)
+    return Algebra(signature=[1, 1, 0], start_index=1)
 
 
 @pytest.fixture
 def pga3d():
-    return Algebra(signature=np.array([1, 1, 1, 0]), start_index=1)
+    return Algebra(signature=[1, 1, 1, 0], start_index=1)
 
 
 @pytest.fixture
@@ -598,7 +598,7 @@ def test_itermv():
 def test_fromsignature():
     alg = Algebra(signature=[0, -1, 1, 1])
     assert alg.start_index == 0
-    assert isinstance(alg.signature, np.ndarray)
+    assert isinstance(alg.signature, list)
     assert np.all(alg.signature == [0, -1, 1, 1])
     assert (alg.p, alg.q, alg.r) == (2, 1, 1)
     with pytest.raises(TypeError):
@@ -609,7 +609,7 @@ def test_start_index():
     pga2d = Algebra(signature=[0, 1, 1], start_index=0)
     alg = Algebra(signature=[0, 1, 1], start_index=1)
     for ei, fi in zip(pga2d.blades.values(), alg.blades.values()):
-        assert fi**2 == ei**2
+        assert (fi**2).e == (ei**2).e
 
 
 def test_asfullmv():
