@@ -444,7 +444,7 @@ class MultiVector:
           even if the mutivector was already dense.
         """
         if canonical:
-            keys = self.algebra.indices_for_grades(tuple(range(self.algebra.d + 1)))
+            keys = tuple(self.algebra.indices_for_grades(tuple(range(self.algebra.d + 1))))
         else:
             keys = tuple(range(len(self.algebra)))
         values = [getattr(self, self.algebra.bin2canon[k]) for k in keys]

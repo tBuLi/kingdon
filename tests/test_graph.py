@@ -1,4 +1,5 @@
 from kingdon import Algebra
+import numpy as np
 
 
 def test_widget():
@@ -6,11 +7,32 @@ def test_widget():
     x = alg.vector([1, 1, 1]).dual()
     y = lambda: alg.vector([1, 1, 1]).dual()
     z = alg.vector([1, 1, 1])
-    args = (0xD0FFE1, x, 0x00AA88, y, lambda: x & y, z)
+    wvals = np.ones((3, 5))
+    w = alg.vector(wvals).dual()
+    func = lambda: x & y
+    args = (0xD0FFE1, x, 0x00AA88, y, func, z, w)
     g = alg.graph(*args)
+    # Only point 1 is draggable because it is the only PGA pseudovector.
     assert g.draggable_points_idxs == [1]
-    assert g.draggable_points == [[{'keys': x.keys(), 'mv': x.values()}]]
+    assert g.draggable_points == [
+        [{'keys': x.keys(), 'mv': x.values()}],
+    ]
     assert all(type(s) == int for s in g.signature)
+    subjects = [
+        0xD0FFE1,
+        {'keys': x.keys(), 'mv': x.values()},
+        0x00AA88,
+        {'keys': y().keys(), 'mv': y().values()},
+        {'keys': func().keys(), 'mv': func().values()},
+        {'keys': z.keys(), 'mv': z.values()},
+        *({'keys': wi.keys(), 'mv': wi.values()} for wi in w),
+    ]
+    assert g.subjects == subjects
+
+    # Simulte dragging a point and see if the point updates. Ganja supplies a full multivector.
+    x_prime = alg.vector([1, 1.01, 1]).dual().asfullmv()
+    g.draggable_points = [{'keys': x_prime.keys(), 'mv': x_prime.values()}]
+    assert all(getattr(x_prime, alg.bin2canon[k]) == v for k, v in x.items())
 
 def test_up_function():
     """ Issue 93 implements the up function in graph, which enables OPNS rendering for exotic algebras like 2D CSGA. """
