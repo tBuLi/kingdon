@@ -343,7 +343,7 @@ def test_regressive(pga3d):
     assert x_regr_y == known
 
 
-def test_projection(pga3d):
+def test_projection_3d(pga3d):
     x1, x2, x3 = symbols('x1, x2, x3')
     x = pga3d.trivector([x1, x2, x3, 1])
     y1, y2, y3, y4 = symbols('y1, y2, y3, y4')
@@ -453,22 +453,40 @@ def test_anticommutator():
 
 
 def test_conjugation():
-    alg = Algebra(1, 1, 1)
+    alg = Algebra(2, 0, 1)
     x = alg.multivector(name='x')  # multivector
     y = alg.multivector(name='y')
+    with pytest.raises(TypeError):
+        x >> y
 
+    x = alg.evenmv(name='x')
     # Check if the built-in conjugation formula is what we expect it to be.
     xconjy_expected = x * y * ~x
     xconjy = x >> y
     diff = (xconjy_expected - xconjy)
     assert not diff
 
+    x = alg.oddmv(name='x')
+    xconjy_expected = (x * y.grade(0) * ~x) - (x * y.grade(1) * ~x) + (x * y.grade(2) * ~x) - (x * y.grade(3) * ~x)
+    xconjy = x >> y
+    diff = (xconjy_expected - xconjy)
+    assert not diff
+
 
 def test_projection():
-    alg = Algebra(1, 1, 1)
+    alg = Algebra(2, 0, 1)
     x = alg.multivector(name='x')  # multivector
     y = alg.multivector(name='y')
+    with pytest.raises(TypeError):
+        x @ y
 
+    y = alg.evenmv(name='y')
+    xprojy_expected = (x | y) * ~y
+    xprojy = x @ y
+    diff = (xprojy_expected - xprojy)
+    assert not diff
+
+    y = alg.oddmv(name='y')
     xprojy_expected = (x | y) * ~y
     xprojy = x @ y
     diff = (xprojy_expected - xprojy)
@@ -583,6 +601,8 @@ def test_fromsignature():
     assert isinstance(alg.signature, np.ndarray)
     assert np.all(alg.signature == [0, -1, 1, 1])
     assert (alg.p, alg.q, alg.r) == (2, 1, 1)
+    with pytest.raises(TypeError):
+        alg = Algebra(signature=[0, -1, 1, 1, 2])
 
 
 def test_start_index():
@@ -637,6 +657,8 @@ def test_blade_dict():
     assert not alg.blades.lazy
     assert len(alg.blades) == len(alg)
     locals().update(**alg.blades)
+    with pytest.raises(AttributeError):
+        alg.blades.f123
 
     alg = Algebra(2, graded=True)
     assert not alg.blades.lazy
@@ -663,7 +685,7 @@ def test_numregister_operator_existence():
     uvals = np.random.random(len(alg))
     vvals = np.random.random(len(alg))
     u = alg.multivector(uvals).grade((0, 2))
-    v = alg.multivector(vvals)
+    v = alg.multivector(vvals).grade(1)
 
     operators = alg.registry.copy()
     for op_name, op_dict in operators.items():
@@ -806,8 +828,8 @@ def test_setitem():
 def test_mv_times_func():
     """If a mv is binaried with a function, we simply call it until it returns a multivector. """
     alg = Algebra(2, 0, 1)  # Smallest non-Abelian algebra, that property is important.
-    x = alg.multivector(name='x')
-    y = alg.multivector(name='x')
+    x = alg.evenmv(name='x')
+    y = alg.oddmv(name='x')
     yfunc = lambda: lambda: y
     # See if binary operators have been overloaded correctly!
     assert x + y == x + yfunc
@@ -838,6 +860,8 @@ def test_blades_of_grade():
     for comb in grade_combinations:
         indices = tuple(alg.indices_for_grades(comb))
         blades_of_grade = alg.blades.grade(*indices)
+        blades_of_grade_alt = alg.blades.grade(indices)
+        assert blades_of_grade == blades_of_grade_alt
         assert isinstance(blades_of_grade, dict)
         assert all(label in alg.canon2bin and blade.grades[0] in indices
                    for label, blade in blades_of_grade.items())
@@ -955,33 +979,55 @@ def test_swap_blades():
         assert eliminated == test['output'][2]
 
 def test_custom_basis():
-    basis = ["e","e1","e2","e3","e0","e01","e02","e03","e12","e31","e23","e032","e013","e021","e123","e0123"]
+    with pytest.raises(ValueError):
+        Algebra.fromname('fantasyalgebra')
+    basis_2dpga = ["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"]
+    pga2d = Algebra.fromname('2DPGA')
+    alg201 = Algebra(2, 0, 1)
+    basis_3dpga = ["e","e1","e2","e3","e0","e01","e02","e03","e12","e31","e23","e032","e013","e021","e123","e0123"]
     pga3d = Algebra.fromname('3DPGA')
-    assert pga3d.basis == basis
-    assert list(pga3d.canon2bin.keys()) == basis
-
-    e20, e0, e2 = pga3d.blades.e20, pga3d.blades.e0, pga3d.blades.e2
-    assert e20 * e2 == - e0
-
-    X = pga3d.multivector(e12=1)
-    assert X == pga3d.blades.e12
-    assert X == - pga3d.blades.e21
-    assert X.e21 == -1
-    assert X.e12 == 1
-
-    # Compare a mv in alg301 with pga3d and test if they are identical when we extract the coefficients.
     alg301 = Algebra(3, 0, 1)
-    x = alg301.multivector(name='x')
-    X = pga3d.multivector(**{alg301.bin2canon[k]: v for k, v in x.items()})
-    assert all(getattr(x, blade) == getattr(X, blade) for blade in alg301.canon2bin)
-    assert all(getattr(x, blade) == getattr(X, blade) for blade in pga3d.canon2bin)
+    basis_stap = [
+        "e", "e0", "e1", "e2", "e3", "e4",
+        "e01", "e02", "e03", "e40", "e12", "e31", "e23", "e41", "e42", "e43",
+        "e234", "e314", "e124", "e123", "e014", "e024", "e034", "e032", "e013", "e021",
+        "e0324", "e0134", "e0214", "e0123", "e1234", "e01234"
+    ]
+    stap = Algebra.fromname('STAP')
+    alg311 = Algebra(3, 1, 1)
 
-    # Same, but now after performing a product.
-    y = alg301.multivector(name='y')
-    Y = pga3d.multivector(**{alg301.bin2canon[k]: v for k, v in y.items()})
-    xy, XY = x*y, X*Y
-    assert all(getattr(xy, blade) == getattr(XY, blade) for blade in alg301.canon2bin)
-    assert all(getattr(xy, blade) == getattr(XY, blade) for blade in pga3d.canon2bin)
+    for basis, pga, alg in [(basis_2dpga, pga2d, alg201), (basis_3dpga, pga3d, alg301), (basis_stap, stap, alg311)]:
+        assert pga.basis == basis
+        assert list(pga.canon2bin.keys()) == basis
+
+        e20, e0, e2 = pga.blades.e20, pga.blades.e0, pga.blades.e2
+        assert e20 * e2 == - e0
+
+        X = pga.multivector(e21=-1)
+        assert X == pga.blades.e12
+        assert X == - pga.blades.e21
+        assert X.e21 == -1
+        assert X.e12 == 1
+
+        # Compare a mv in alg301 with pga3d and test if they are identical when we extract the coefficients.
+        x = alg.multivector(name='x')
+        X = pga.multivector(**{alg.bin2canon[k]: v for k, v in x.items()})
+        x_dual = x.dual()
+        X_dual = X.dual()
+        assert x == x_dual.undual()
+        assert X == X_dual.undual()
+        assert all(getattr(x, blade) == getattr(X, blade) for blade in alg.canon2bin)
+        assert all(getattr(x, blade) == getattr(X, blade) for blade in pga.canon2bin)
+        assert all(getattr(x_dual, blade) == getattr(X_dual, blade) for blade in alg.canon2bin)
+        assert all(getattr(x_dual, blade) == getattr(X_dual, blade) for blade in pga.canon2bin)
+
+        # Same, but now after performing a product.
+        for op in [operator.mul, operator.xor, operator.and_, operator.add, operator.sub, operator.or_]:
+            y = alg.multivector(name='y')
+            Y = pga.multivector(**{alg.bin2canon[k]: v for k, v in y.items()})
+            xy, XY = op(x, y), op(X, Y)
+            assert all(getattr(xy, blade) == getattr(XY, blade) for blade in alg.canon2bin)
+            assert all(getattr(xy, blade) == getattr(XY, blade) for blade in pga.canon2bin)
 
 def test_apply_to_list():
     alg = Algebra(2, 0, 1)
@@ -1051,6 +1097,8 @@ def test_large():
         op_small = alg_small.registry.get(op_name)
         if op_name == 'sqrt':
             continue  # Sqrt is a bit of a Heisenbug due to numerical errors
+        if op_name in ['proj', 'sw']:
+            continue # These are defined in terms of other operators and thus do not have to be tested separately.
 
         if isinstance(op_small, UnaryOperatorDict):
             xy_large = op_large(x)

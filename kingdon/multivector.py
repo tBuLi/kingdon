@@ -444,7 +444,7 @@ class MultiVector:
           even if the mutivector was already dense.
         """
         if canonical:
-            keys = self.algebra.indices_for_grades(tuple(range(self.algebra.d + 1)))
+            keys = tuple(self.algebra.indices_for_grades(tuple(range(self.algebra.d + 1))))
         else:
             keys = tuple(range(len(self.algebra)))
         values = [getattr(self, self.algebra.bin2canon[k]) for k in keys]
@@ -459,9 +459,14 @@ class MultiVector:
         return self.algebra.gp(other, self)
 
     def sw(self, other):
-        """
-        Apply :code:`x := self` to :code:`y := other` under conjugation:
-        :code:`x.sw(y) = x*y*~x`.
+        r"""
+        Apply the normalized versor (k-reflection) :code:`x := self` to the :math:`\ell`-blade:code:`y := other` under conjugation:
+        :math:`x[y] = (-1)^{k \ell} x y x^{-1}`.
+        If :code:`y` is a multivector instead of a blade, the formula is applied to each pure
+        grade component of :code:`y` separately to ensure a consistent result.
+        **Important**: note that :code:`x` is assumed to be normalized such that :math:`x \widetilde{x} = 1`
+        (i.e. :code:`x.normsq() == 1`). Moreover, grade preservation is enforced by the code.
+        Expect unexpected results if this operator is used with non-versors.
         """
         return self.algebra.sw(self, other)
 

@@ -127,11 +127,26 @@ def codegen_gp(x, y):
 
 def codegen_sw(x, y):
     r"""
-    Generate the conjugation of :code:`y` by :code:`x`: :math:`x y \widetilde{x}`.
+    Generate the conjugation of :code:`y` by the versor (k-reflection) :code:`x`,
+    using the conjugation formula :math:`(-1)^{k \ell} x y x^{-1}`, where :math:`k` is the
+    grade of :code:`x` and :math:`\ell` is the grade of the blade :code:`y`. (Eq 7.18 in [GA4CS]_)
+    If :code:`y` is a multivector instead of a blade, the formula is applied to each pure
+    grade component of :code:`y` separately to ensure a consistent result.
+    **Important**: note that :code:`x` is assumed to be normalized such that :math:`x \widetilde{x} = 1`
+    (i.e. :code:`x.normsq() == 1`). Moreover, grade preservation is enforced by the code.
+    Expect unexpected results if this operator is used with non-versors.
 
+    .. [GA4CS] Dorst, Lasenby, and Fontijne. Geometric Algebra for Computer Science. Morgan Kaufmann, 2007.
+
+    :param x: The versor (k-reflection), i.e. a multivector satisfying :math:`x \widetilde{x} = 1`.
+    :param y: The multivector to be conjugated.
     :return: tuple of keys in binary representation and a lambda function.
+    :raises TypeError: If :code:`x` is not a versor (k-reflection) and thus neither even nor odd.
     """
-    return x * y * ~x
+    if len(set((g % 2 for g in x.grades))) != 1:
+        raise TypeError("x must be a versor (k-reflection) and thus either even or odd.")
+    grade_x = max(x.grades)
+    return sum(((-1) ** (grade_x * g) * x * y.grade(g) * x.reverse()).grade(g) for g in y.grades)
 
 
 def codegen_cp(x, y):
@@ -197,12 +212,18 @@ def codegen_sp(x, y):
 
 
 def codegen_proj(x, y):
-    r"""
-    Generate the projection of :code:`x` onto :code:`y`: :math:`(x \cdot y) \widetilde{y}`.
+    fr"""
+    Generate the projection of :code:`x` onto :code:`y`: :math:`(x \cdot y) \widetilde{y}`,
+    where it is assumed that :code:`y` is a normalized versor (k-reflection) and hence :math:`y^{-1} = \widetilde{y}`.
 
+    :param x: The multivector to be projected.
+    :param y: The versor (k-reflection) onto which :code:`x` is projected.
     :return: tuple of keys in binary representation and a lambda function.
+    :raises TypeError: If :code:`y` is not a versor (k-reflection).
     """
-    return (x | y) * ~y
+    if len(set((g % 2 for g in y.grades))) != 1:
+        raise TypeError("y must be a versor (k-reflection) and thus either even or odd.")
+    return (x | y) * y.reverse()
 
 
 def codegen_op(x, y):

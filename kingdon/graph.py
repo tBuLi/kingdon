@@ -139,11 +139,11 @@ class GraphWidget(anywidget.AnyWidget):
             return []
         # Extract the draggable points.
         d = self.algebra.d
-        points = [s for s in self.pre_subjects if isinstance(s, MultiVector)]
+        points = [s for s in self.pre_subjects if isinstance(s, MultiVector) and len(s) == 0]
         if self.algebra.r == 1 and (d == 3 or d == 4):  # PGA
-            points = [p for p in points if p.grades == (d - 1,)]
+            points = [p for p in points if p.grades == (d - 1,) and len(p) == 0]
         elif self.options.get('conformal'):
-            points = [p for p in points if p.grades == (1,)]
+            points = [p for p in points if p.grades == (1,) and len(p) == 0]
         return walker(encode(points, graded=self.graded))
 
     @traitlets.default('draggable_points_idxs')
@@ -153,11 +153,11 @@ class GraphWidget(anywidget.AnyWidget):
         # Extract the draggable points.
         d = self.algebra.d
         if self.algebra.r == 1 and (d == 3 or d == 4):  # PGA
-            filter_func = lambda s: isinstance(s, MultiVector) and s.grades == (d - 1,)
+            filter_func = lambda s: isinstance(s, MultiVector) and s.grades == (d - 1,) and len(s) == 0
         elif self.options.get('conformal'):
-            filter_func = lambda s: isinstance(s, MultiVector) and s.grades == (1,)
+            filter_func = lambda s: isinstance(s, MultiVector) and s.grades == (1,) and len(s) == 0
         else:
-            filter_func = lambda s: isinstance(s, MultiVector)
+            filter_func = lambda s: isinstance(s, MultiVector) and len(s) == 0
         return [j for j, s in enumerate(self.pre_subjects) if filter_func(s)]
 
     @traitlets.default('graded')
