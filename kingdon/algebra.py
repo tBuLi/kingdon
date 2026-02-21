@@ -76,7 +76,7 @@ class Algebra:
     q: int = field(default=0, repr=False, compare=False)
     r: int = field(default=0, repr=False, compare=False)
     d: int = field(init=False, repr=False, compare=False)  # Total number of dimensions
-    signature: list[int] = field(default=None)
+    signature: List[int] = field(default=None)
     start_index: int = field(default=None, repr=False, compare=False)
     basis: List[str] = field(default_factory=list)
 
