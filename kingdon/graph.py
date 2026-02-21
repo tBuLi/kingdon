@@ -64,7 +64,7 @@ class GraphWidget(anywidget.AnyWidget):
 
     # Properties derived from the required arguments which have to be available to js.
     signature = traitlets.List([]).tag(sync=True)  # Signature of the algebra
-    cayley = traitlets.List([]).tag(sync=True)     # Cayley table of the algebra
+    basis = traitlets.List([]).tag(sync=True)      # Basis of the algebra
     key2idx = traitlets.Dict({}).tag(sync=True)    # Conversion from binary keys to indices
     graded = traitlets.Bool({}).tag(sync=True)     # Run ganja.js in graded mode if an up function was provided
 
@@ -115,14 +115,11 @@ class GraphWidget(anywidget.AnyWidget):
 
     @traitlets.default('signature')
     def get_signature(self):
-        return [int(s) for s in self.algebra.signature]
+        return self.algebra.signature
 
-    @traitlets.default('cayley')
-    def get_cayley(self):
-        cayley_table = [[s if (s := self.algebra.cayley[eJ, eI])[-1] != 'e' else f"{s[:-1]}1"
-                         for eI in self.algebra.canon2bin]
-                         for eJ in self.algebra.canon2bin]
-        return cayley_table
+    @traitlets.default('basis')
+    def get_basis(self):
+        return [b if b != 'e' else '1' for b in self.algebra.basis]
 
     @traitlets.default('pre_subjects')
     def get_pre_subjects(self):
