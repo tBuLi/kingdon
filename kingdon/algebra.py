@@ -72,13 +72,13 @@ class Algebra:
         because also in large algebras it is still true that the generated code will perform order(s) of magnitude
         better than direct computation.
     """
-    p: int = 0
-    q: int = 0
-    r: int = 0
+    p: int = field(default=0, repr=False, compare=False)
+    q: int = field(default=0, repr=False, compare=False)
+    r: int = field(default=0, repr=False, compare=False)
     d: int = field(init=False, repr=False, compare=False)  # Total number of dimensions
-    signature: np.ndarray = field(default=None, compare=False)
+    signature: List[int] = field(default=None)
     start_index: int = field(default=None, repr=False, compare=False)
-    basis: List[str] = field(repr=False, default_factory=list)
+    basis: List[str] = field(default_factory=list)
 
     # Clever dictionaries that cache previously symbolically optimized lambda functions between elements.
     gp: OperatorDict = operation_field(metadata={'codegen': codegen_gp, 'codegen_symbolcls': mathstr})  # geometric product
@@ -143,12 +143,11 @@ class Algebra:
             self.p, self.q, self.r = counts[1], counts[-1], counts[0]
             if self.p + self.q + self.r != len(self.signature):
                 raise TypeError('Unsupported signature.')
-            self.signature = np.array(self.signature)
         else:
             if self.r == 1:  # PGA, so put r first.
-                self.signature = np.array([0] * self.r + [1] * self.p + [-1] * self.q)
+                self.signature = [0] * self.r + [1] * self.p + [-1] * self.q
             else:
-                self.signature = np.array([1] * self.p + [-1] * self.q + [0] * self.r)
+                self.signature = [1] * self.p + [-1] * self.q + [0] * self.r
 
         if self.start_index is None:
             self.start_index = 0 if self.r == 1 else 1
@@ -187,6 +186,7 @@ class Algebra:
                 for eJ in range(2 ** self.d)
             }
             self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
+            self.basis = list(self.canon2bin)
 
         self.signs = self._prepare_signs()
 

@@ -11,12 +11,11 @@ const Algebra = (() => {
 })();
 
 function render({ model, el }) {
-    var canvas = Algebra({metric: model.get('signature'), graded: model.get('graded')}).inline((model)=>{
+    var canvas = Algebra({metric: model.get('signature'), basis: model.get('basis'), graded: model.get('graded')}).inline((model)=>{
         // Define constants
         var key2idx = model.get('key2idx');
         var draggable_points_idxs = model.get('draggable_points_idxs');
         var options = model.get('options');
-        var d = model.get('signature').length;
 
         function grade(key) {
             var count = 0;
