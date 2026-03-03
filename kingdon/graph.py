@@ -17,6 +17,13 @@ from kingdon.multivector import MultiVector
 
 TREE_TYPES = (list, tuple)
 
+DEFAULT_STYLE = {
+    'width': 'min( 100%, 1024px )',
+    'height': 'auto',
+    'aspectRatio': '16 / 6',
+    'background': 'white',
+}
+
 
 def walker(encoded_generator, tree_types=TREE_TYPES):
     result = []
@@ -176,6 +183,9 @@ class GraphWidget(anywidget.AnyWidget):
             sig = inspect.signature(up)
             up_glsl = up(*[sp.Symbol(param) for param in sig.parameters]).map(GLSLPrinter().doprint)
             options['up'] = list(encode(up_glsl, graded=self.graded))[0]['mv']
+        style = {**DEFAULT_STYLE, **options.get('style', {})}
+        style.setdefault('marginLeft', f"calc( (100% - {style['width']}) / 2 )")
+        options['style'] = style
         return options
 
     def inplacereplace(self, old_subjects, new_subjects: List[Tuple[int, dict]]):
@@ -196,3 +206,21 @@ class GraphWidget(anywidget.AnyWidget):
                     val = new_vals[self.key2idx[k]]
                     if old_vals[j] != val:
                         old_vals[j] = val
+
+    def update(self, *subjects, **options):
+        """
+        Update the subjects and options. Same API as :meth:`~kingdon.algebra.Algebra.graph`.
+        if no `options` are provided, then the existing options are kept; if
+        options are provided, then the existing options are replaced.
+        """
+        with self.hold_sync():  # Only update after all changes are made.
+            if options:
+                self.options = options
+            self.raw_subjects = subjects
+            self.pre_subjects = self.get_pre_subjects()
+            self.subjects = self.get_subjects()
+            # Temporarily disable the observer so we can safely update the draggable points.
+            # To do this properly, we should use unobserve and observe to temporarily disable the observer, but that requires
+            # access to the ObserveHandler. which we don't seem to have. So modify the list inplace to bypass the observer.
+            self.draggable_points[:] = self.get_draggable_points()
+            self.draggable_points_idxs = self.get_draggable_points_idxs()
