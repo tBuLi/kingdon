@@ -209,7 +209,7 @@ class GraphWidget(anywidget.AnyWidget):
 
     def update(self, *subjects, **options):
         """
-        Update the subjects and options. Same API as :class:`Algebra.graph`.
+        Update the subjects and options. Same API as :meth:`~kingdon.algebra.Algebra.graph`.
         if no `options` are provided, then the existing options are kept; if
         options are provided, then the existing options are replaced.
         """
