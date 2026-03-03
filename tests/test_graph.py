@@ -63,3 +63,47 @@ def test_up_function():
     # Lets see what the graph object does.
     g = alg.graph(lambda: [], animate=0, up=up)
     assert g.options['up'] == up_glsl.values()
+
+def test_update_125():
+    alg = Algebra(2, 0, 1)
+    x = alg.vector([1, 1, 1]).dual()
+    y = lambda: alg.vector([1, 1, 1]).dual()
+    Y = y()
+    subjects = [0xD0FFE1, x, y]
+    def graph_func(): return subjects
+    g = alg.graph(graph_func)
+    assert g.raw_subjects == [graph_func]
+    assert g.pre_subjects == list(subjects)
+    assert g.subjects == [
+        0xD0FFE1,
+        {'keys': x.keys(), 'mv': x.values()},
+        {'keys': Y.keys(), 'mv': Y.values()}
+    ]
+    # Only point 1 is draggable because it is the only PGA pseudovector.
+    assert g.draggable_points_idxs == [1]
+    assert g.draggable_points == [
+        [{'keys': x.keys(), 'mv': x.values()}],
+    ]
+
+    z = alg.vector([1, 0.3, 1.2]).dual()
+    new_subjects = (x, 0x00AA88, y, z)
+    def new_graph_func(): return new_subjects
+    options = g.options | {'scale': 4}
+
+    # Now update the graph with new subjects and change the options.
+    g.update(new_graph_func, **options)
+    assert g.options == options
+    assert g.raw_subjects == [new_graph_func]
+    assert g.pre_subjects == list(new_subjects)
+    assert g.subjects == [
+        {'keys': x.keys(), 'mv': x.values()},
+        0x00AA88,
+        {'keys': Y.keys(), 'mv': Y.values()},
+        {'keys': z.keys(), 'mv': z.values()}
+    ]
+    # Only point 1 is draggable because it is the only PGA pseudovector.
+    assert g.draggable_points_idxs == [0, 3]
+    assert g.draggable_points == [[
+        {'keys': x.keys(), 'mv': x.values()},
+        {'keys': z.keys(), 'mv': z.values()},
+    ]]

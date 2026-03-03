@@ -196,3 +196,16 @@ class GraphWidget(anywidget.AnyWidget):
                     val = new_vals[self.key2idx[k]]
                     if old_vals[j] != val:
                         old_vals[j] = val
+
+    def update(self, *subjects, **options):
+        """ Update the subjects and options. Same API as :class:`Algebra.graph`."""
+        if options:
+            self.options = self._valid_options({'value': options})
+        self.raw_subjects = subjects
+        self.pre_subjects = self.get_pre_subjects()
+        self.subjects = self.get_subjects()
+        # Temporarily disable the observer so we can safely update the draggable points.
+        # To do this properly, we should use unobserve and observe to temporarily disable the observer, but that requires
+        # access to the ObserveHandler. which we don't seem to have. So modify the list inplace to bypass the observer.
+        self.draggable_points[:] = self.get_draggable_points()
+        self.draggable_points_idxs = self.get_draggable_points_idxs()
