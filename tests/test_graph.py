@@ -95,7 +95,7 @@ def test_update_125():
     z = alg.vector([1, 0.3, 1.2]).dual()
     new_subjects = (x, 0x00AA88, y, z)
     def new_graph_func(): return new_subjects
-    options = g.options | {'scale': 4}
+    options = {**g.options, 'scale': 4}
 
     # Now update the graph with new subjects and change the options.
     g.update(new_graph_func, **options)
