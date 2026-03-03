@@ -29,9 +29,16 @@ def test_widget():
     ]
     assert g.subjects == subjects
 
-    # Test if graph has the right basis and signature.
+    # Test if graph has the right basis, signature, and default style.
     assert g.basis == [b if b != 'e' else '1' for b in alg.basis]
     assert g.signature == alg.signature
+    assert g.options['style'] == {
+        'width': 'min( 100%, 1024px )',
+        'height': 'auto',
+        'aspectRatio': '16 / 6',
+        'background': 'white',
+        'marginLeft': 'calc( (100% - min( 100%, 1024px )) / 2 )',
+    }
 
     # Simulte dragging a point and see if the point updates. Ganja supplies a full multivector.
     x_prime = alg.vector([1, 1.01, 1]).dual().asfullmv()

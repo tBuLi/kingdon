@@ -98,12 +98,10 @@ function render({ model, el }) {
             return canvas;
         })(model)
 
-        var options = model.get('options');
-        canvas.style.width = options?.width || `min( 100%, 1024px )`;
-        canvas.style.height = options?.height || 'auto';
-        canvas.style.aspectRatio = '16 / 6';
-        canvas.style.background = 'white';
-        canvas.style.marginLeft = `calc( (100% - ${ options?.width??"min(100%, 1024px)" }) / 2 )`;
+        var style = model.get('options')?.style || {};
+        for (var prop in style) {
+            canvas.style[prop] = style[prop];
+        }
         el.appendChild(canvas);
     }
 

@@ -17,6 +17,13 @@ from kingdon.multivector import MultiVector
 
 TREE_TYPES = (list, tuple)
 
+DEFAULT_STYLE = {
+    'width': 'min( 100%, 1024px )',
+    'height': 'auto',
+    'aspectRatio': '16 / 6',
+    'background': 'white',
+}
+
 
 def walker(encoded_generator, tree_types=TREE_TYPES):
     result = []
@@ -176,6 +183,9 @@ class GraphWidget(anywidget.AnyWidget):
             sig = inspect.signature(up)
             up_glsl = up(*[sp.Symbol(param) for param in sig.parameters]).map(GLSLPrinter().doprint)
             options['up'] = list(encode(up_glsl, graded=self.graded))[0]['mv']
+        style = {**DEFAULT_STYLE, **options.get('style', {})}
+        style.setdefault('marginLeft', f"calc( (100% - {style['width']}) / 2 )")
+        options['style'] = style
         return options
 
     def inplacereplace(self, old_subjects, new_subjects: List[Tuple[int, dict]]):
