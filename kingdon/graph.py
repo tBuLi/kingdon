@@ -184,6 +184,10 @@ class GraphWidget(anywidget.AnyWidget):
             up_glsl = up(*[sp.Symbol(param) for param in sig.parameters]).map(GLSLPrinter().doprint)
             options['up'] = list(encode(up_glsl, graded=self.graded))[0]['mv']
         style = {**DEFAULT_STYLE, **options.get('style', {})}
+        if 'width' in options:
+            style['width'] = options['width']
+        if 'height' in options:
+            style['height'] = options['height']
         style.setdefault('marginLeft', f"calc( (100% - {style['width']}) / 2 )")
         options['style'] = style
         return options
