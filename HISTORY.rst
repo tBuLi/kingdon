@@ -2,6 +2,11 @@
 History
 =======
 
+Unreleased
+----------
+
+* Added principal logarithm `MultiVector.log()` for normalized simple rotors as the inverse of `exp()` map.
+
 0.1.0 (2023-08-12)
 ------------------
 

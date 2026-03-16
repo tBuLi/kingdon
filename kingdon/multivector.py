@@ -614,6 +614,149 @@ class MultiVector:
         l = sqrt(ll)
         return self * sinhc(l) + cosh(l)
 
+    def log(self, atan2=None, atanh=None, sqrt=None):
+        r"""
+        Calculate the principal logarithm of a normalized simple rotor.
+        This is the inverse of `exp` on its principal branch.
+        Requires that the multivector consists only of a scalar part and a simple bivector part.
+
+        Works for python float and int dtypes, numpy arrays, and for symbolic expressions using sympy.
+        For more control, it is possible to explicitly provide `atan2`, `atanh`, and `sqrt` functions.
+        If you provide one, you must provide all.
+
+        The argument to `sqrt` is the nonnegative scalar :math:`| \langle B^2 \rangle_0 |`,
+        where :math:`B` is the bivector part of the rotor.
+        """
+        def truthy(value):
+            return value.any() if hasattr(value, 'any') else value
+
+        funcs = (atan2, atanh, sqrt)
+        if any(func is None for func in funcs) and any(func is not None for func in funcs):
+            raise TypeError('Please provide `atan2`, `atanh`, and `sqrt` together.')
+
+        rotor = self.filter(truthy)
+        if not rotor:
+            raise ValueError('The logarithm is undefined for the zero multivector.')
+        if any(grade not in (0, 2) for grade in rotor.grades):
+            raise NotImplementedError(
+                'Currently only normalized simple rotors can be logarithmized.'
+            )
+
+        c = rotor.grade(0)
+        B = rotor.grade(2)
+        symbolic = rotor.issymbolic
+
+        normsq = (rotor * ~rotor).filter(truthy)
+        if normsq.grades and normsq.grades != (0,):
+            raise NotImplementedError(
+                'Currently only normalized simple rotors can be logarithmized.'
+            )
+
+        normsq = normsq.e
+        if not symbolic and not isinstance(normsq, Expr):
+            if isinstance(normsq, (float, int)):
+                if not math.isclose(normsq, 1.0, rel_tol=1e-12, abs_tol=1e-12):
+                    raise ValueError('Currently only normalized simple rotors can be logarithmized.')
+            else:
+                import numpy as np
+                if not np.allclose(normsq, 1.0, rtol=1e-12, atol=1e-12):
+                    raise ValueError('Currently only normalized simple rotors can be logarithmized.')
+
+        sq = (B * B).filter(truthy)
+        if sq.grades and sq.grades != (0,):
+            raise NotImplementedError(
+                'Currently only normalized simple rotors can be logarithmized.'
+            )
+
+        sq = sq.e
+        c_val = c.e
+
+        if sqrt is None and atan2 is None and atanh is None:
+            if symbolic or isinstance(sq, Expr) or isinstance(c_val, Expr):
+                from sympy import atan2 as sympy_atan2
+                from sympy import atanh as sympy_atanh
+                from sympy import sqrt as sympy_sqrt
+                atan2 = sympy_atan2
+                atanh = sympy_atanh
+                sqrt = sympy_sqrt
+            elif isinstance(sq, complex) or isinstance(c_val, complex):
+                raise TypeError(
+                    'MultiVector.log currently supports real scalar and array dtypes; '
+                    'complex values are not supported.'
+                )
+            elif isinstance(sq, (float, int)) and isinstance(c_val, (float, int)):
+                sqrt = math.sqrt
+                atan2 = math.atan2
+                atanh = math.atanh
+            else:
+                import numpy as np
+                if np.iscomplexobj(sq) or np.iscomplexobj(c_val):
+                    raise TypeError(
+                        'MultiVector.log currently supports real scalar and array dtypes; '
+                        'complex values are not supported.'
+                    )
+                sqrt = np.sqrt
+                atan2 = np.arctan2
+                atanh = np.arctanh
+
+        if not B.filter(truthy):
+            if isinstance(c_val, Expr):
+                if c_val.is_real and c_val.is_negative:
+                    raise ValueError('The principal logarithm is undefined for negative real scalars.')
+            elif isinstance(c_val, (float, int)):
+                if c_val < 0:
+                    raise ValueError('The principal logarithm is undefined for negative real scalars.')
+            else:
+                import numpy as np
+                if np.any(c_val < 0):
+                    raise ValueError('The principal logarithm is undefined for negative real scalars.')
+            return B
+
+        if symbolic or isinstance(sq, Expr) or isinstance(c_val, Expr):
+            from sympy import Integer, Piecewise
+
+            norm_neg = sqrt(-sq)
+            norm_pos = sqrt(sq)
+            res = Piecewise(
+                (atan2(norm_neg, c_val) / norm_neg, sq < 0),
+                (atanh(norm_pos / c_val) / norm_pos, sq > 0),
+                (Integer(1) / c_val, True)
+            )
+        elif isinstance(sq, (float, int)):
+            if sq < 0:
+                norm_B = sqrt(-sq)
+                res = atan2(norm_B, c_val) / norm_B
+            elif sq > 0:
+                norm_B = sqrt(sq)
+                res = atanh(norm_B / c_val) / norm_B
+            else:
+                if c_val < 0:
+                    raise ValueError('The principal logarithm is undefined for negative real scalars.')
+                res = 1.0 / c_val
+        else:
+            import numpy as np
+
+            res = np.zeros_like(sq, dtype=float)
+            mask_neg = sq < 0
+            mask_pos = sq > 0
+            mask_zero = ~(mask_neg | mask_pos)
+            c_is_array = hasattr(c_val, 'shape') and c_val.shape != ()
+            c_zero = c_val[mask_zero] if c_is_array else c_val
+            if np.any(c_zero < 0):
+                raise ValueError('The principal logarithm is undefined for negative real scalars.')
+            if np.any(mask_neg):
+                norm_B = sqrt(-sq[mask_neg])
+                c_branch = c_val[mask_neg] if c_is_array else c_val
+                res[mask_neg] = atan2(norm_B, c_branch) / norm_B
+            if np.any(mask_pos):
+                norm_B = sqrt(sq[mask_pos])
+                c_branch = c_val[mask_pos] if c_is_array else c_val
+                res[mask_pos] = atanh(norm_B / c_branch) / norm_B
+            if np.any(mask_zero):
+                res[mask_zero] = 1.0 / c_zero
+
+        return B * res
+
     def polarity(self):
         return self.algebra.polarity(self)
 

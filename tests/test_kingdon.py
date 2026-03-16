@@ -908,6 +908,59 @@ def test_simple_exp():
     l = (-(B | B).e) ** 0.5
     assert R == cos(l) + sinc(l) * B
 
+def test_log():
+    alg = Algebra(2, 0, 1)
+    # Translation in PGA (B^2 == 0)
+    B_trans = alg.bivector([1, 2, 0])
+    R_trans = B_trans.exp()
+    assert (R_trans.log() - B_trans).filter(lambda v: np.abs(v) > 1e-15) == alg.multivector()
+
+    # Rotation in PGA (B^2 < 0)
+    B_rot = alg.bivector([0, 0, 2])
+    R_rot = B_rot.exp()
+    assert (R_rot.log() - B_rot).filter(lambda v: np.abs(v) > 1e-15) == alg.multivector()
+
+    # Symbolic translations simplify exactly.
+    a = Symbol('a')
+    B_sym = alg.bivector(e01=a, e02=2*a)
+    assert B_sym.exp().log() == B_sym
+
+    # Array-valued rotors can mix translation and rotation branches.
+    B_arr = alg.multivector(
+        e01=np.array([2.0, 0.0, 0.0]),
+        e02=np.array([0.5, 0.0, 0.0]),
+        e12=np.array([0.0, 0.7, 1.2]),
+    )
+    R_arr = alg.multivector(
+        e=np.array([1.0, np.cos(0.7), np.cos(1.2)]),
+        e01=B_arr.e01,
+        e02=B_arr.e02,
+        e12=np.array([0.0, np.sin(0.7), np.sin(1.2)]),
+    )
+    diff = R_arr.log() - B_arr
+    assert np.allclose(np.array(diff.values()), 0.0, atol=1e-12)
+
+    # Hyperbolic rotations (boosts)
+    alg_mink = Algebra(1, 1)
+    B_boost = alg_mink.bivector(e12=1.5)
+    assert (B_boost.exp().log() - B_boost).filter(lambda v: np.abs(v) > 1e-14) == alg_mink.multivector()
+
+
+def test_log_principal_branch():
+    alg = Algebra(2)
+    B = alg.bivector(e12=3.5)
+    R = B.exp()
+    assert (R.log().exp() - R).filter(lambda v: np.abs(v) > 1e-15) == alg.multivector()
+
+
+def test_log_rejects_invalid_rotors():
+    alg = Algebra(2)
+    with pytest.raises(ValueError, match='negative real scalars'):
+        alg.multivector(e=-1).log()
+
+    with pytest.raises(ValueError, match='normalized simple rotors'):
+        (2 * alg.bivector(e12=0.7).exp()).log()
+
 def test_dual_numbers():
     alg = Algebra(r=1)
     x = alg.multivector(name='x')
