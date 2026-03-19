@@ -914,28 +914,31 @@ def test_log():
     B_trans = alg.bivector([1, 2, 0])
     R_trans = B_trans.exp()
     assert (R_trans.log() - B_trans).filter(lambda v: np.abs(v) > 1e-15) == alg.multivector()
+    assert ((3.0 * R_trans).log() - B_trans).filter(lambda v: np.abs(v) > 1e-15) == alg.multivector()
 
     # Rotation in PGA (B^2 < 0)
     B_rot = alg.bivector([0, 0, 2])
     R_rot = B_rot.exp()
     assert (R_rot.log() - B_rot).filter(lambda v: np.abs(v) > 1e-15) == alg.multivector()
+    assert ((2.0 * R_rot).log() - B_rot).filter(lambda v: np.abs(v) > 1e-15) == alg.multivector()
 
     # Symbolic translations simplify exactly.
     a = Symbol('a')
     B_sym = alg.bivector(e01=a, e02=2*a)
     assert B_sym.exp().log() == B_sym
 
-    # Array-valued rotors can mix translation and rotation branches.
+    # Array-valued rotors can mix translation and rotation branches, even when rescaled per entry.
+    scale = np.array([3.0, 2.0, 1.5])
     B_arr = alg.multivector(
         e01=np.array([2.0, 0.0, 0.0]),
         e02=np.array([0.5, 0.0, 0.0]),
         e12=np.array([0.0, 0.7, 1.2]),
     )
     R_arr = alg.multivector(
-        e=np.array([1.0, np.cos(0.7), np.cos(1.2)]),
-        e01=B_arr.e01,
-        e02=B_arr.e02,
-        e12=np.array([0.0, np.sin(0.7), np.sin(1.2)]),
+        e=scale * np.array([1.0, np.cos(0.7), np.cos(1.2)]),
+        e01=scale * B_arr.e01,
+        e02=scale * B_arr.e02,
+        e12=scale * np.array([0.0, np.sin(0.7), np.sin(1.2)]),
     )
     diff = R_arr.log() - B_arr
     assert np.allclose(np.array(diff.values()), 0.0, atol=1e-12)
@@ -944,6 +947,12 @@ def test_log():
     alg_mink = Algebra(1, 1)
     B_boost = alg_mink.bivector(e12=1.5)
     assert (B_boost.exp().log() - B_boost).filter(lambda v: np.abs(v) > 1e-14) == alg_mink.multivector()
+    assert ((2.0 * B_boost.exp()).log() - B_boost).filter(lambda v: np.abs(v) > 1e-14) == alg_mink.multivector()
+
+    # 3DPGA checks the same logic in a 4D algebra where non-simple bivectors can exist.
+    pga3d = Algebra.fromname('3DPGA')
+    B_pga3d = pga3d.bivector(e12=0.8)
+    assert ((2.5 * B_pga3d.exp()).log() - B_pga3d).filter(lambda v: np.abs(v) > 1e-14) == pga3d.multivector()
 
 
 def test_log_principal_branch():
@@ -953,13 +962,26 @@ def test_log_principal_branch():
     assert (R.log().exp() - R).filter(lambda v: np.abs(v) > 1e-15) == alg.multivector()
 
 
-def test_log_rejects_invalid_rotors():
+def test_log_rejects_invalid_inputs():
     alg = Algebra(2)
+    with pytest.raises(ValueError, match='zero multivector'):
+        alg.multivector().log()
+
     with pytest.raises(ValueError, match='negative real scalars'):
         alg.multivector(e=-1).log()
 
-    with pytest.raises(ValueError, match='normalized simple rotors'):
-        (2 * alg.bivector(e12=0.7).exp()).log()
+    with pytest.raises(NotImplementedError, match='scalar and bivector parts'):
+        alg.multivector(e=1, e1=1).log()
+
+    pga3d = Algebra.fromname('3DPGA')
+    with pytest.raises(NotImplementedError, match='simple bivector part'):
+        pga3d.multivector(e=1, e03=1, e12=1).log()
+
+    with pytest.raises(TypeError, match='Please provide `arctanh2` and `sqrt` together.'):
+        alg.multivector(e=1).log(arctanh2=lambda y, x: 0)
+
+    with pytest.raises(TypeError, match='complex values are not supported'):
+        alg.multivector(e=1 + 0j).log()
 
 def test_dual_numbers():
     alg = Algebra(r=1)
