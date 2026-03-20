@@ -934,11 +934,11 @@ def test_log():
         e02=np.array([0.5, 0.0, 0.0]),
         e12=np.array([0.0, 0.7, 1.2]),
     )
-    R_arr = alg.multivector(
-        e=scale * np.array([1.0, np.cos(0.7), np.cos(1.2)]),
-        e01=scale * B_arr.e01,
-        e02=scale * B_arr.e02,
-        e12=scale * np.array([0.0, np.sin(0.7), np.sin(1.2)]),
+    R_arr = scale * alg.multivector(
+        e=np.array([1.0, np.cos(0.7), np.cos(1.2)]),
+        e01=B_arr.e01,
+        e02=B_arr.e02,
+        e12=np.array([0.0, np.sin(0.7), np.sin(1.2)]),
     )
     diff = R_arr.log() - B_arr
     assert np.allclose(np.array(diff.values()), 0.0, atol=1e-12)
