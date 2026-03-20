@@ -974,8 +974,12 @@ def test_log_rejects_invalid_inputs():
         alg.multivector(e=1, e1=1).log()
 
     pga3d = Algebra.fromname('3DPGA')
-    with pytest.raises(NotImplementedError, match='simple bivector part'):
-        pga3d.multivector(e=1, e03=1, e12=1).log()
+    # use a screw motion
+    b1 = 0.5 * pga3d.blades.e12
+    b2 = 0.2 * pga3d.blades.e03
+    M_screw = b1.exp() * b2.exp()
+    with pytest.raises(NotImplementedError, match='simple rotors with scalar and bivector parts'):
+        M_screw.log()
 
     with pytest.raises(TypeError, match='Please provide `arctanh2` and `sqrt` together.'):
         alg.multivector(e=1).log(arctanh2=lambda y, x: 0)
