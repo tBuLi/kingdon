@@ -614,6 +614,242 @@ class MultiVector:
         l = sqrt(ll)
         return self * sinhc(l) + cosh(l)
 
+    @staticmethod
+    def _truthy(value):
+        return value.any() if hasattr(value, 'any') else value
+
+    @staticmethod
+    def _is_negative_real(value):
+        if isinstance(value, Expr):
+            return value.is_real and value.is_negative
+        return MultiVector._truthy(value < 0)
+
+    @staticmethod
+    def _call_helper(func, *args, **kwargs):
+        if not kwargs:
+            return func(*args)
+        try:
+            return func(*args, **kwargs)
+        except TypeError as exc:
+            try:
+                return func(*args)
+            except TypeError:
+                raise exc
+
+    @staticmethod
+    def _log_masks(sq, *, symbolic, array_valued):
+        if array_valued:
+            mask_negative = sq < 0
+            mask_positive = sq > 0
+            mask_zero = ~(mask_negative | mask_positive)
+        elif symbolic:
+            mask_negative = sq < 0
+            mask_positive = sq > 0
+            mask_zero = False
+        else:
+            mask_negative = sq < 0
+            mask_positive = sq > 0
+            mask_zero = not (mask_negative or mask_positive)
+        return dict(
+            mask_negative=mask_negative,
+            mask_positive=mask_positive,
+            mask_zero=mask_zero,
+        )
+
+    @staticmethod
+    def _log_default_helpers(*, sq, c_val, symbolic, array_valued):
+        if symbolic:
+            from sympy import Integer, Piecewise, sqrt as sympy_sqrt, atan2 as sympy_atan2, atanh as sympy_atanh
+
+            def sqrt(x, *, mask_negative=False, mask_positive=False, mask_zero=False):
+                return Piecewise(
+                    (sympy_sqrt(-x), mask_negative),
+                    (sympy_sqrt(x), mask_positive),
+                    (Integer(0), True),
+                )
+
+            def arctanh2(y, x, *, mask_negative=False, mask_positive=False, mask_zero=False):
+                return Piecewise(
+                    (sympy_atan2(y, x), mask_negative),
+                    (sympy_atanh(y / x), mask_positive),
+                    (Integer(0), True),
+                )
+
+            return sqrt, arctanh2
+
+        if isinstance(sq, complex) or isinstance(c_val, complex):
+            raise TypeError(
+                'MultiVector.log currently supports real scalar and array dtypes; '
+                'complex values are not supported.'
+            )
+
+        if array_valued:
+            import numpy as np
+
+            if np.iscomplexobj(sq) or np.iscomplexobj(c_val):
+                raise TypeError(
+                    'MultiVector.log currently supports real scalar and array dtypes; '
+                    'complex values are not supported.'
+                )
+
+            def sqrt(x, *, mask_negative=False, mask_positive=False, mask_zero=False):
+                res = 0 * x
+                if mask_negative.any():
+                    res[mask_negative] = np.sqrt(-x[mask_negative])
+                if mask_positive.any():
+                    res[mask_positive] = np.sqrt(x[mask_positive])
+                return res
+
+            def arctanh2(y, x, *, mask_negative=False, mask_positive=False, mask_zero=False):
+                sample = x if hasattr(x, 'shape') and x.shape != () else y
+                res = 0 * sample
+                x_is_array = hasattr(x, 'shape') and x.shape != ()
+                if mask_negative.any():
+                    x_negative = x[mask_negative] if x_is_array else x
+                    res[mask_negative] = np.arctan2(y[mask_negative], x_negative)
+                if mask_positive.any():
+                    x_positive = x[mask_positive] if x_is_array else x
+                    res[mask_positive] = np.arctanh(y[mask_positive] / x_positive)
+                return res
+
+            return sqrt, arctanh2
+
+        def sqrt(x, *, mask_negative=False, mask_positive=False, mask_zero=False):
+            if mask_negative:
+                return math.sqrt(-x)
+            if mask_positive:
+                return math.sqrt(x)
+            return 0.0
+
+        def arctanh2(y, x, *, mask_negative=False, mask_positive=False, mask_zero=False):
+            if mask_negative:
+                return math.atan2(y, x)
+            if mask_positive:
+                return math.atanh(y / x)
+            return 0.0
+
+        return sqrt, arctanh2
+
+    @staticmethod
+    def _log_arctanh2c(arctanh2, y, x, *, symbolic, array_valued, mask_negative=False, mask_positive=False,
+                       mask_zero=False):
+        """Return arctanh2(y, x) / y and resolve the removable y -> 0 limit to 1 / x."""
+        angle = MultiVector._call_helper(
+            arctanh2,
+            y,
+            x,
+            mask_negative=mask_negative,
+            mask_positive=mask_positive,
+            mask_zero=mask_zero,
+        )
+        if symbolic:
+            from sympy import Integer, Piecewise
+
+            return Piecewise(
+                (angle / y, mask_negative),
+                (angle / y, mask_positive),
+                (Integer(1) / x, True),
+            )
+
+        if array_valued:
+            sample = x if hasattr(x, 'shape') and x.shape != () else y
+            res = 0 * sample
+            nonzero = mask_negative | mask_positive
+            x_is_array = hasattr(x, 'shape') and x.shape != ()
+
+            if nonzero.any():
+                res[nonzero] = angle[nonzero] / y[nonzero]
+            if mask_zero.any():
+                x_zero = x[mask_zero] if x_is_array else x
+                if MultiVector._is_negative_real(x_zero):
+                    raise ValueError('The principal logarithm is undefined for negative real scalars.')
+                res[mask_zero] = 1.0 / x_zero
+            return res
+
+        if mask_zero:
+            if MultiVector._is_negative_real(x):
+                raise ValueError('The principal logarithm is undefined for negative real scalars.')
+            return 1.0 / x
+        return angle / y
+
+    def log(self, arctanh2=None, sqrt=None):
+        r"""
+        Calculate the principal logarithm of a simple rotor with scalar and bivector parts.
+        On normalized simple rotors this is the inverse of `exp` on its principal branch.
+        The rotor need not be normalized.
+
+        Works for python float and int dtypes, numpy arrays, and for symbolic expressions using sympy.
+        For more control, it is possible to explicitly provide `arctanh2` and `sqrt` functions.
+        If you provide one, you must provide both.
+
+        If the coefficients are array-valued, custom `sqrt` and `arctanh2` functions can optionally
+        accept the keyword masks `mask_negative`, `mask_positive`, and `mask_zero`.
+
+        The argument to `sqrt` is the scalar :math:`\langle S^2 \rangle_0`, where :math:`S`
+        is the bivector part of the rotor, and `sqrt` should return :math:`| \langle S^2 \rangle_0 |^{1/2}`.
+
+        For example, for a simple rotation `kingdon`'s implementation is equivalent to
+
+        .. code-block ::
+
+            alg = Algebra(2)
+            R = np.cos(1) + np.sin(1) * alg.bivector(e12=1)
+            R.log(
+                arctanh2=np.arctan2,
+                sqrt=lambda s: (-s) ** 0.5,
+            )
+        """
+        funcs = (arctanh2, sqrt)
+        if any(func is None for func in funcs) and any(func is not None for func in funcs):
+            raise TypeError('Please provide `arctanh2` and `sqrt` together.')
+
+        rotor = self.filter(self._truthy)
+        if not rotor:
+            raise ValueError('The logarithm is undefined for the zero multivector.')
+        if any(grade not in (0, 2) for grade in rotor.grades):
+            raise NotImplementedError(
+                'Currently only simple rotors with scalar and bivector parts can be logarithmized.'
+            )
+
+        c = rotor.grade(0)
+        S = rotor.grade(2)
+        array_valued = len(self) > 0
+
+        sq = (S * S).filter(self._truthy)
+        if sq.grades and sq.grades != (0,):
+            raise NotImplementedError(
+                'Currently only rotors with a simple bivector part can be logarithmized.'
+            )
+
+        sq = sq.e
+        c_val = c.e
+        symbolic = rotor.issymbolic or isinstance(sq, Expr) or isinstance(c_val, Expr)
+
+        if sqrt is None and arctanh2 is None:
+            sqrt, arctanh2 = self._log_default_helpers(
+                sq=sq,
+                c_val=c_val,
+                symbolic=symbolic,
+                array_valued=array_valued,
+            )
+
+        mask_kwargs = self._log_masks(sq, symbolic=symbolic, array_valued=array_valued)
+
+        if not S.filter(self._truthy):
+            if self._is_negative_real(c_val):
+                raise ValueError('The principal logarithm is undefined for negative real scalars.')
+            return S
+
+        s2 = self._call_helper(sqrt, sq, **mask_kwargs)
+        return S * self._log_arctanh2c(
+            arctanh2,
+            s2,
+            c_val,
+            symbolic=symbolic,
+            array_valued=array_valued,
+            **mask_kwargs,
+        )
+
     def polarity(self):
         return self.algebra.polarity(self)
 

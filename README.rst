@@ -285,6 +285,14 @@ Overview of Operators
      - $\\sqrt{a}$
      -
      - :code:`a.sqrt()`
+   * - Exponential of :code:`a`
+     - $\\exp(a)$
+     -
+     - :code:`a.exp()`
+   * - Logarithm of :code:`a`
+     - $\\log(a)$
+     -
+     - :code:`a.log()`
    * - Dual of :code:`a`
      - $a*$
      -
