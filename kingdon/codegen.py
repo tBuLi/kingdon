@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import string
-from itertools import product, combinations, groupby
+from itertools import product, combinations, groupby, chain
 from collections import namedtuple, defaultdict
 from typing import NamedTuple, Callable, Tuple, Dict
 from functools import reduce, cached_property
@@ -282,9 +282,14 @@ class LambdifyInput(NamedTuple):
     dependencies: list
 
 
+def _effective_dimension(x):
+    """ Crude measure of the effective dimension of a multivector. """
+    return len(set(chain(*[x.algebra.bin2canon[k][1:] for k in x.keys()])))
+
+
 def codegen_inv(y, symbolic=False):
     alg = y.algebra
-    if alg.d < 6:
+    if _effective_dimension(y) < 6:
         num, denom = codegen_hitzer_inv(y, symbolic=True)
     else:
         num, denom = codegen_shirokov_inv(y, symbolic=True)
@@ -302,7 +307,7 @@ def codegen_hitzer_inv(x, symbolic=False):
     which works up to 5D algebras.
     """
     alg = x.algebra
-    d = alg.d
+    d = _effective_dimension(x)
     if d == 0:
         num = alg.blades.e
     elif d == 1:
@@ -311,7 +316,8 @@ def codegen_hitzer_inv(x, symbolic=False):
         num = x.conjugate()
     elif d == 3:
         xconj = x.conjugate()
-        num = xconj * ~(x * xconj)
+        x_xconj = x * xconj
+        num = xconj * ~x_xconj
     elif d == 4:
         xconj = x.conjugate()
         x_xconj = x * xconj
