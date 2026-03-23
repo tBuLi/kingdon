@@ -431,6 +431,11 @@ class Algebra:
     def pseudoquadvector(self, *args, **kwargs) -> MultiVector:
         return self.purevector(*args, grade=self.d - 4, **kwargs)
 
+    def grad(self, coordinate_mv: MultiVector, partial_derivative: Callable | None = None) -> "Grad":
+        """ Create a new :class:`~kingdon.grad.Grad` object for the coordinate multivector. """
+        from kingdon.grad import Grad
+        return Grad(coordinate_mv=coordinate_mv, partial_derivative=partial_derivative)
+
     def graph(self, *subjects, graph_widget=GraphWidget, **options):
         """
         The graph function outputs :code:`ganja.js` renders and is meant
