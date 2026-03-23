@@ -65,3 +65,7 @@ def test_symbolic():
     assert not (curl_J_x.e21 - (J1.diff(x2) - J2.diff(x1)))
     assert len(curl_J_x.keys()) == 3
     assert grad_J_x == div_J_x + curl_J_x
+
+    # Evaluating the grad of a sympy expression results in an expression instead of a function.
+    grad_J_x_direct = (grad * J)
+    assert not (grad_J_x_direct - grad_J_x)

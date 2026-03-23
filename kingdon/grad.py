@@ -40,9 +40,23 @@ def partial_derivative(other: Callable, coordinate_mv: MultiVector, k: int) -> M
     return partial.filter(lambda v: hasattr(v, 'e0')).map(lambda v: v.e0)
 
 
+def partial_derivative_sympy(other, coordinate_mv, k):
+    var = getattr(coordinate_mv, coordinate_mv.algebra.bin2canon[k])
+    return other.map(lambda v: v.diff(var))
+
+
 def make_grad_func(other: Callable, coordinate_mv: MultiVector, partial_derivative: Callable, operator: Callable) -> Callable:
     """ Make a gradient function for the given binary operator. """
     alg = coordinate_mv.algebra
+
+    if isinstance(other, MultiVector) and other.issymbolic:
+        # If symbolic, do the derivation symbolically.
+        res = alg.multivector()
+        for k in coordinate_mv.keys():
+            partial = partial_derivative_sympy(other, coordinate_mv, k)
+            blade = alg.blades[alg.bin2canon[k]]
+            res += operator(blade.inv(), partial)  # TODO: Inv should be replaced by reciprocal.
+        return res
 
     @wraps(other)
     def grad_other(*args, **kwargs):
