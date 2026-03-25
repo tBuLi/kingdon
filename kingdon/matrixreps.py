@@ -156,7 +156,7 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
     if res_like is not None:
         y = alg.multivector({k: sympy.sympify(getattr(y, alg.bin2canon[k])) for k in res_like.keys()})
 
-    A = sympy.zeros(len(y), len(x)) if not numerical else np.zeros((len(y), len(x)))
+    A = sympy.zeros(len(y.keys()), len(x.keys())) if not numerical else np.zeros((len(y.keys()), len(x.keys())))
     for i, (blade_y, yi) in enumerate(y.items()):
         cv = sympy.collect(yi.expand(), x.values())
         for j, (blade_x, xj) in enumerate(x.items()):

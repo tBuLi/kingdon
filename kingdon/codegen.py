@@ -3,7 +3,7 @@ from __future__ import annotations
 import string
 from itertools import product, combinations, groupby, chain
 from collections import namedtuple, defaultdict
-from typing import NamedTuple, Callable, Tuple, Dict
+from typing import NamedTuple, Callable, Tuple, Dict, Optional, List
 from functools import reduce, cached_property
 import linecache
 import warnings
@@ -19,62 +19,8 @@ from sympy.printing.lambdarepr import LambdaPrinter
 from sympy.simplify.cse_main import numbered_symbols
 from sympy import Symbol
 
-
-@dataclass
-class AdditionChains:
-    limit: int
-
-    @cached_property
-    def minimal_chains(self) -> Dict[int, Tuple[int, ...]]:
-        chains = {1: (1,)}
-        while any(i not in chains for i in range(1, self.limit + 1)):
-            for chain in chains.copy().values():
-                right_summand = chain[-1]
-                for left_summand in chain:
-                    value = left_summand + right_summand
-                    if value <= self.limit and value not in chains:
-                        chains[value] = (*chain, value)
-        return chains
-
-    def __getitem__(self, n: int) -> Tuple[int, ...]:
-        return self.minimal_chains[n]
-
-    def __contains__(self, item):
-        return self[item]
-
-def power_supply(x: "MultiVector", exponents: Tuple[int, ...], operation: Callable[["MultiVector", "MultiVector"], "MultiVector"] = operator.mul):
-    """
-    Generates powers of a given multivector using the least amount of multiplications.
-    For example, to raise a multivector :math:`x` to the power :math:`a = 15`, only 5
-    multiplications are needed since :math:`x^{2} = x * x`, :math:`x^{3} = x * x^2`,
-    :math:`x^{5} = x^2 * x^3`, :math:`x^{10} = x^5 * x^5`, :math:`x^{15} = x^5 * x^{10}`.
-    The :class:`power_supply` uses :class:`AdditionChains` to determine these shortest
-    chains.
-
-    When called with only a single integer, e.g. :code:`power_supply(x, 15)`, iterating
-    over it yields the above sequence in order; ending with :math:`x^{15}`.
-
-    When called with a sequence of integers, the generator instead returns only the requested terms.
-
-
-    :param x: The MultiVector to be raised to a power.
-    :param exponents: When an :code:`int`, this generates the shortest possible way to
-        get to :math:`x^a`, where :math:`x`
-    """
-    if isinstance(exponents, int):
-        target = exponents
-        addition_chains = AdditionChains(target)
-        exponents = addition_chains[target]
-    else:
-        addition_chains = AdditionChains(max(exponents))
-
-    powers = {1: x}
-    for step in exponents:
-        if step not in powers:
-            chain = addition_chains[step]
-            powers[step] = operation(powers[chain[-2]], powers[step - chain[-2]])
-
-        yield powers[step]
+from kingdon.powers import power_supply
+from kingdon.polynomial import poly_cse, poly_format, Polynomial, RationalPolynomial
 
 
 class CodegenOutput(NamedTuple):
@@ -130,11 +76,30 @@ def codegen_gp(x, y):
 
 def codegen_sw(x, y):
     r"""
-    Generate the conjugation of :code:`y` by :code:`x`: :math:`x y \widetilde{x}`.
+    Generate the conjugation of :code:`y` by the versor (k-reflection) :code:`x`,
+    using the conjugation formula :math:`(-1)^{k \ell} x y x^{-1}`, where :math:`k` is the
+    grade of :code:`x` and :math:`\ell` is the grade of the blade :code:`y`. (Eq 7.18 in [GA4CS]_)
+    If :code:`y` is a multivector instead of a blade, the formula is applied to each pure
+    grade component of :code:`y` separately to ensure a consistent result.
+    **Important**: note that :code:`x` is assumed to be normalized such that :math:`x \widetilde{x} = 1`
+    (i.e. :code:`x.normsq() == 1`). Moreover, grade preservation is enforced by the code.
+    Expect unexpected results if this operator is used with non-versors.
 
+    .. [GA4CS] Dorst, Lasenby, and Fontijne. Geometric Algebra for Computer Science. Morgan Kaufmann, 2007.
+
+    :param x: The versor (k-reflection), i.e. a multivector satisfying :math:`x \widetilde{x} = 1`.
+    :param y: The multivector to be conjugated.
     :return: tuple of keys in binary representation and a lambda function.
+    :raises TypeError: If :code:`x` is not a versor (k-reflection) and thus neither even nor odd.
     """
-    return x * y * ~x
+    if len(set((g % 2 for g in x.grades))) != 1:
+        raise TypeError("x must be a versor (k-reflection) and thus either even or odd.")
+    xr = x.reverse()
+    if max(x.grades) % 2 == 1:  # odd versor: grade(x * involute(y) * ~x, grade(y))
+        return sum((x * y.grade(g).involute() * xr).grade(g) for g in y.grades)
+    # even versor: grade(x*y*~x + y*(1 - grade(x*~x, 0)), grade(y))
+    axar_scalar = (x * xr).grade(0)
+    return sum((x * y.grade(g) * xr + y.grade(g) * (1 - axar_scalar)).grade(g) for g in y.grades)
 
 
 def codegen_cp(x, y):
@@ -200,12 +165,18 @@ def codegen_sp(x, y):
 
 
 def codegen_proj(x, y):
-    r"""
-    Generate the projection of :code:`x` onto :code:`y`: :math:`(x \cdot y) \widetilde{y}`.
+    fr"""
+    Generate the projection of :code:`x` onto :code:`y`: :math:`(x \cdot y) \widetilde{y}`,
+    where it is assumed that :code:`y` is a normalized versor (k-reflection) and hence :math:`y^{-1} = \widetilde{y}`.
 
+    :param x: The multivector to be projected.
+    :param y: The versor (k-reflection) onto which :code:`x` is projected.
     :return: tuple of keys in binary representation and a lambda function.
+    :raises TypeError: If :code:`y` is not a versor (k-reflection).
     """
-    return (x | y) * ~y
+    if len(set((g % 2 for g in y.grades))) != 1:
+        raise TypeError("y must be a versor (k-reflection) and thus either even or odd.")
+    return (x | y) * y.reverse()
 
 
 def codegen_op(x, y):
@@ -258,7 +229,15 @@ Tuple representing a fraction.
 
 def codegen_inv(y, symbolic=False):
     alg = y.algebra
-    if alg.d < 6:
+    # If y * ~y is a scalar, use the simple blade inverse ~y / (y * ~y).
+    # This matches GAmphetamine's check: if (gradeOf(a*~a) == 0) return gp(reverse(a), inv(sq))
+    # and avoids producing unsimplified rational polynomials like (y * s) / s^2.
+    yr = y.reverse()
+    ynorm = y * yr
+    if ynorm.grades == (0,):
+        num = yr
+        denom = ynorm
+    elif alg.d < 6:
         num, denom = codegen_hitzer_inv(y, symbolic=True)
     else:
         num, denom = codegen_shirokov_inv(y, symbolic=True)
@@ -361,7 +340,7 @@ def codegen_outerexp(x, asterms=False):
         warnings.warn('Outer exponential might not converge for mixed-grade multivectors.', RuntimeWarning)
     k = alg.d
 
-    Ws = [alg.scalar([1]), x]
+    Ws = [alg.scalar(e=1), x]
     j = 2
     while j <= k:
         Wj = Ws[-1] ^ x
@@ -540,21 +519,19 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
     funcname = f'{codegen.__name__}_' + '_x_'.join(f"{format(mv[0].type_number if isinstance(mv, list) else mv.type_number, 'X')}" for mv in mvs)
     args = {arg_name: [tuple(chain(*(x.values() for x in arg)))] if isinstance(arg, list) else arg.values()
             for arg_name, arg in zip(string.ascii_uppercase, mvs)}
-    dependencies = None
 
     # Sort the keys in canonical order
     res = {bin: res[bin] if isinstance(res, dict) else getattr(res, canon)
            for canon, bin in algebra.canon2bin.items() if bin in res.keys()}
 
-    if not algebra.cse and any(isinstance(v, str) for v in res.values()):
+    if all(isinstance(v, str) for v in res.values()):
         return func_builder(res, *mvs, funcname=funcname)  # TODO: add output_mv_idx support
-
 
     keys, exprs = tuple(res.keys()), list(res.values())
     if output_mv_idx is not None:
         keys = ()
     func = lambdify(args, exprs, funcname=funcname, 
-                    cse=algebra.cse, dependencies=dependencies, printer=printer, func_printer=func_printer,
+                    cse=algebra.cse, printer=printer, func_printer=func_printer,
                     output_mv_idx=output_mv_idx
                     )
     return CodegenOutput(
@@ -586,6 +563,37 @@ def do_compile(codegen, *tapes):
     )
 
 
+def _count_muls_adds(funcstr: str) -> tuple:
+    """Count multiplication and addition/subtraction operations in a generated function string.
+
+    :return: Tuple of (muls, adds).
+    """
+    muls = funcstr.count('*')
+    adds = funcstr.count('+') + funcstr.count('-')
+    return muls, adds
+
+
+def _build_and_cache_func(header, body_lines, funcname, namespace=None):
+    """Build a function from header + body lines, insert op-count docstring, compile, exec, cache.
+
+    :param header: The `def funcname(...):` line.
+    :param body_lines: List of indented body lines (without the docstring).
+    :param funcname: Name used as the linecache key.
+    :param namespace: Execution namespace dict. Defaults to {'builtins': builtins, 'range': range}.
+    :return: The compiled function object.
+    """
+    if namespace is None:
+        namespace = {'builtins': builtins, 'range': range}
+    func_source_no_doc = header + '\n' + '\n'.join(body_lines)
+    muls, adds = _count_muls_adds(func_source_no_doc)
+    all_lines = [header, f'    """{muls} muls / {adds} adds"""'] + body_lines
+    func_source = '\n'.join(all_lines)
+    func_locals = {}
+    exec(compile(func_source, funcname, 'exec'), namespace, func_locals)
+    linecache.cache[funcname] = (len(func_source), None, func_source.splitlines(True), funcname)
+    return func_locals[funcname]
+
+
 def func_builder(res_vals: defaultdict, *mvs, funcname: str) -> CodegenOutput:
     """
     Build a Python function for the product between given multivectors.
@@ -598,33 +606,97 @@ def func_builder(res_vals: defaultdict, *mvs, funcname: str) -> CodegenOutput:
     """
     args = string.ascii_uppercase[:len(mvs)]
     header = f'def {funcname}({", ".join(args)}):'
+    body_lines = []
     if res_vals:
-        body = ''
         for mv, arg in zip(mvs, args):
-            body += f'    {", ".join(str(v) for v in mv.values())}, = {arg}\n'
-        return_val = f'    return [{", ".join(res_vals.values())},]'
+            body_lines.append(f'    [{", ".join(str(v) for v in mv.values())}] = {arg}')
+        body_lines.append(f'    return [{", ".join(res_vals.values())},]')
     else:
-        body = ''
-        return_val = f'    return list()'
-    func_source = f'{header}\n{body}\n{return_val}'
-
-    # Dynamically build a function
-    func_locals = {}
-    c = compile(func_source, funcname, 'exec')
-    exec(c, {}, func_locals)
-
-    # Add the generated code to linecache such that it is inspect-safe.
-    linecache.cache[funcname] = (len(func_source), None, func_source.splitlines(True), funcname)
-    func = func_locals[funcname]
-    func.__module__ = __name__
+        body_lines.append(f'    return list()')
+    func = _build_and_cache_func(header, body_lines, funcname, namespace={})
     return CodegenOutput(tuple(res_vals.keys()), func)
 
+
+def _poly_cse_compute(exprs: List[RationalPolynomial], common_denom: Optional[Polynomial] = None):
+    """
+    Run CSE on a list of :class:`~kingdon.polynomial.RationalPolynomial` expressions.
+
+    :param exprs: list of :class:`~kingdon.polynomial.RationalPolynomial` expressions.
+    :param common_denom: optional :class:`~kingdon.polynomial.Polynomial` common denominator.
+    :return: (cse_pairs, numer_simplified, denom_simplified) where:
+        - cse_pairs: list of (name, poly_args) tuples for each extracted subexpression.
+        - numer_simplified: list of poly_args lists for simplified numerators.
+        - denom_simplified: poly_args list for the simplified denominator, or None.
+    """
+    # Build CSE input: numerators of all exprs, plus the common denominator as last entry.
+    poly_args_list = [e.numer.args for e in exprs]
+    if common_denom is not None:
+        poly_args_list.append(common_denom.args)
+
+    all_vars = {f for pl in poly_args_list for m in pl for f in m[1:] if isinstance(f, str)}
+    cse_pairs, simplified = poly_cse(poly_args_list, prot=None, iso=[2] + sorted(all_vars))
+
+    numer_simplified = simplified[:-1] if common_denom is not None else simplified
+    denom_simplified = simplified[-1] if common_denom is not None else None
+
+    return cse_pairs, numer_simplified, denom_simplified
+
+
+def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, denom_simplified):
+    """
+    Build a Python function from pre-computed polynomial CSE results.
+
+    :param args_dict: dict mapping arg name (str) to list of :class:`~kingdon.polynomial.RationalPolynomial` values.
+    :param exprs: list of :class:`~kingdon.polynomial.RationalPolynomial` expressions (for denom checks).
+    :param funcname: name for the generated function.
+    :param cse_pairs: list of (name, poly_args) from :func:`_poly_cse_compute`.
+    :param numer_simplified: simplified numerator poly_args per expression.
+    :param denom_simplified: simplified denominator poly_args, or None.
+    :return: compiled function with docstring containing op counts.
+    """
+    # Build argument unpacking lines
+    names = list(args_dict.keys())
+    body_lines = []
+    for name, values in args_dict.items():
+        var_names = []
+        for v in values:
+            numer_args = getattr(getattr(v, 'numer', None), 'args', None)
+            if (numer_args and len(numer_args) == 1
+                    and len(numer_args[0]) == 2
+                    and numer_args[0][0] == 1):
+                var_names.append(str(numer_args[0][1]))
+            else:
+                var_names.append('_')
+        body_lines.append(f'    [{", ".join(var_names)}] = {name}')
+
+    for cse_name, poly_args in cse_pairs:
+        body_lines.append(f'    {cse_name}={poly_format(poly_args)}')
+
+    # Emit denominator local variable if needed (avoids recomputing it per return component)
+    if denom_simplified is not None and sum(1 for e in exprs if e.denom != 1) > 1:
+        cse_names = {cse_name for cse_name, _ in cse_pairs}
+        denom_var = '_d'
+        while denom_var in cse_names:
+            denom_var += '_'
+        body_lines.append(f'    {denom_var}={poly_format(denom_simplified)}')
+        denom_ref = denom_var
+    else:
+        denom_ref = poly_format(denom_simplified) if denom_simplified is not None else None
+
+    ret_parts = [
+        poly_format(simp) if (denom_ref is None or e.denom == 1)
+        else f'({poly_format(simp)})/({denom_ref})'
+        for e, simp in zip(exprs, numer_simplified)
+    ]
+    body_lines.append(f'    return [{", ".join(ret_parts)},]')
+
+    header = f'def {funcname}({", ".join(names)}):'
+    return _build_and_cache_func(header, body_lines, funcname)
 
 def lambdify(
         args: dict, 
         exprs: list, 
         funcname: str, 
-        dependencies: tuple = None, 
         printer=None, 
         func_printer=None,
         cse=False,
@@ -657,72 +729,72 @@ def lambdify(
             [b, b1, b2, b12] = B
             return (+a1*b2-a2*b1,)
 
-    It is recommended not to call this function directly, but rather to use
-    :func:`do_codegen` which provides a clean API around this function.
+    .. note::
+        As a `kingdon` end user, you should probably not need to call this functon directly,
+        be sure to check out :meth:`~kingdon.algebra.Algebra.register` first.
+        And even for experienced users or `kingdon` developers it is recommended
+        to use :func:`do_codegen` which provides a clean API around this function.
 
     :param args: dictionary of type dict[str | Symbol, tuple[Symbol]].
     :param exprs: tuple[Expr]
     :param funcname: string to be used as the bases for the name of the function.
-    :param dependencies: These are extra expressions that can be provided such that quantities can be precomputed.
-        For example, in the inverse of a multivector, this is used to compute the scalar denominator only once,
-        after which all values in expr are multiplied by it. When :code:`cse = True`, these dependencies are also
-        included in the CSE process.
     :param printer: Instance of the sympy style printer used to print individual sympy expressions.
     :param func_printer: Instance of the sympy style printer used to generate functions using the `printer`.
-    :param cse: If :code:`True` (default), CSE is applied to the expressions and dependencies.
+    :param cse: If :code:`True` (default), CSE is applied to the expressions.
         This typically greatly improves performance and reduces numba's initialization time.
     :param output_mv_idx: Index of the multivector that stores the result returned by the codegen function.
         If :code:`None`, the generated function will return the values of the multivector.
     :return: Function that represents that can be used to calculate the values of exprs.
     """
-    # TODO: the printers should be instances, not classes, for proper dependency injection.
-    if func_printer is None:
-        func_printer = KingdonPrinter(printer)
+    tosympy = lambda x: x.tosympy() if hasattr(x, 'tosympy') else x
+    cses, _exprs = [], exprs
+    cse_pairs, numer_simplified, denom_simplified = None, None, None
+
+    if exprs and all(isinstance(e, RationalPolynomial) for e in exprs):
+        if cse:
+            non_unit = [e for e in exprs if e.denom != 1]
+            if not non_unit or all(e.denom == non_unit[0].denom for e in non_unit):
+                common_denom = non_unit[0].denom if non_unit else None
+                cse_pairs, numer_simplified, denom_simplified = _poly_cse_compute(exprs, common_denom)
+
+                if printer is None and func_printer is None:
+                    return _lambdify_poly_cse(args, exprs, funcname, cse_pairs, numer_simplified, denom_simplified)
+
+    if cse_pairs is not None:       
+        args = {name: [tosympy(v) for v in values] for name, values in args.items()}
+        cses = [(name, tosympy(Polynomial(poly_args))) for name, poly_args in cse_pairs]
+        _exprs = [tosympy(Polynomial(expr)) for expr in [*numer_simplified, denom_simplified]]
+    else:
+        args = {name: [tosympy(v) for v in values] for name, values in args.items()}
+        _exprs = [tosympy(expr) for expr in exprs]
+
+    if cse and not cses:
+        if not callable(cse):
+            from sympy.simplify.cse_main import cse
+        cses, _exprs = cse(_exprs, list=False)
+
+    if not any(_exprs):
+        _exprs = list('0' for expr in _exprs)
+
     if printer is None:
         printer = LambdaPrinter(
             {'fully_qualified_modules': False, 'inline': True,
              'allow_unknown_functions': True,
              'user_functions': {}}
         )
+    if func_printer is None:
+        func_printer = KingdonPrinter(printer, dummify)
 
-    tosympy = lambda x: x.tosympy() if hasattr(x, 'tosympy') else x
-    args = {name: [tosympy(v) for v in values]
-            for name, values in args.items()}
-    exprs = [tosympy(expr) for expr in exprs]
-    if dependencies:
-        dependencies = [(tosympy(y), tosympy(x)) for y, x in dependencies]
+    # TODO: Figure out how to incorperate this after the merge is complete.
+    # def unflatten(template, flat):
+    #     it = iter(flat)
+    #     def walk(t):
+    #         return type(t)(walk(x) for x in t) if isinstance(t, (list, tuple)) else next(it)
+    #     return walk(template)
+    # flat_exprs = flatten(exprs)
+
     names = tuple(arg if isinstance(arg, str) else arg.name for arg in args.keys())
     iterable_args = tuple(args.values())
-
-    # funcprinter = func_printer(printer, dummify, output_mv_idx=output_mv_idx)
-
-    def unflatten(template, flat):
-        it = iter(flat)
-        def walk(t):
-            return type(t)(walk(x) for x in t) if isinstance(t, (list, tuple)) else next(it)
-        return walk(template)
-
-    # TODO: Extend CSE to include the dependencies.
-    lhsides, rhsides = zip(*dependencies) if dependencies else ([], [])
-    flat_exprs = flatten(exprs)
-    symbols = numbered_symbols(cls=Symbol, prefix='_x')
-    if cse and not any(isinstance(expr, str) for expr in flat_exprs):
-        if not callable(cse):
-            from sympy.simplify.cse_main import cse
-        if dependencies:
-            flat_rhsides = flatten(rhsides)
-            cses, _all_exprs = cse([*flat_exprs, *flat_rhsides], list=False, order='none', ignore=lhsides, symbols=symbols)
-            _flat_exprs = _all_exprs[:len(flat_exprs)]
-            _rhsides = unflatten(rhsides, _all_exprs[len(flat_exprs):])
-            cses.extend(list(zip(flatten(lhsides), flatten(_rhsides))))
-        else:
-            cses, _flat_exprs = cse(flat_exprs, list=False, order='none', symbols=symbols)
-    else:
-        cses, _flat_exprs = list(zip(flatten(lhsides), flatten(rhsides))), flat_exprs
-    _exprs = unflatten(exprs, _flat_exprs)
-
-    if not any(_exprs):
-        _exprs = list('0' for expr in _exprs)
     funcstr = func_printer.doprint(funcname, iterable_args, names, _exprs, cses=cses, output_mv_idx=output_mv_idx)
 
     # Provide lambda expression with builtins, and compatible implementation of range
@@ -823,6 +895,9 @@ class KingdonPrinter:
 
         funclines = [funcsig]
         funclines.extend(['    ' + line for line in funcbody])
+        funcstr = '\n'.join(funclines) + '\n'
+        muls, adds = _count_muls_adds(funcstr)
+        funclines.insert(1, f'    """{muls} muls / {adds} adds"""')
 
         return '\n'.join(funclines) + '\n'
 
@@ -841,6 +916,9 @@ class KingdonPrinter:
         for i, arg in enumerate(args):
             if iterable(arg):
                 s, expr = self._preprocess(arg, expr)
+            elif hasattr(arg, 'free_symbols') and not arg.free_symbols:
+                # sympy constant (no free symbols): use _ as placeholder in unpacking
+                s = '_'
             elif hasattr(arg, 'name'):
                 s = arg.name
             elif hasattr(arg, 'is_symbol') and arg.is_symbol:

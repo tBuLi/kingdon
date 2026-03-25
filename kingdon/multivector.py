@@ -10,6 +10,7 @@ import math
 import sys
 
 from sympy import Expr, Symbol, sympify, sinc, cos
+from sympy.utilities.iterables import iterable
 
 from kingdon.codegen import _lambdify_mv
 from kingdon.polynomial import RationalPolynomial
@@ -155,7 +156,7 @@ class MultiVector(metaclass=MultiVectorType):
         return zip(self._keys, self._values)
 
     def __len__(self):
-        return len(self._values)
+        return self.shape[1] if len(self.shape) > 1 else 0
 
     @cached_property
     def type_number(self) -> int:
@@ -164,11 +165,15 @@ class MultiVector(metaclass=MultiVectorType):
 
     def itermv(self, axis=None) -> Generator["MultiVector", None, None]:
         """
+        Deprecated, do `for x in mv:` instead.
+
         Returns an iterator over the multivectors within this multivector, if it is a multidimensional multivector.
         For example, if you have a pointcloud of N points, itermv will iterate over these points one at a time.
 
         :param axis: Axis over which to iterate. Default is to iterate over all possible mv.
         """
+        import warnings
+        warnings.warn('itermv is deprecated, simply iterate over the multivector directly instead.', DeprecationWarning)
         shape = self.shape[1:]
         if not shape:
             return self
@@ -181,20 +186,13 @@ class MultiVector(metaclass=MultiVectorType):
             raise NotImplementedError
 
     @property
-    def shape(self):
+    def shape(self) -> tuple:
         """ Return the shape of the .values() attribute of this multivector. """
         if hasattr(self._values, 'shape'):
             return self._values.shape
-        elif not len(self):
-            return ()
-        elif hasattr(self._values[0], 'shape'):
-            return len(self), *self._values[0].shape
-        elif isinstance(self._values[0], (tuple, list)):
-            if not all(len(v) == len(self._values[0]) for v in self._values):
-                raise ValueError("All values of a Multivectors must have the same length in order for the mulivector to have a consistent shape.")
-            return len(self), len(self._values[0])
-        else:
-            return len(self),
+        if self._values and all(hasattr(v, 'shape') and v.shape == self._values[0].shape for v in self._values):
+            return len(self._values), *self._values[0].shape
+        return len(self._values),
 
     @cached_property
     def grades(self):
@@ -329,12 +327,12 @@ class MultiVector(metaclass=MultiVectorType):
 
     def __getitem__(self, item):
         values = self.values()
-        if isinstance(values, (tuple, list)):
+        if not isinstance(values, (tuple, list)):  # Assume it obeys the python array API
+            return_values = values[(slice(None), *item)]
+        elif values and all(iterable(value) for value in values):
             return_values = values.__class__(value[item] for value in values)
         else:
-            if not isinstance(item, tuple):
-                item = (item,)
-            return_values = values[(slice(None), *item)]
+            raise IndexError("Cannot index a multivector with a non-iterable value.")
         return self.__class__.fromkeysvalues(self.algebra, keys=self.keys(), values=return_values)
 
     def __setitem__(self, indices, values: 'MultiVector'):
@@ -458,7 +456,7 @@ class MultiVector(metaclass=MultiVectorType):
           even if the mutivector was already dense.
         """
         if canonical:
-            keys = self.algebra.indices_for_grades(tuple(range(self.algebra.d + 1)))
+            keys = tuple(self.algebra.indices_for_grades(tuple(range(self.algebra.d + 1))))
         else:
             keys = tuple(range(len(self.algebra)))
         values = [getattr(self, self.algebra.bin2canon[k]) for k in keys]
@@ -473,9 +471,14 @@ class MultiVector(metaclass=MultiVectorType):
         return self.algebra.gp(other, self)
 
     def sw(self, other):
-        """
-        Apply :code:`x := self` to :code:`y := other` under conjugation:
-        :code:`x.sw(y) = x*y*~x`.
+        r"""
+        Apply the normalized versor (k-reflection) :code:`x := self` to the :math:`\ell`-blade:code:`y := other` under conjugation:
+        :math:`x[y] = (-1)^{k \ell} x y x^{-1}`.
+        If :code:`y` is a multivector instead of a blade, the formula is applied to each pure
+        grade component of :code:`y` separately to ensure a consistent result.
+        **Important**: note that :code:`x` is assumed to be normalized such that :math:`x \widetilde{x} = 1`
+        (i.e. :code:`x.normsq() == 1`). Moreover, grade preservation is enforced by the code.
+        Expect unexpected results if this operator is used with non-versors.
         """
         return self.algebra.sw(self, other)
 

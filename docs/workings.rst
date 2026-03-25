@@ -1,4 +1,4 @@
 ==============
 Inner Workings
 ==============
-This chapter explains how :code:`kingdon` works internally.
+This chapter will explain how :code:`kingdon` works internally. (Under construction.)

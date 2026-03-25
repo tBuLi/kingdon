@@ -17,6 +17,13 @@ from kingdon.multivector import MultiVector
 
 TREE_TYPES = (list, tuple)
 
+DEFAULT_STYLE = {
+    'width': 'min( 100%, 1024px )',
+    'height': 'auto',
+    'aspectRatio': '16 / 6',
+    'background': 'white',
+}
+
 
 def walker(encoded_generator, tree_types=TREE_TYPES):
     result = []
@@ -39,12 +46,12 @@ def encode(o, tree_types=TREE_TYPES, root=False, graded=False):
     #         ovals = o._values.T
     #         yield {'mvs': ovals.tobytes(), 'shape': ovals.shape}
     #     else:
-        yield from (encode(value, graded=graded) for value in o.itermv())
+        yield from (encode(value, graded=graded) for value in o)
     elif isinstance(o, MultiVector):
         values = o._values.tobytes() if isinstance(o._values, np.ndarray) else o._values.copy()
         if graded:  # In >6D ganja switches to graded mode.
             yield {'mv': values, 'keys': o._keys, 'grades': o.grades}
-        elif len(o) != len(o.algebra):
+        elif len(o.keys()) != len(o.algebra):
             # If not full mv, also pass the keys and let ganja figure it out.
             yield {'mv': values, 'keys': o._keys}
         else:
@@ -64,7 +71,7 @@ class GraphWidget(anywidget.AnyWidget):
 
     # Properties derived from the required arguments which have to be available to js.
     signature = traitlets.List([]).tag(sync=True)  # Signature of the algebra
-    cayley = traitlets.List([]).tag(sync=True)     # Cayley table of the algebra
+    basis = traitlets.List([]).tag(sync=True)      # Basis of the algebra
     key2idx = traitlets.Dict({}).tag(sync=True)    # Conversion from binary keys to indices
     graded = traitlets.Bool({}).tag(sync=True)     # Run ganja.js in graded mode if an up function was provided
 
@@ -115,14 +122,11 @@ class GraphWidget(anywidget.AnyWidget):
 
     @traitlets.default('signature')
     def get_signature(self):
-        return [int(s) for s in self.algebra.signature]
+        return self.algebra.signature
 
-    @traitlets.default('cayley')
-    def get_cayley(self):
-        cayley_table = [[s if (s := self.algebra.cayley[eJ, eI])[-1] != 'e' else f"{s[:-1]}1"
-                         for eI in self.algebra.canon2bin]
-                         for eJ in self.algebra.canon2bin]
-        return cayley_table
+    @traitlets.default('basis')
+    def get_basis(self):
+        return [b if b != 'e' else '1' for b in self.algebra.basis]
 
     @traitlets.default('pre_subjects')
     def get_pre_subjects(self):
@@ -139,11 +143,11 @@ class GraphWidget(anywidget.AnyWidget):
             return []
         # Extract the draggable points.
         d = self.algebra.d
-        points = [s for s in self.pre_subjects if isinstance(s, MultiVector)]
+        points = [s for s in self.pre_subjects if isinstance(s, MultiVector) and len(s) == 0]
         if self.algebra.r == 1 and (d == 3 or d == 4):  # PGA
-            points = [p for p in points if p.grades == (d - 1,)]
+            points = [p for p in points if p.grades == (d - 1,) and len(p) == 0]
         elif self.options.get('conformal'):
-            points = [p for p in points if p.grades == (1,)]
+            points = [p for p in points if p.grades == (1,) and len(p) == 0]
         return walker(encode(points, graded=self.graded))
 
     @traitlets.default('draggable_points_idxs')
@@ -153,11 +157,11 @@ class GraphWidget(anywidget.AnyWidget):
         # Extract the draggable points.
         d = self.algebra.d
         if self.algebra.r == 1 and (d == 3 or d == 4):  # PGA
-            filter_func = lambda s: isinstance(s, MultiVector) and s.grades == (d - 1,)
+            filter_func = lambda s: isinstance(s, MultiVector) and s.grades == (d - 1,) and len(s) == 0
         elif self.options.get('conformal'):
-            filter_func = lambda s: isinstance(s, MultiVector) and s.grades == (1,)
+            filter_func = lambda s: isinstance(s, MultiVector) and s.grades == (1,) and len(s) == 0
         else:
-            filter_func = lambda s: isinstance(s, MultiVector)
+            filter_func = lambda s: isinstance(s, MultiVector) and len(s) == 0
         return [j for j, s in enumerate(self.pre_subjects) if filter_func(s)]
 
     @traitlets.default('graded')
@@ -179,6 +183,13 @@ class GraphWidget(anywidget.AnyWidget):
             sig = inspect.signature(up)
             up_glsl = up(*[sp.Symbol(param) for param in sig.parameters]).map(GLSLPrinter().doprint)
             options['up'] = list(encode(up_glsl, graded=self.graded))[0]['mv']
+        style = {**DEFAULT_STYLE, **options.get('style', {})}
+        if 'width' in options:
+            style['width'] = options['width']
+        if 'height' in options:
+            style['height'] = options['height']
+        style.setdefault('marginLeft', f"calc( (100% - {style['width']}) / 2 )")
+        options['style'] = style
         return options
 
     def inplacereplace(self, old_subjects, new_subjects: List[Tuple[int, dict]]):
@@ -199,3 +210,21 @@ class GraphWidget(anywidget.AnyWidget):
                     val = new_vals[self.key2idx[k]]
                     if old_vals[j] != val:
                         old_vals[j] = val
+
+    def update(self, *subjects, **options):
+        """
+        Update the subjects and options. Same API as :meth:`~kingdon.algebra.Algebra.graph`.
+        if no `options` are provided, then the existing options are kept; if
+        options are provided, then the existing options are replaced.
+        """
+        with self.hold_sync():  # Only update after all changes are made.
+            if options:
+                self.options = options
+            self.raw_subjects = subjects
+            self.pre_subjects = self.get_pre_subjects()
+            self.subjects = self.get_subjects()
+            # Temporarily disable the observer so we can safely update the draggable points.
+            # To do this properly, we should use unobserve and observe to temporarily disable the observer, but that requires
+            # access to the ObserveHandler. which we don't seem to have. So modify the list inplace to bypass the observer.
+            self.draggable_points[:] = self.get_draggable_points()
+            self.draggable_points_idxs = self.get_draggable_points_idxs()
