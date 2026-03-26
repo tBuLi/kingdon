@@ -500,11 +500,7 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
 
     output_mv_idx = None  # If codegen modified one of the mvs using set, this will be the index of the modified mv.
     if res is None:
-        output_mv_idx = [i for i, mv in enumerate(mvs) if mv != mvs_orig[i]][0]
-        # if not len(output_mvs):
-        #     return CodegenOutput(tuple(), lambda *args: None)
-        # if len(output_mvs) != 1:
-        #     raise ValueError("Cannot set multiple multivectors when the output of the codegen function is None.")
+        output_mv_idx = next(i for i, mv in enumerate(mvs) if mv != mvs_orig[i])
         res = mvs[output_mv_idx]
         mvs = mvs_orig
 
@@ -666,26 +662,20 @@ def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, 
     :param output_mv_idx: index into the argument list of the MV to write the result into (for set-style codegen).
     :return: compiled function with docstring containing op counts.
     """
-    # Build argument unpacking lines
-    names = list(args_dict.keys())
+    names = list(args_dict)
     body_lines = []
     for name, values in args_dict.items():
-        # Each entry in `values` is either a single RationalPolynomial (regular MV blade)
-        # or a list of RationalPolynomials (array-typed argument, e.g. MultiVector[N]).
         has_nested = any(isinstance(v, (list, tuple)) for v in values)
         if has_nested:
-            # Build the outer unpacking: one temporary variable per blade.
             temp_names = [f'_{name}_{i}' for i in range(len(values))]
             body_lines.append(f'    [{", ".join(temp_names)}] = {name}')
             for temp_name, v in zip(temp_names, values):
                 if isinstance(v, (list, tuple)):
-                    sub_names = [_rp_var_name(sub_v) for sub_v in v]
-                    body_lines.append(f'    [{", ".join(sub_names)}] = {temp_name}')
+                    body_lines.append(f'    [{", ".join(_rp_var_name(sv) for sv in v)}] = {temp_name}')
                 else:
                     body_lines.append(f'    {_rp_var_name(v)} = {temp_name}')
         else:
-            var_names = [_rp_var_name(v) for v in values]
-            body_lines.append(f'    [{", ".join(var_names)}] = {name}')
+            body_lines.append(f'    [{", ".join(_rp_var_name(v) for v in values)}] = {name}')
 
     for cse_name, poly_args in cse_pairs:
         body_lines.append(f'    {cse_name}={poly_format(poly_args)}')

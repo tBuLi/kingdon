@@ -190,12 +190,13 @@ class MultiVector(metaclass=MultiVectorType):
         """ Return the shape of the .values() attribute of this multivector. """
         if hasattr(self._values, 'shape'):
             return self._values.shape
-        if self._values and all(hasattr(v, 'shape') and v.shape == self._values[0].shape for v in self._values):
-            return len(self._values), *self._values[0].shape
-        if (self._values and isinstance(self._values[0], (list, tuple))
-                and all(isinstance(v, (list, tuple)) and len(v) == len(self._values[0]) for v in self._values)):
-            return len(self._values), len(self._values[0])
-        return len(self._values),
+        if self._values:
+            first = self._values[0]
+            if hasattr(first, 'shape') and all(getattr(v, 'shape', None) == first.shape for v in self._values[1:]):
+                return (len(self._values), *first.shape)
+            if isinstance(first, (list, tuple)) and all(isinstance(v, (list, tuple)) and len(v) == len(first) for v in self._values[1:]):
+                return (len(self._values), len(first))
+        return (len(self._values),)
 
     @cached_property
     def grades(self):
