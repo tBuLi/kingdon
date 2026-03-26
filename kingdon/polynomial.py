@@ -672,6 +672,8 @@ class Polynomial:
         """Differentiate with respect to var (string or Polynomial.fromname(string))."""
         if isinstance(var, self.__class__):
             var_name = var.args[0][1]
+        elif hasattr(var, 'numer') and var.denom == 1:  # RationalPolynomial
+            var_name = var.numer.args[0][1]
         else:
             var_name = var
 
