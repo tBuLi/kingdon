@@ -65,7 +65,7 @@ Rational Polynomial
 Taperecorder
 ------------
 
-Used `Algebra.register` to generate code.
+Used `Algebra.compile` to generate code.
 
 .. automodule:: kingdon.taperecorder
    :members:

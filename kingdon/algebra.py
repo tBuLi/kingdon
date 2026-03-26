@@ -341,28 +341,35 @@ class Algebra:
         Compile a function with the algebra to optimize its execution times. 
         The function must be a valid GA expression, not an arbitrary python function.
 
-        Example:
+        Examples:
 
         .. code-block ::
 
-            @alg.compile
-            def myexpr(a, b):
+            @alg.compile(symbolic=True)
+            def proj(a, b):
                 return a @ b
+            
+            @alg.compile(symbolic=True)
+            def proj_allocated(a, b, c):
+                c.set(a @ b)
+            
+            @alg.compile(symbolic=True)
+            def proj(mvs: MultiVector[2]):
+                mv1, mv2 = mvs
+                return mv1 @ mv2
 
-            @alg.register(symbolic=True)
-            def myexpr(a, b):
-                return a @ b
+        The examples above show three different ways to compile a function.
+        Firstly and most straightforwardly, simply decorate a function that takes MultiVectors as input and a single MultiVector as output.
+        Secondly, rather than returning a MultiVector, one can modify one existing MultiVector in place using the `set` method.
+        This is useful in combination with e.g. pre-allocated memory like is sometimes the case with PyTorch tensors.
+        Thirdly, using the type annotation `MultiVector[N]` we can signal to compile that the function takes a multivector of shape (_, N).
 
-        With default settings, the decorator will ensure that every GA unary or binary
+        With default settings (symbolic=False), the decorator will ensure that every GA unary or binary
         operator is replaced by the corresponding numerical function, and produces
-        numerically much more performant code. The speed up is particularly notible when
-        e.g. `self.wrapper=numba.njit`, because then the cost for all the python glue surrounding
-        the actual computation has to be paid only once.
-
-        When `symbolic=True` the expression is symbolically optimized before being turned
-        into a numerical function. Beware that symbolic optimization of longer expressions
-        can (currently) take exorbitant amounts of time, and often isn't worth it if the end
-        goal is numerical computation.
+        numerically much more performant code.
+        However, when `symbolic=True` the expression is symbolically optimized before being turned
+        into a numerical function.
+        This typically results in even more performant code, at the expense of extra cost for the first execution.
 
         :param expr: Python function of a valid kingdon GA expression.
         :param name: (optional) name by which the function will be known to the algebra.

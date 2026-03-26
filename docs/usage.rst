@@ -373,16 +373,16 @@ tensors instead, as shown in :doc:`arrays`.
 This ensures the high level overhead of kingdon is paid only once, and we instead delegate 
 the computation to the underlying datastructures.
 
-Register Expressions
-~~~~~~~~~~~~~~~~~~~~
-To make it easy to optimize larger expressions, :code:`kingdon` offers the :func:`~kingdon.algebra.Algebra.register`
+Compile Expressions
+~~~~~~~~~~~~~~~~~~~
+To make it easy to optimize larger expressions, :code:`kingdon` offers the :func:`~kingdon.algebra.Algebra.compile`
 decorator.
 
 .. code-block::
 
     >>> alg = Algebra(3, 0, 1)
     >>>
-    >>> @alg.register
+    >>> @alg.compile
     >>> def myfunc(u, v):
     >>>      return u * (u + v)
     >>>
@@ -393,7 +393,7 @@ decorator.
 Calling the decorated :code:`myfunc` has the benefit that all the numerical computation is done in one single call,
 instead of doing each binary operation individually. This has the benefit that all the (expensive) python boilerplate
 code is called only once.
-Moreover, one can use :code:`@alg.register(symbolic=True)` to symbolically optimize the expression, similar to how 
+Moreover, one can use :code:`@alg.compile(symbolic=True)` to symbolically optimize the expression, similar to how 
 `kingdon`'s default binary operators work. As we have seen above in the CSE section, this can result in significant 
 performance improvements. Afterall, the fastest computation is one you do not have to do.
 
