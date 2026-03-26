@@ -498,7 +498,7 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
 
     res = codegen(*mvs)
 
-    output_mv_idx = None
+    output_mv_idx = None  # If codegen modified one of the mvs using set, this will be the index of the modified mv.
     if res is None:
         output_mv_idx = [i for i, mv in enumerate(mvs) if mv != mvs_orig[i]][0]
         # if not len(output_mvs):
@@ -530,10 +530,11 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
     keys, exprs = tuple(res.keys()), list(res.values())
     if output_mv_idx is not None:
         keys = ()
-    func = lambdify(args, exprs, funcname=funcname, 
+    func = lambdify(args, exprs, funcname=funcname,
                     cse=algebra.cse, printer=printer, func_printer=func_printer,
                     output_mv_idx=output_mv_idx
                     )
+    func.output_mv_idx = output_mv_idx
     return CodegenOutput(
         keys, func
     )
@@ -642,7 +643,17 @@ def _poly_cse_compute(exprs: List[RationalPolynomial], common_denom: Optional[Po
     return cse_pairs, numer_simplified, denom_simplified
 
 
-def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, denom_simplified):
+def _rp_var_name(v):
+    """Return the variable name string for a simple :class:`~kingdon.polynomial.RationalPolynomial` symbol, or ``'_'``."""
+    numer_args = getattr(getattr(v, 'numer', None), 'args', None)
+    if (numer_args and len(numer_args) == 1
+            and len(numer_args[0]) == 2
+            and numer_args[0][0] == 1):
+        return str(numer_args[0][1])
+    return '_'
+
+
+def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, denom_simplified, output_mv_idx=None):
     """
     Build a Python function from pre-computed polynomial CSE results.
 
@@ -652,22 +663,29 @@ def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, 
     :param cse_pairs: list of (name, poly_args) from :func:`_poly_cse_compute`.
     :param numer_simplified: simplified numerator poly_args per expression.
     :param denom_simplified: simplified denominator poly_args, or None.
+    :param output_mv_idx: index into the argument list of the MV to write the result into (for set-style codegen).
     :return: compiled function with docstring containing op counts.
     """
     # Build argument unpacking lines
     names = list(args_dict.keys())
     body_lines = []
     for name, values in args_dict.items():
-        var_names = []
-        for v in values:
-            numer_args = getattr(getattr(v, 'numer', None), 'args', None)
-            if (numer_args and len(numer_args) == 1
-                    and len(numer_args[0]) == 2
-                    and numer_args[0][0] == 1):
-                var_names.append(str(numer_args[0][1]))
-            else:
-                var_names.append('_')
-        body_lines.append(f'    [{", ".join(var_names)}] = {name}')
+        # Each entry in `values` is either a single RationalPolynomial (regular MV blade)
+        # or a list of RationalPolynomials (array-typed argument, e.g. MultiVector[N]).
+        has_nested = any(isinstance(v, (list, tuple)) for v in values)
+        if has_nested:
+            # Build the outer unpacking: one temporary variable per blade.
+            temp_names = [f'_{name}_{i}' for i in range(len(values))]
+            body_lines.append(f'    [{", ".join(temp_names)}] = {name}')
+            for temp_name, v in zip(temp_names, values):
+                if isinstance(v, (list, tuple)):
+                    sub_names = [_rp_var_name(sub_v) for sub_v in v]
+                    body_lines.append(f'    [{", ".join(sub_names)}] = {temp_name}')
+                else:
+                    body_lines.append(f'    {_rp_var_name(v)} = {temp_name}')
+        else:
+            var_names = [_rp_var_name(v) for v in values]
+            body_lines.append(f'    [{", ".join(var_names)}] = {name}')
 
     for cse_name, poly_args in cse_pairs:
         body_lines.append(f'    {cse_name}={poly_format(poly_args)}')
@@ -688,19 +706,24 @@ def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, 
         else f'({poly_format(simp)})/({denom_ref})'
         for e, simp in zip(exprs, numer_simplified)
     ]
-    body_lines.append(f'    return [{", ".join(ret_parts)},]')
+    if output_mv_idx is not None:
+        output_name = names[output_mv_idx]
+        body_lines.append(f'    {output_name}[:] = [{", ".join(ret_parts)},]')
+        body_lines.append('    return ()')
+    else:
+        body_lines.append(f'    return [{", ".join(ret_parts)},]')
 
     header = f'def {funcname}({", ".join(names)}):'
     return _build_and_cache_func(header, body_lines, funcname)
 
 def lambdify(
-        args: dict, 
-        exprs: list, 
-        funcname: str, 
-        printer=None, 
+        args: dict,
+        exprs: list,
+        funcname: str,
+        printer=None,
         func_printer=None,
         cse=False,
-        output_mv_idx: int = None
+        output_mv_idx: int = None,
     ):
     """
     Function that turns symbolic expressions into Python functions. Heavily inspired by
@@ -758,12 +781,18 @@ def lambdify(
                 cse_pairs, numer_simplified, denom_simplified = _poly_cse_compute(exprs, common_denom)
 
                 if printer is None and func_printer is None:
-                    return _lambdify_poly_cse(args, exprs, funcname, cse_pairs, numer_simplified, denom_simplified)
+                    return _lambdify_poly_cse(args, exprs, funcname, cse_pairs, numer_simplified, denom_simplified,
+                                              output_mv_idx=output_mv_idx)
 
-    if cse_pairs is not None:       
+    if cse_pairs is not None:
         args = {name: [tosympy(v) for v in values] for name, values in args.items()}
         cses = [(name, tosympy(Polynomial(poly_args))) for name, poly_args in cse_pairs]
-        _exprs = [tosympy(Polynomial(expr)) for expr in [*numer_simplified, denom_simplified]]
+        numer_syms = [tosympy(Polynomial(expr)) for expr in numer_simplified]
+        denom_sym = tosympy(Polynomial(denom_simplified)) if denom_simplified is not None else None
+        _exprs = [
+            numer if (denom_sym is None or e.denom == 1) else numer / denom_sym
+            for e, numer in zip(exprs, numer_syms)
+        ]
     else:
         args = {name: [tosympy(v) for v in values] for name, values in args.items()}
         _exprs = [tosympy(expr) for expr in exprs]
@@ -783,7 +812,7 @@ def lambdify(
              'user_functions': {}}
         )
     if func_printer is None:
-        func_printer = KingdonPrinter(printer, dummify)
+        func_printer = KingdonPrinter(printer)
 
     # TODO: Figure out how to incorperate this after the merge is complete.
     # def unflatten(template, flat):

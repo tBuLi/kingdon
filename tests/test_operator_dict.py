@@ -5,6 +5,7 @@ from sympy import symbols, Symbol
 
 from kingdon.operator_dict import OperatorDict, UnaryOperatorDict
 from kingdon.codegen import codegen_gp, codegen_inv
+from kingdon.polynomial import RationalPolynomial
 from kingdon import Algebra, MultiVector
 
 
@@ -28,11 +29,13 @@ def test_operator_dict():
     assert len(inv) == 1
     assert x in inv
 
-def test_codegen_weights():
+
+@pytest.mark.parametrize('codegen_symbolcls', [RationalPolynomial.fromname, Symbol], ids=['RationalPolynomial', 'Symbol'])
+def test_codegen_weights(codegen_symbolcls):
     """ In geometric product layers one needs to be able to provide weights as an array of scalars. """
     alg = Algebra(2)
 
-    @alg.compile(symbolic=True)
+    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def weighted_gp(x, y, weights: MultiVector[10]):
         w0,w1,w2,w3,w4,w5,w6,w7,w8,w9 = weights
         X0, X1, X2 = (x.grade(g) for g in range(alg.d + 1))
@@ -82,14 +85,32 @@ def test_codegen_weights():
     for s, grad in zip([*x.values(), *y.values(), *weights.e], grads.e):
         assert grad == go_wgp.map(lambda v: v.diff(s)).e
 
-def test_codegen_wgp_generic():
+    # Test non-scalar shaped multivector type-hint
+    alg2 = Algebra(2)
+
+    @alg2.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    def reduce_gp(mvs: MultiVector[2]):
+        mv1, mv2 = mvs
+        return mv1*mv2
+
+    assert reduce_gp.codegen_input_types == {'mvs': (MultiVector, 2)}
+    assert reduce_gp.codegen_output_type == MultiVector
+    x2 = alg2.multivector(name='x')
+    y2 = alg2.multivector(name='y')
+    mv_symbols = [(xv, yv) for xv, yv in zip(x2.values(), y2.values())]
+    mvs = alg2.multivector(values=mv_symbols)
+    assert reduce_gp(mvs) == x2*y2
+
+
+@pytest.mark.parametrize('codegen_symbolcls', [RationalPolynomial.fromname, Symbol], ids=['RationalPolynomial', 'Symbol'])
+def test_codegen_wgp_generic(codegen_symbolcls):
     """
     Similar to test_codegen_weights, but with an unspecified number of weights.
     This is meant to test the type-hinting syntax for a new dimension of unknown size.
     """
     alg = Algebra(2)
 
-    @alg.compile(symbolic=True)
+    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def wgp(X: MultiVector, Y: MultiVector, weights: MultiVector[None]) -> MultiVector:
         """
         Compute the weighted geometric product between X and Y.
@@ -120,36 +141,9 @@ def test_codegen_wgp_generic():
     wgp_output = wgp(x, y, weights)
     assert wgp_output == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0
 
-def test_codegen_printer():
-    alg = Algebra(2)
-    x = alg.multivector(name='x')
-    y = alg.multivector(name='y')
 
-    from sympy.printing.lambdarepr import LambdaPrinter
-    from kingdon.codegen import KingdonPrinter
-    
-    class MyPrinter(LambdaPrinter):
-        pass
-
-    class MyEvaluatorPrinter(KingdonPrinter):
-        pass
-
-    def my_wrapper(func):
-        return func
-    
-    my_printer = MyPrinter()
-    my_func_printer = MyEvaluatorPrinter(my_printer)
-    
-    @alg.compile(symbolic=True, printer=my_printer, func_printer=my_func_printer, wrapper=my_wrapper)
-    def my_gp(x, y):
-        return x*y
-    res = my_gp(x, y)
-    assert res == x*y
-    assert my_gp.printer == my_printer
-    assert my_gp.func_printer == my_func_printer
-    assert my_gp.wrapper == my_wrapper
-
-def test_codegen_set():
+@pytest.mark.parametrize('codegen_symbolcls', [RationalPolynomial.fromname, Symbol], ids=['RationalPolynomial', 'Symbol'])
+def test_codegen_set(codegen_symbolcls):
     alg = Algebra(2)
     x = alg.multivector(name='x')
     y = alg.multivector(name='y')
@@ -158,15 +152,15 @@ def test_codegen_set():
     w0, w1, w2, w3, w4, w5, w6, w7, w8, w9 = ws
     weights = alg.scalar(e=ws)
 
-    @alg.compile(symbolic=True)
+    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def set_gp(x, y, z):
         z.set(x*y)
-    
+
     res = set_gp(x, y, z)
     assert res == alg.multivector()
     assert z == x*y
 
-    @alg.compile(symbolic=True)
+    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def weighted_gp_set(x, y, weights: MultiVector[10], z):
         w0,w1,w2,w3,w4,w5,w6,w7,w8,w9 = weights
         X0, X1, X2 = (x.grade(g) for g in range(alg.d + 1))
@@ -174,9 +168,39 @@ def test_codegen_set():
         z.set(w0*X0*Y0 + w3*(X1|Y1) + w7*X2*Y2 \
             + w1*X0*Y1 + w4*X1*Y0 + w5*X1*Y2 + w8*X2*Y1 \
             + w2*X0*Y2 + w6*(X1^Y1) + w9*X2*Y0)
-    
+
     x0, x1, x2 = x.grade(0), x.grade(1), x.grade(2)
     y0, y1, y2 = y.grade(0), y.grade(1), y.grade(2)
     res = weighted_gp_set(x, y, weights, z)
     assert res == alg.multivector()
     assert z == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0
+
+
+def test_codegen_printer():
+    alg = Algebra(2)
+    x = alg.multivector(name='x')
+    y = alg.multivector(name='y')
+
+    from sympy.printing.lambdarepr import LambdaPrinter
+    from kingdon.codegen import KingdonPrinter
+
+    class MyPrinter(LambdaPrinter):
+        pass
+
+    class MyEvaluatorPrinter(KingdonPrinter):
+        pass
+
+    def my_wrapper(func):
+        return func
+
+    my_printer = MyPrinter()
+    my_func_printer = MyEvaluatorPrinter(my_printer)
+
+    @alg.compile(symbolic=True, printer=my_printer, func_printer=my_func_printer, wrapper=my_wrapper)
+    def my_gp(x, y):
+        return x*y
+    res = my_gp(x, y)
+    assert res == x*y
+    assert my_gp.printer == my_printer
+    assert my_gp.func_printer == my_func_printer
+    assert my_gp.wrapper == my_wrapper

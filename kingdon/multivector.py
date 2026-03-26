@@ -3,7 +3,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import reduce, cached_property
-from typing import Generator, ClassVar, Self
+from typing import Generator, ClassVar
 from itertools import product
 import re
 import math
@@ -192,6 +192,9 @@ class MultiVector(metaclass=MultiVectorType):
             return self._values.shape
         if self._values and all(hasattr(v, 'shape') and v.shape == self._values[0].shape for v in self._values):
             return len(self._values), *self._values[0].shape
+        if (self._values and isinstance(self._values[0], (list, tuple))
+                and all(isinstance(v, (list, tuple)) and len(v) == len(self._values[0]) for v in self._values)):
+            return len(self._values), len(self._values[0])
         return len(self._values),
 
     @cached_property
@@ -328,6 +331,8 @@ class MultiVector(metaclass=MultiVectorType):
     def __getitem__(self, item):
         values = self.values()
         if not isinstance(values, (tuple, list)):  # Assume it obeys the python array API
+            if not isinstance(item, tuple):
+                item = (item,)
             return_values = values[(slice(None), *item)]
         elif values and all(iterable(value) for value in values):
             return_values = values.__class__(value[item] for value in values)
@@ -350,7 +355,7 @@ class MultiVector(metaclass=MultiVectorType):
         else:
             self.values()[(slice(None), *indices)] = values
     
-    def set(self, other: 'MultiVector') -> Self:
+    def set(self, other: 'MultiVector') -> "Self":
         """Overwrite the values of this MV with the values of another MV."""
         if self.keys() != other.keys():
             raise ValueError('set is only possible for MVs with the same keys.')
