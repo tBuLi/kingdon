@@ -57,7 +57,7 @@ def test_codegen_weights(codegen_symbolcls):
     weighted_gp_output = weighted_gp(x, y, weights)
     assert weighted_gp_output == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0
 
-    @alg.compile(symbolic=True, codegen_symbolcls=Symbol)
+    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def weighted_gp_grad_weights(x, y, weights: MultiVector[10]) -> MultiVector[10]:
         weighted_gp_output = weighted_gp(x, y, weights)
         return [weighted_gp_output.map(lambda v: v.diff(wi)) for wi in weights.e]
@@ -68,7 +68,7 @@ def test_codegen_weights(codegen_symbolcls):
     for wi, grad_w in zip(weights.e, grad_weights):
         assert grad_w == weighted_gp_output.map(lambda v: v.diff(wi))
 
-    @alg.compile(symbolic=True, codegen_symbolcls=Symbol)
+    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def weighted_gp_grad(x, y, weights: MultiVector[10], go) -> MultiVector[18]:
         syms: list[Symbol] = [*x.values(), *y.values(), *weights.e]
         wgp_output = weighted_gp(x, y, weights)
@@ -97,7 +97,7 @@ def test_codegen_weights(codegen_symbolcls):
     assert reduce_gp.codegen_output_type == MultiVector
     x2 = alg2.multivector(name='x')
     y2 = alg2.multivector(name='y')
-    mv_symbols = [(xv, yv) for xv, yv in zip(x2.values(), y2.values())]
+    mv_symbols = list(zip(x2.values(), y2.values()))
     mvs = alg2.multivector(values=mv_symbols)
     assert reduce_gp(mvs) == x2*y2
 
@@ -176,7 +176,8 @@ def test_codegen_set(codegen_symbolcls):
     assert z == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0
 
 
-def test_codegen_printer():
+@pytest.mark.parametrize('codegen_symbolcls', [RationalPolynomial.fromname, Symbol], ids=['RationalPolynomial', 'Symbol'])
+def test_codegen_printer(codegen_symbolcls):
     alg = Algebra(2)
     x = alg.multivector(name='x')
     y = alg.multivector(name='y')
@@ -196,7 +197,7 @@ def test_codegen_printer():
     my_printer = MyPrinter()
     my_func_printer = MyEvaluatorPrinter(my_printer)
 
-    @alg.compile(symbolic=True, printer=my_printer, func_printer=my_func_printer, wrapper=my_wrapper)
+    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls, printer=my_printer, func_printer=my_func_printer, wrapper=my_wrapper)
     def my_gp(x, y):
         return x*y
     res = my_gp(x, y)

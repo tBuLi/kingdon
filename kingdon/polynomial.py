@@ -668,6 +668,24 @@ class Polynomial:
             return bool(self.args[0][0])
         return bool(self.args)
 
+    def diff(self, var):
+        """Differentiate with respect to var (string or Polynomial.fromname(string))."""
+        if isinstance(var, self.__class__):
+            var_name = var.args[0][1]
+        else:
+            var_name = var
+
+        result = self.__class__([])
+        for monomial in self.args:
+            variables = monomial[1:]
+            n = variables.count(var_name)
+            if n == 0:
+                continue
+            new_vars = list(variables)
+            new_vars.remove(var_name)
+            result = result + self.__class__([[n * monomial[0]] + new_vars])
+        return result
+
 
 class RationalPolynomial:
     def __init__(self, numer, denom=None):
@@ -794,6 +812,17 @@ class RationalPolynomial:
     def tosympy(self):
         """ Return a sympy version of this Polynomial. """
         return self.numer.tosympy() / self.denom.tosympy()
+
+    def diff(self, var):
+        """Differentiate with respect to var (string or Polynomial.fromname(string))."""
+        f, g = self.numer, self.denom
+        fp = f.diff(var)
+        gp = g.diff(var)
+        numer = fp * g - f * gp
+        if numer == 0:
+            return self.__class__([])
+        denom = g * g
+        return self.__class__(numer, denom)
 
     def __bool__(self):
         return self.numer.__bool__()
