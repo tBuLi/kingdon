@@ -12,7 +12,7 @@ with open('HISTORY.rst') as history_file:
 
 requirements = ['numpy', 'sympy', 'anywidget']
 
-test_requirements = ['pytest>=3', ]
+test_requirements = ['pytest>=3', 'einops']
 
 setup(
     author="Martin Roelfs",
@@ -32,6 +32,7 @@ setup(
     ],
     description="Pythonic Geometric Algebra Package",
     install_requires=requirements,
+    extras_require={'test': test_requirements},
     license="MIT license",
     long_description=readme + '\n\n' + history,
     include_package_data=True,
