@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from collections.abc import Mapping
 from typing import Callable, Tuple, NamedTuple
