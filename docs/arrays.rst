@@ -159,5 +159,101 @@ and the volume:
     >>> volume = np.sum(planes.e0)
 
 Yes, we just computed the signed volume directly from the coefficient of :math:`\mathbf{e}_0`! 
-This coefficient is the signed volume a plane makes with the area, and by adding this up for all 
+This coefficient is the signed volume a plane makes with the origin, and by adding this up for all 
 planes we find the volume of the mesh. For more info, see `this paper <https://arxiv.org/abs/2511.08058>`_.
+
+Einops
+------
+
+:code:`kingdon` is compatible with `einops <https://einops.rocks/>`_, enabling powerful tensor 
+manipulations directly on multivectors. 
+To use it, simply import the backend before any einops calls:
+
+.. code-block::
+
+    >>> import kingdon.einops_backend
+
+This registers the kingdon backend with einops that enables the application of einops operations to all 
+non-blade (batch) dimensions of a multivector, preserving the blade structure.
+The first dimension of the multivector is always the coefficients, and is therefore not available for 
+manipulation by the einops operations, as this would not be geometrically meaningful.
+
+Rearrange
+~~~~~~~~~
+
+:code:`rearrange` reshapes and reorders the batch dimensions of a multivector:
+
+.. code-block::
+
+    >>> from einops import rearrange
+    >>> from kingdon import Algebra
+    >>> import numpy as np
+    >>> 
+    >>> alg = Algebra(2)
+    >>> x = alg.vector(np.random.rand(2, 3, 4))
+    >>> x.shape
+    (2, 3, 4)
+    >>> y = rearrange(x, 'a b -> b a')
+    >>> y.shape
+    (2, 4, 3)
+
+Notice how the einops pattern :code:`'a b -> b a'` only makes reference to the non-blade
+dimensions of the multivector, but not the (first) blade dimensions.
+This is by design, and ensures that the result remains a vector.
+
+Reduce
+~~~~~~
+
+:code:`reduce` applies a reduction (e.g. mean, sum, max) along specified batch dimensions:
+
+.. code-block::
+
+    >>> from einops import reduce
+    >>> 
+    >>> y = reduce(x, 'a b -> a', 'mean')
+    >>> y.shape
+    (2, 3)
+
+Again, notice how the einops pattern :code:`'a b -> a'` only makes reference to the non-blade
+dimensions of the multivector.
+
+Pack & Unpack
+~~~~~~~~~~~~~
+
+:code:`pack` concatenates multivectors with compatible shapes along a wildcard axis, 
+and :code:`unpack` reverses the operation:
+
+.. code-block::
+
+    >>> from einops import pack, unpack
+    >>> 
+    >>> a = alg.vector(np.zeros([2, 3, 5]))
+    >>> b = alg.vector(np.zeros([2, 3, 7, 5]))
+    >>> packed, ps = pack([a, b], 'j * k')
+    >>> packed.shape
+    (2, 3, 8, 5)
+    >>> a2, b2 = unpack(packed, ps, 'j * k')
+    >>> a2.shape == a.shape and b2.shape == b.shape
+    True
+
+Again, notice how the einops patterns :code:`'j * k'` only make reference to the non-blade
+dimensions of the multivectors as these need to match the blades of the multivector and can therefore not be modified.
+
+Einsum
+~~~~~~
+
+:code:`einsum` performs einstein summation on multivectors, useful for e.g. traces or 
+matrix multiplications over batch dimensions:
+
+.. code-block::
+
+    >>> from einops import einsum
+    >>> 
+    >>> vec = alg.vector(np.random.randn(2, 10, 10))
+    >>> trace = einsum(vec, '... i i -> ...')
+    >>> trace.shape
+    (2,)
+    >>> weight = np.random.randn(10, 20)
+    >>> matmul = einsum(vec, weight, '... i, i j -> ... j')
+    >>> matmul.shape
+    (2, 10, 20)

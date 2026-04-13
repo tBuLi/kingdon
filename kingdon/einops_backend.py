@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-from einops._backends import AbstractBackend
+from einops._backends import AbstractBackend, get_backend
 
 from kingdon.multivector import MultiVector
 
@@ -17,29 +17,39 @@ class KingdonBackend(AbstractBackend):
         return x.shape[1:]
 
     def reshape(self, x: MultiVector, shape: tuple[int, ...]) -> MultiVector:
-        return x.map(lambda v: v.reshape(shape))
+        if isinstance(x._values, (list, tuple)):
+            return x.map(lambda v: get_backend(v).reshape(v, shape))
+        values = get_backend(x._values).reshape(x._values, (len(x._values), *shape))
+        return MultiVector(x.algebra, keys=x.keys(), values=values)
 
     def transpose(self, x: MultiVector, axes: tuple[int, ...]) -> MultiVector:
-        return x.map(lambda v: v.transpose(axes))
+        if isinstance(x._values, (list, tuple)):
+            return x.map(lambda v: get_backend(v).transpose(v, axes))
+        axes = [0, *(i + 1 for i in axes)]
+        values = get_backend(x._values).transpose(x._values, axes)
+        return MultiVector(x.algebra, keys=x.keys(), values=values)
 
     def reduce(self, x: MultiVector, operation: str, axes: tuple[int, ...]) -> MultiVector:
-        return x.map(lambda v: getattr(v, operation)(axis=axes))
+        if isinstance(x._values, (list, tuple)):
+            return x.map(lambda v: get_backend(v).reduce(v, operation, axes))
+        axes = [0, *(i + 1 for i in axes)]
+        values = get_backend(x._values).reduce(x._values, operation, axes)
+        return MultiVector(x.algebra, keys=x.keys(), values=values)
 
-    def add_axis(self, x: MultiVector, new_position: int) -> MultiVector:
-        return x.map(lambda v: np.expand_dims(v, new_position))
+    def concat(self, mvs: list[MultiVector], axis: int) -> MultiVector:
+        keys = mvs[0].keys()
+        if not all(mv.keys() == keys for mv in mvs[1:]):
+            raise TypeError('To concat all multivectors must have the same keys (i.e. basis blades).')
+        backend = get_backend(mvs[0].values())
+        values = backend.concat([mv.values() for mv in mvs], axis + 1)
+        return MultiVector.fromkeysvalues(mvs[0].algebra, keys, values)
 
-    def stack_on_zeroth_dimension(self, tensors: list[MultiVector]) -> MultiVector:
-        keys = tensors[0].keys()
-        values = [np.stack([t._values[i] for t in tensors]) for i in range(len(keys))]
-        return MultiVector.fromkeysvalues(tensors[0].algebra, keys, values)
-
-    def tile(self, x: MultiVector, repeats: tuple[int, ...]) -> MultiVector:
-        return x.map(lambda v: np.tile(v, repeats))
-
-    def concat(self, tensors: list[MultiVector], axis: int) -> MultiVector:
-        keys = tensors[0].keys()
-        values = [np.concatenate([t._values[i] for t in tensors], axis=axis) for i in range(len(keys))]
-        return MultiVector.fromkeysvalues(tensors[0].algebra, keys, values)
+    def einsum(self, pattern, *mvs: list[MultiVector]):
+        base_mv = max([mv for mv in mvs if isinstance(mv, MultiVector)], key=lambda mv: len(mv.shape))
+        _values = [mv._values if isinstance(mv, MultiVector) else mv for mv in mvs]
+        backend = get_backend(_values[0])
+        values = backend.einsum(pattern, *_values)
+        return MultiVector(base_mv.algebra, keys=base_mv.keys(), values=values)
 
     def is_float_type(self, x: MultiVector) -> bool:
         first_val = list(x.values())[0]
