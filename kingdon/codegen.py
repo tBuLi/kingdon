@@ -649,6 +649,13 @@ def _rp_var_name(v):
     return '_'
 
 
+def unflatten(template, flat):
+    it = iter(flat)
+    def walk(t):
+        return type(t)(walk(x) for x in t) if isinstance(t, (list, tuple)) else next(it)
+    return walk(template)
+
+
 def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, denom_simplified, output_mv_idx=None):
     """
     Build a Python function from pre-computed polynomial CSE results.
@@ -694,14 +701,15 @@ def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, 
     ret_parts = [
         poly_format(simp) if (denom_ref is None or e.denom == 1)
         else f'({poly_format(simp)})/({denom_ref})'
-        for e, simp in zip(exprs, numer_simplified)
+        for e, simp in zip(flatten(exprs), numer_simplified)
     ]
+    ret_parts = unflatten(exprs, ret_parts)
     if output_mv_idx is not None:
         output_name = names[output_mv_idx]
-        body_lines.append(f'    {output_name}[:] = [{", ".join(ret_parts)},]')
+        body_lines.append(f'    {output_name}[:] = {str(ret_parts).replace("'", "")}')
         body_lines.append('    return ()')
     else:
-        body_lines.append(f'    return [{", ".join(ret_parts)},]')
+        body_lines.append(f'    return {str(ret_parts).replace("'", "")}')
 
     header = f'def {funcname}({", ".join(names)}):'
     return _build_and_cache_func(header, body_lines, funcname)
@@ -759,21 +767,22 @@ def lambdify(
         If :code:`None`, the generated function will return the values of the multivector.
     :return: Function that represents that can be used to calculate the values of exprs.
     """
-    tosympy = lambda x: x.tosympy() if hasattr(x, 'tosympy') else x
     cses, _exprs = [], exprs
     cse_pairs, numer_simplified, denom_simplified = None, None, None
 
-    if exprs and all(isinstance(e, RationalPolynomial) for e in exprs):
+    flattened_exprs = flatten(exprs)
+    if exprs and all(isinstance(e, RationalPolynomial) for e in flattened_exprs):
         if cse:
-            non_unit = [e for e in exprs if e.denom != 1]
+            non_unit = [e for e in flattened_exprs if e.denom != 1]
             if not non_unit or all(e.denom == non_unit[0].denom for e in non_unit):
                 common_denom = non_unit[0].denom if non_unit else None
-                cse_pairs, numer_simplified, denom_simplified = _poly_cse_compute(exprs, common_denom)
+                cse_pairs, numer_simplified, denom_simplified = _poly_cse_compute(flattened_exprs, common_denom)
 
                 if printer is None and func_printer is None:
                     return _lambdify_poly_cse(args, exprs, funcname, cse_pairs, numer_simplified, denom_simplified,
                                               output_mv_idx=output_mv_idx)
 
+    tosympy = lambda x: x.tosympy() if hasattr(x, 'tosympy') else x
     if cse_pairs is not None:
         args = {name: [tosympy(v) for v in values] for name, values in args.items()}
         cses = [(name, tosympy(Polynomial(poly_args))) for name, poly_args in cse_pairs]
@@ -803,14 +812,6 @@ def lambdify(
         )
     if func_printer is None:
         func_printer = KingdonPrinter(printer)
-
-    # TODO: Figure out how to incorperate this after the merge is complete.
-    # def unflatten(template, flat):
-    #     it = iter(flat)
-    #     def walk(t):
-    #         return type(t)(walk(x) for x in t) if isinstance(t, (list, tuple)) else next(it)
-    #     return walk(template)
-    # flat_exprs = flatten(exprs)
 
     names = tuple(arg if isinstance(arg, str) else arg.name for arg in args.keys())
     iterable_args = tuple(args.values())

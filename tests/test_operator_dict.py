@@ -83,7 +83,7 @@ def test_codegen_weights(codegen_symbolcls):
     assert grads.shape == (1, 18)
     go_wgp = go.sp(weighted_gp_output)
     for s, grad in zip([*x.values(), *y.values(), *weights.e], grads.e):
-        assert grad == go_wgp.map(lambda v: v.diff(s)).e
+        assert not (grad - go_wgp.map(lambda v: v.diff(s)).e).expand()
 
     # Test non-scalar shaped multivector type-hint
     alg2 = Algebra(2)
@@ -157,7 +157,7 @@ def test_codegen_set(codegen_symbolcls):
         z.set(x*y)
 
     res = set_gp(x, y, z)
-    assert res == alg.multivector()
+    assert res == None
     assert z == x*y
 
     @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
@@ -172,7 +172,7 @@ def test_codegen_set(codegen_symbolcls):
     x0, x1, x2 = x.grade(0), x.grade(1), x.grade(2)
     y0, y1, y2 = y.grade(0), y.grade(1), y.grade(2)
     res = weighted_gp_set(x, y, weights, z)
-    assert res == alg.multivector()
+    assert res == None
     assert z == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0
 
 

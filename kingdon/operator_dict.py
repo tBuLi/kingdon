@@ -227,9 +227,10 @@ class OperatorDict(Mapping):
         if issymbolic and self.algebra.simp_func:
             keys_out, values_out = self.filter(keys_out, values_out)
             output_mv_idx = getattr(func, 'output_mv_idx', None)
-            if output_mv_idx is not None:
+            if output_mv_idx is not None:  # The user used .set
                 mv_out = mvs[output_mv_idx]
                 mv_out._values[:] = [self.algebra.simp_func(v) for v in mv_out._values]
+                return None
 
         return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)
 
