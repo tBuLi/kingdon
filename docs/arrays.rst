@@ -3,27 +3,27 @@ Array Syntax
 ============
 (`interactive example <https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_boids.ipynb>`_)
 
-Kingdon was designed to be agnostic to coefficient types, and therefore it is compatible with 
+Kingdon was designed to be agnostic to coefficient types, and therefore it is compatible with
 popular array types such as :code:`numpy` or :code:`torch`.
-In order to facilitate working with multivectors over arrays, :code:`kingdon` fully 
+In order to facilitate working with multivectors over arrays, :code:`kingdon` fully
 supports :code:`numpy`'s array indexing and masking syntax, which results in compact yet performant code.
 
 .. note::
-    These design choices were made in part because working with a multivector of arrays is *much* faster 
+    These design choices were made in part because working with a multivector of arrays is *much* faster
     than working with an array of multivectors.
 
 
 The Shape of MultiVectors
 -------------------------
 
-The first dimension of a multivector is always the coefficients of the multivector. 
+The first dimension of a multivector is always the coefficients of the multivector.
 For example, to create a vector in :math:`\mathbb{R}_3` we could do
 
 .. code-block::
 
     >>> from kingdon import Algebra
     >>> import numpy as np
-    >>> 
+    >>>
     >>> alg = Algebra(3)
     >>> xvals = np.random.rand(3)
     >>> x = alg.vector(xvals)
@@ -38,14 +38,14 @@ However, the length of :code:`x` is :code:`0`:
     >>> len(x)
     0
 
-This reflects that :code:`x` is a single vector, and therefore not iterable. You might have expected 
-iteration over a multivector to iterate over its coefficients, but in :code:`kingdon` multivectors are 
+This reflects that :code:`x` is a single vector, and therefore not iterable. You might have expected
+iteration over a multivector to iterate over its coefficients, but in :code:`kingdon` multivectors are
 treated as geometric numbers, similar to how complex numbers are treated in complex analysis.
 
 .. note::
-    If you need to iterate over the coefficients anyway use :code:`x.map` to map a function on all the 
+    If you need to iterate over the coefficients anyway use :code:`x.map` to map a function on all the
     coefficients of the multivector.
-    For individual access, use attributes access instead, e.g. :code:`x.e1` returns the 
+    For individual access, use attributes access instead, e.g. :code:`x.e1` returns the
     :math:`\mathbf{e}_1` coefficient.
 
 Now lets make a collection of :math:`N` vectors, and see what changes:
@@ -62,7 +62,7 @@ Now lets make a collection of :math:`N` vectors, and see what changes:
     >>> len(x)
     5
 
-Hence, we see that the length of the multivector is :code:`5`, and therefore we can iterate over the 
+Hence, we see that the length of the multivector is :code:`5`, and therefore we can iterate over the
 multivector to get the individual vectors in :code:`x`:
 
 .. code-block::
@@ -75,7 +75,7 @@ multivector to get the individual vectors in :code:`x`:
     0.599 𝐞₁ + 0.601 𝐞₂ + 0.212 𝐞₃
     0.156 𝐞₁ + 0.708 𝐞₂ + 0.182 𝐞₃
 
-A huge benefit of multidimensional multivectors is that the resulting code is very compact. 
+A huge benefit of multidimensional multivectors is that the resulting code is very compact.
 For example, to compute the norm of (all vectors in) :code:`x`, we simply do
 
 .. code-block::
@@ -87,7 +87,7 @@ For example, to compute the norm of (all vectors in) :code:`x`, we simply do
 Masking & Indexing
 ------------------
 
-Now suppose we were only interested in those vectors with :math:`d > 1`, 
+Now suppose we were only interested in those vectors with :math:`d > 1`,
 we can use numpy's masking syntax to do
 
 .. code-block::
@@ -97,11 +97,11 @@ we can use numpy's masking syntax to do
     [0.95071431 0.73199394] 𝐞₁ + [0.05808361 0.86617615] 𝐞₂ + [0.96990985 0.83244264] 𝐞₃
 
 First, :code:`d.e` selects the scalar coefficient of the multivector :code:`d`.
-Then, :code:`d.e > 1` creates the boolean array :code:`[False  True  True False False]`, indicating 
-which elements satisfy the condition. Lastly, :code:`x[d.e > 1]` passes this condition on to the 
+Then, :code:`d.e > 1` creates the boolean array :code:`[False  True  True False False]`, indicating
+which elements satisfy the condition. Lastly, :code:`x[d.e > 1]` passes this condition on to the
 multivector coefficients, which are all arrays of shape :code:`(5,)`.
-Importantly, :code:`kingdon` passes the thing between the square brackets (:code:`x[...]`) on to the 
-coefficients *unseen*, thus enabling not only numpy style indexing and masking, but also 
+Importantly, :code:`kingdon` passes the thing between the square brackets (:code:`x[...]`) on to the
+coefficients *unseen*, thus enabling not only numpy style indexing and masking, but also
 any other magic your coefficients might do with :code:`__getitem__` overloading.
 
 Mesh
@@ -109,13 +109,13 @@ Mesh
 
 As an example of this powerful syntax, consider a mesh defined by two arrays:
 
-- :code:`vertices`: a float array of shape :code:`(N, 4)` that defines the :math:`(x, y, z, 1)` 
+- :code:`vertices`: a float array of shape :code:`(N, 4)` that defines the :math:`(x, y, z, 1)`
   homogenous coordinates of :math:`N` vertices.
-- :code:`faces`: an integer array of shape :code:`(M, 3)` that defines the topology of the faces 
+- :code:`faces`: an integer array of shape :code:`(M, 3)` that defines the topology of the faces
   of the mesh. The integers are indices into the :code:`vertices` array, and hence in the range :math:`[0, N)`.
 
 
-In order to convert the vertices to multivectors (in 3DPGA), we need to transpose :code:`vertices` such that the 
+In order to convert the vertices to multivectors (in 3DPGA), we need to transpose :code:`vertices` such that the
 :code:`x,y,z`-coordinates can be matched up with the :math:`\mathbf{e}_i^*` directions:
 
 .. code-block::
@@ -125,10 +125,10 @@ In order to convert the vertices to multivectors (in 3DPGA), we need to transpos
     >>> v.shape
     (4, N)
 
-Suppose we now want to alternativelly have a datastructure of shape :math:`(4, M, 3)`, 
-which explicitelly contains the coordinates of the vertices for every face, similar to how 
+Suppose we now want to alternativelly have a datastructure of shape :math:`(4, M, 3)`,
+which explicitelly contains the coordinates of the vertices for every face, similar to how
 `STL files <https://en.wikipedia.org/wiki/STL_(file_format)#ASCII>`_ are structured.
-This is now as simple as 
+This is now as simple as
 
 .. code-block::
 
@@ -136,7 +136,7 @@ This is now as simple as
     >>> facets.shape
     (4, M, 3)
 
-In order to compute the area and (signed) volume of the mesh we can use numpy's indexing 
+In order to compute the area and (signed) volume of the mesh we can use numpy's indexing
 syntax to first create all planes,
 
 .. code-block::
@@ -158,25 +158,34 @@ and the volume:
 
     >>> volume = np.sum(planes.e0)
 
-Yes, we just computed the signed volume directly from the coefficient of :math:`\mathbf{e}_0`! 
-This coefficient is the signed volume a plane makes with the origin, and by adding this up for all 
+Yes, we just computed the signed volume directly from the coefficient of :math:`\mathbf{e}_0`!
+This coefficient is the signed volume a plane makes with the origin, and by adding this up for all
 planes we find the volume of the mesh. For more info, see `this paper <https://arxiv.org/abs/2511.08058>`_.
 
 Einops
 ------
 
-:code:`kingdon` is compatible with `einops <https://einops.rocks/>`_, enabling powerful tensor 
-manipulations directly on multivectors. 
+:code:`kingdon` is compatible with `einops <https://einops.rocks/>`_, enabling powerful tensor
+manipulations directly on multivectors, whose coefficients are in turn tensors/arrays of one 
+of the supported backends
+(`numpy <https://numpy.org/>`__,
+`PyTorch <https://pytorch.org/>`__,
+`JAX <https://jax.readthedocs.io/>`__,
+`CuPy <https://cupy.dev/>`__,
+`MLX <https://github.com/ml-explore/mlx>`__,
+`tinygrad <https://github.com/tinygrad/tinygrad>`__,
+`Paddle <https://www.paddlepaddle.org.cn/en>`__,
+`Flax <https://flax.readthedocs.io/>`__).
 To use it, simply import the backend before any einops calls:
 
 .. code-block::
 
     >>> import kingdon.einops_backend
 
-This registers the kingdon backend with einops that enables the application of einops operations to all 
-non-blade (batch) dimensions of a multivector, preserving the blade structure.
-The first dimension of the multivector is always the coefficients, and is therefore not available for 
-manipulation by the einops operations, as this would not be geometrically meaningful.
+This registers the kingdon backend with einops that enables the application of einops operations on multivectors.
+As we have seen in this section, the first dimension of the multivector is always the coefficients,
+and is therefore not available for  manipulation by the einops operations, as this would not be geometrically meaningful.
+So in your :code:`einops` operations, be sure to ignore the first dimension; it is not yours to play with.
 
 Rearrange
 ~~~~~~~~~
@@ -187,8 +196,9 @@ Rearrange
 
     >>> from einops import rearrange
     >>> from kingdon import Algebra
+    >>> import kingdon.einops_backend
     >>> import numpy as np
-    >>> 
+    >>>
     >>> alg = Algebra(2)
     >>> x = alg.vector(np.random.rand(2, 3, 4))
     >>> x.shape
@@ -209,7 +219,7 @@ Reduce
 .. code-block::
 
     >>> from einops import reduce
-    >>> 
+    >>>
     >>> y = reduce(x, 'a b -> a', 'mean')
     >>> y.shape
     (2, 3)
@@ -220,13 +230,13 @@ dimensions of the multivector.
 Pack & Unpack
 ~~~~~~~~~~~~~
 
-:code:`pack` concatenates multivectors with compatible shapes along a wildcard axis, 
+:code:`pack` concatenates multivectors with compatible shapes along a wildcard axis,
 and :code:`unpack` reverses the operation:
 
 .. code-block::
 
     >>> from einops import pack, unpack
-    >>> 
+    >>>
     >>> a = alg.vector(np.zeros([2, 3, 5]))
     >>> b = alg.vector(np.zeros([2, 3, 7, 5]))
     >>> packed, ps = pack([a, b], 'j * k')
@@ -242,13 +252,17 @@ dimensions of the multivectors as these need to match the blades of the multivec
 Einsum
 ~~~~~~
 
-:code:`einsum` performs einstein summation on multivectors, useful for e.g. traces or 
-matrix multiplications over batch dimensions:
+:code:`einsum` performs einstein summation on multivectors, useful for e.g. traces or
+matrix multiplications over batch dimensions.
+This is the only exception to the :code:`einops` pattern having to ignore the multivector coefficient dimension:
+be sure to include it.
+Usually however, the dimensions at the beginning are irrelevant and so the coefficients are
+automatically captured by :code:`...`.
 
 .. code-block::
 
     >>> from einops import einsum
-    >>> 
+    >>>
     >>> vec = alg.vector(np.random.randn(2, 10, 10))
     >>> trace = einsum(vec, '... i i -> ...')
     >>> trace.shape
