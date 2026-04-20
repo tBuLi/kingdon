@@ -90,9 +90,28 @@ Massive large algebra improvement!
 * Exotic algebras like 2DCSGA (R5,3), Mother Algebra (R4,4) and 3DCCGA (R6,3) are no longer out of reach, see teahouse!
 * Bugfix: multivectors now take priority over numpy arrays in binary operators even when the numpy array is on the left.
 
-2.0.0 (2026-02-10)
+2.0.0 (2026-03-03)
 ------------------
 * Length of a multivector is now defined such that multivectors are sequences if their coefficients are arrays.
   This allows users to iterate over e.g. point clouds naturally.
 * Improved documentation for array syntax.
 * Large algebra performance improvements.
+
+2.1.0 (2026-03-12)
+------------------
+* The conjugation operator ``>>`` now implements the twisted Clifford-Lipschitz action, meaning that it correctly implements sign flips on the basis of grade. Moreover, it now assumes that :math:`R\tilde{R}=1`, which allows us to carry out performance improvements in the future. See #123. This also means that if this not what you desire, you should implement your own sandwich operator.
+* The projection ``@`` now assumes that the second argument is a versor (k-reflection).
+* Graphs can now be updated on the fly with the ``GraphWidget.update`` method.
+* The options provided to ``GraphWidget`` now also include a ``style`` argument, which allows you to set arbitrary arguments on ``canvas.style`` and so the graphs can now be customized to a much larger degree.
+
+2.1.1 (2026-04-14)
+------------------
+Bugfix: width and height should be direct options to Algebra.graph
+
+Unpublished
+-----------
+* Einops is now supported on Multivectors, allowing users to write einops expressions on multivector coefficients and seamlessly mix them with kingdon operations. See #46.
+* GAmphetamine.js inspired Common Subexpression Elimination (CSE) has been implemented, resulting in code that is as fast as hand optimized code for known test cases.
+* The ``compile`` decorator now uses the new CSE by default, so compiled functions are now even faster without any changes to user code.
+* ``RationalPolynomial`` now has a ``diff`` method similar to that of SymPy.
+* The ``set`` method of Multivectors can be used within compiled functions to update coefficients in-place instead of returning a multivector.
