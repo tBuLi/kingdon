@@ -6,7 +6,7 @@ from sympy import symbols, Symbol
 from kingdon.operator_dict import OperatorDict, UnaryOperatorDict
 from kingdon.codegen import codegen_gp, codegen_inv
 from kingdon.polynomial import RationalPolynomial
-from kingdon import Algebra, MultiVector
+from kingdon import Algebra, MultiVector, stack
 
 
 def test_operator_dict():
@@ -59,8 +59,9 @@ def test_codegen_weights(codegen_symbolcls):
 
     @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def weighted_gp_grad_weights(x, y, weights: MultiVector[10]) -> MultiVector[10]:
+        """ Output a single mv of shape (coeff, 10). These are all stacked with the same shape, so zeros are not eliminated."""
         weighted_gp_output = weighted_gp(x, y, weights)
-        return [weighted_gp_output.map(lambda v: v.diff(wi)) for wi in weights.e]
+        return stack([weighted_gp_output.map(lambda v: v.diff(wi)) for wi in weights.e])
 
     assert weighted_gp_grad_weights.codegen_input_types == {'x': MultiVector, 'y': MultiVector, 'weights': (MultiVector, 10)}
     assert weighted_gp_grad_weights.codegen_output_type == (MultiVector, 10)
@@ -73,7 +74,7 @@ def test_codegen_weights(codegen_symbolcls):
         syms: list[Symbol] = [*x.values(), *y.values(), *weights.e]
         wgp_output = weighted_gp(x, y, weights)
         go_wgp = go.sp(wgp_output)  # sp -> scalar product
-        return [go_wgp.map(lambda v: v.diff(s)) for s in syms]
+        return stack([go_wgp.map(lambda v: v.diff(s)) for s in syms])
 
     assert weighted_gp_grad.codegen_input_types == {'x': MultiVector, 'y': MultiVector, 'weights': (MultiVector, 10), 'go': MultiVector}
     assert weighted_gp_grad.codegen_output_type == (MultiVector, 18)
@@ -100,6 +101,46 @@ def test_codegen_weights(codegen_symbolcls):
     mv_symbols = list(zip(x2.values(), y2.values()))
     mvs = alg2.multivector(values=mv_symbols)
     assert reduce_gp(mvs) == x2*y2
+
+
+@pytest.mark.xfail(reason='Compiling a function that returns a list of multivectors is not supported yet.')
+@pytest.mark.parametrize('codegen_symbolcls', [RationalPolynomial.fromname, Symbol], ids=['RationalPolynomial', 'Symbol'])
+def test_wgp_list(codegen_symbolcls):
+    """Generate a function that returns a list of multivectors."""
+    alg = Algebra(2)
+
+    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    def weighted_gp(x, y, weights: MultiVector[10]):
+        w0, w1, w2, w3, w4, w5, w6, w7, w8, w9 = weights
+        X0, X1, X2 = (x.grade(g) for g in range(alg.d + 1))
+        Y0, Y1, Y2 = (y.grade(g) for g in range(alg.d + 1))
+        return w0 * X0 * Y0 + w3 * (X1 | Y1) + w7 * X2 * Y2 \
+            + w1 * X0 * Y1 + w4 * X1 * Y0 + w5 * X1 * Y2 + w8 * X2 * Y1 \
+            + w2 * X0 * Y2 + w6 * (X1 ^ Y1) + w9 * X2 * Y0
+
+    assert weighted_gp.codegen_input_types == {'x': MultiVector, 'y': MultiVector, 'weights': (MultiVector, 10)}
+    assert weighted_gp.codegen_output_type == MultiVector
+    x = alg.multivector(name='x')
+    y = alg.multivector(name='y')
+    ws = symbols('w:10')
+    weights = alg.scalar(e=ws)
+    weighted_gp_output = weighted_gp(x, y, weights)
+
+    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    def weighted_gp_grad_weights_list(x, y, weights: MultiVector[10]) -> list[MultiVector]:
+        """
+        Generate a list of output mv's of different shape. Same content as weighted_gp_grad_weight,
+        but zeros can be eliminated here.
+        """
+        weighted_gp_output = weighted_gp(x, y, weights)
+        return [weighted_gp_output.map(lambda v: v.diff(wi)).filter() for wi in weights.e]
+
+    assert weighted_gp_grad_weights_list.codegen_input_types == {'x': MultiVector, 'y': MultiVector, 'weights': (MultiVector, 10)}
+    assert weighted_gp_grad_weights_list.codegen_output_type == list[MultiVector]
+    grad_weights_list = weighted_gp_grad_weights_list(x, y, weights)
+    assert isinstance(grad_weights_list, list)
+    for wi, grad_w in zip(weights.e, grad_weights_list):
+        assert grad_w == weighted_gp_output.map(lambda v: v.diff(wi))
 
 
 @pytest.mark.parametrize('codegen_symbolcls', [RationalPolynomial.fromname, Symbol], ids=['RationalPolynomial', 'Symbol'])

@@ -504,14 +504,6 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
         res = mvs[output_mv_idx]
         mvs = mvs_orig
 
-    # Turn a list of Multivectors into a single Multivector of lists.
-    if isinstance(res, (list, tuple)):
-        reshaped_res = defaultdict(list)
-        for mv in res:
-            for k, v in mv.items():
-                reshaped_res[k].append(v)
-        res = reshaped_res
-
     funcname = f'{codegen.__name__}_' + '_x_'.join(f"{format(mv[0].type_number if isinstance(mv, list) else mv.type_number, 'X')}" for mv in mvs)
     args = {arg_name: [tuple(chain(*(x.values() for x in arg)))] if isinstance(arg, list) else arg.values()
             for arg_name, arg in zip(string.ascii_uppercase, mvs)}

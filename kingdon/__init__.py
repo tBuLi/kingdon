@@ -7,5 +7,5 @@ __version__ = '2.1.1'
 from sympy import symbols
 
 from kingdon.algebra import Algebra
-from kingdon.multivector import MultiVector
+from kingdon.multivector import MultiVector, stack
 from kingdon.matrixreps import expr_as_matrix

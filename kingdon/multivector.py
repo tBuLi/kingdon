@@ -680,3 +680,44 @@ class MultiVector(metaclass=MultiVectorType):
             raise Exception('Cannot select a suitable undual in auto mode for this algebra.')
         else:
             raise ValueError(f'No undual found for kind={kind}.')
+
+def stack(mvs: list[MultiVector], stack_func=list) -> MultiVector[None]:
+    """
+    Stack a list of multivectors along a new "first" dimension.
+    All multivectors must have the same keys and shape.
+    Remember that the first dimension of a multivector is always reserved for kingdon's multivector coefficients, so the new dimension will be the one after that.
+    As a result, this function returns a multivector with shape :code:`(mvs[0].shape[0], len(mvs), *mvs[0].shape[1:])`.
+    To be compatible with :code:`numpy` or :code:`torch` you can provide a custom `stack_func` that will be used to stack the values of the multivectors.
+
+    For example, to stack using torch you can use::
+
+        >>> import torch
+        >>> alg = Algebra(2)
+        >>> mvs = [alg.vector(torch.randn(2)) for _ in range(3)]
+        >>> x = stack(mvs, stack_func=torch.stack)
+        >>> x.shape
+        (2, 3)
+
+    In order to have more control over the stacking dimensions, use :code:`einops.pack` instead, like::
+
+        >>> import einops
+        >>> import kingdon.einops_backend
+        >>> alg = Algebra(2)
+        >>> mvs = [alg.vector(torch.randn(2, 4)) for _ in range(3)]
+        >>> x, _ = einops.pack(mvs, '* n')  # n matches 4, insert new dimension to the left
+        >>> x.shape
+        (2, 3, 4)
+        >>> y, _ = einops.pack(mvs, 'n *')  # n matches 4, insert new dimension to the right
+        >>> y.shape
+        (2, 4, 3)
+
+    :param mvs: List of multivectors to stack.
+    :param stack_func: Function to stack the values of the multivectors, like :code:`numpy.stack` or :code:`torch.stack`. Defaults to :code:`list`.
+    :return: A new multivector with shape :code:`(len(mvs), *mvs[0].shape)`.
+    """
+    if not all(mv.keys() == mvs[0].keys() for mv in mvs[1:]):
+        raise TypeError('All multivectors must have the same keys.')
+    if not all(mv.shape == mvs[0].shape for mv in mvs[1:]):
+        raise TypeError('All multivectors must have the same shape.')
+    per_key = zip(*(mv.values() for mv in mvs))
+    return MultiVector.fromkeysvalues(mvs[0].algebra, mvs[0].keys(), stack_func([stack_func(vals) for vals in per_key]))
