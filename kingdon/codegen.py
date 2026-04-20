@@ -698,7 +698,8 @@ def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, 
     ret_parts = unflatten(exprs, ret_parts)
     if output_mv_idx is not None:
         output_name = names[output_mv_idx]
-        body_lines.append(f'    {output_name}[:] = {str(ret_parts).replace("'", "")}')
+        for i, part in enumerate(ret_parts):
+            body_lines.append(f'    {output_name}[{i}] = {str(part).replace("'", "")}')
         body_lines.append('    return ()')
     else:
         body_lines.append(f'    return {str(ret_parts).replace("'", "")}')
@@ -895,14 +896,15 @@ class KingdonPrinter:
             else:
                 funcbody.append('{} = {}'.format(s, self._exprrepr(e)))
 
-        str_expr = _recursive_to_string(self._exprrepr, expr)
-
-        if '\n' in str_expr:
-            str_expr = '({})'.format(str_expr)
         if output_mv_idx is not None:
-            funcbody.append(f'{names[output_mv_idx]}[:] = {str_expr}')
+            for i, e in enumerate(expr):
+                e_str = _recursive_to_string(self._exprrepr, e)
+                funcbody.append(f'{names[output_mv_idx]}[{i}] = ({e_str})' if '\n' in e_str else f'{names[output_mv_idx]}[{i}] = {e_str}')
             funcbody.append('return ()')
         else:
+            str_expr = _recursive_to_string(self._exprrepr, expr)
+            if '\n' in str_expr:
+                str_expr = '({})'.format(str_expr)
             funcbody.append('return {}'.format(str_expr))
 
         funclines = [funcsig]

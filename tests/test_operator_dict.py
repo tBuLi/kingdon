@@ -53,7 +53,7 @@ def test_codegen_weights(codegen_symbolcls):
     weights = alg.scalar(e=ws)
     x0, x1, x2 = x.grade(0), x.grade(1), x.grade(2)
     y0, y1, y2 = y.grade(0), y.grade(1), y.grade(2)
-    keys_out, func = weighted_gp[x, y, weights]
+    keys_out, func, wrapped_func = weighted_gp[x, y, weights]
     weighted_gp_output = weighted_gp(x, y, weights)
     assert weighted_gp_output == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0
 
@@ -178,7 +178,7 @@ def test_codegen_wgp_generic(codegen_symbolcls):
     weights = alg.scalar(e=ws)
     x0, x1, x2 = x.grade(0), x.grade(1), x.grade(2)
     y0, y1, y2 = y.grade(0), y.grade(1), y.grade(2)
-    keys_out, func = wgp[x, y, weights]
+    keys_out, func, wrapped_func = wgp[x, y, weights]
     wgp_output = wgp(x, y, weights)
     assert wgp_output == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0
 

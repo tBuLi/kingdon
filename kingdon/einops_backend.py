@@ -9,8 +9,8 @@ from kingdon.multivector import MultiVector
 class KingdonBackend(AbstractBackend):
     framework_name = "kingdon"
 
-    def is_appropriate_type(self, tensor: object) -> bool:
-        return isinstance(tensor, MultiVector)
+    def is_appropriate_type(self, x: object) -> bool:
+        return isinstance(x, MultiVector)
 
     def shape(self, x: MultiVector) -> tuple[int, ...]:
         # Expose only the non-blade (batch) dimensions to einops.
@@ -47,7 +47,7 @@ class KingdonBackend(AbstractBackend):
     def einsum(self, pattern, *mvs: list[MultiVector]):
         base_mv = max([mv for mv in mvs if isinstance(mv, MultiVector)], key=lambda mv: len(mv.shape))
         _values = [mv._values if isinstance(mv, MultiVector) else mv for mv in mvs]
-        backend = get_backend(_values[0])
+        backend = get_backend(base_mv._values[0] if isinstance(base_mv._values, list) else base_mv._values)
         values = backend.einsum(pattern, *_values)
         return MultiVector(base_mv.algebra, keys=base_mv.keys(), values=values)
 

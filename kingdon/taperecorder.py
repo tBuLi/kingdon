@@ -79,18 +79,18 @@ class TapeRecorder:
         if not isinstance(other, self.__class__):
             # Assume scalar
             mvs = operator_dict.make_symbolic_mvs((self.keys(), (0,)), (self.shape, (1,)))
-            keys_out, func = operator_dict[mvs]
+            keys_out, func, *_ = operator_dict[mvs]
             expr = f'{func.__name__}({self.expr}, ({other},))'
         else:
             mvs = operator_dict.make_symbolic_mvs((self.keys(), other.keys()), (self.shape, other.shape))
-            keys_out, func = operator_dict[mvs]
+            keys_out, func, *_ = operator_dict[mvs]
             expr = f'{func.__name__}({self.expr}, {other.expr})'
         return self.__class__(algebra=self.algebra, expr=expr, keys=keys_out)
 
     def unary_operator(self, operator: str):
         operator_dict = getattr(self.algebra, operator)
         mv = operator_dict.make_symbolic_mvs((self.keys(),), (self.shape,))[0]
-        keys_out, func = operator_dict[mv]
+        keys_out, func, *_ = operator_dict[mv]
         expr = f'{func.__name__}({self.expr})'
         return self.__class__(algebra=self.algebra, expr=expr, keys=keys_out)
 

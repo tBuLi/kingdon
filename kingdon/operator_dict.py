@@ -108,6 +108,7 @@ class OperatorDictOutput(NamedTuple):
     """
     keys_out: Tuple[int]
     func: Callable
+    wrapped_func: Callable | None = None
 
 
 @dataclass
@@ -165,8 +166,8 @@ class OperatorDict(Mapping):
             # Make symbolic multivectors for each set of keys and generate the code.
             mvs = self.make_symbolic_mvs(keys_in, shapes_in)
             keys_out, func = do_codegen(self.codegen, *mvs, printer=self.printer, func_printer=self.func_printer)
-            self.algebra.numspace[func.__name__] = self.wrapper(func) if self.wrapper else func
-            self.operator_dict[keys_in] = OperatorDictOutput(keys_out, func)
+            self.algebra.numspace[func.__name__] = wrapped_func = self.wrapper(func) if self.wrapper else func
+            self.operator_dict[keys_in] = OperatorDictOutput(keys_out, func, wrapped_func)
         return self.operator_dict[keys_in]
 
     def __contains__(self, mvs: Tuple[MultiVector]):
@@ -216,13 +217,13 @@ class OperatorDict(Mapping):
         if len(mvs) == 2:
             return self._call_binary(*mvs)
 
-        keys_out, func = self[mvs]
+        keys_out, func, wrapped_func = self[mvs]
         values_in = tuple(mv.values() for mv in mvs)
         issymbolic = any(mv.issymbolic for mv in mvs)
-        if issymbolic or not mvs[0].algebra.wrapper:
+        if issymbolic:
             values_out = func(*values_in)
         else:
-            values_out = self.algebra.numspace[func.__name__](*values_in)
+            values_out = wrapped_func(*values_in)
 
         if issymbolic and self.algebra.simp_func:
             keys_out, values_out = self.filter(keys_out, values_out)
@@ -236,12 +237,12 @@ class OperatorDict(Mapping):
 
     def _call_binary(self, mv1, mv2):
         """ Specialization for binary operators. """
-        keys_out, func = self[mv1, mv2]
+        keys_out, func, wrapped_func = self[mv1, mv2]
         issymbolic = (mv1.issymbolic or mv2.issymbolic)
-        if issymbolic or not mv1.algebra.wrapper:
+        if issymbolic:
             values_out = func(mv1.values(), mv2.values())
         else:
-            values_out = self.algebra.numspace[func.__name__](mv1.values(), mv2.values())
+            values_out = wrapped_func(mv1.values(), mv2.values())
 
         if issymbolic and self.algebra.simp_func:
             keys_out, values_out = self.filter(keys_out, values_out)
@@ -265,20 +266,20 @@ class UnaryOperatorDict(OperatorDict):
         if keys_in not in self.operator_dict:
             mv = self.make_symbolic_mvs((keys_in,), (shape_in,))[0]
             keys_out, func = do_codegen(self.codegen, mv)
-            self.algebra.numspace[func.__name__] = self.wrapper(func) if self.wrapper else func
-            self.operator_dict[keys_in] = OperatorDictOutput(keys_out, func)
+            self.algebra.numspace[func.__name__] = wrapped_func = self.wrapper(func) if self.wrapper else func
+            self.operator_dict[keys_in] = OperatorDictOutput(keys_out, func, wrapped_func)
         return self.operator_dict[keys_in]
 
     @resolve_and_expand
     def __call__(self, mv):
         mv = self._sanitize_mvs((mv,))[0]
-        keys_out, func = self[mv]
+        keys_out, func, wrapped_func = self[mv]
 
         issymbolic = mv.issymbolic
-        if issymbolic or not mv.algebra.wrapper:
+        if issymbolic:
             values_out = func(mv.values())
         else:
-            values_out = self.algebra.numspace[func.__name__](mv.values())
+            values_out = wrapped_func(mv.values())
 
         if issymbolic and self.algebra.simp_func:
             keys_out, values_out = self.filter(keys_out, values_out)
@@ -294,14 +295,14 @@ class Registry(OperatorDict):
             tapes = [TapeRecorder(algebra=self.algebra, expr=name, keys=keys)
                      for name, keys in zip(string.ascii_lowercase, keys_in)]
             keys_out, func = do_compile(self.codegen, *tapes)
-            self.algebra.numspace[func.__name__] = self.wrapper(func) if self.wrapper else func
-            self.operator_dict[keys_in] = OperatorDictOutput(keys_out, func)
+            self.algebra.numspace[func.__name__] = wrapped_func = self.wrapper(func) if self.wrapper else func
+            self.operator_dict[keys_in] = OperatorDictOutput(keys_out, func, wrapped_func)
         return self.operator_dict[keys_in]
 
     @resolve_and_expand
     def __call__(self, *mvs):
         if all(isinstance(mv, TapeRecorder) for mv in mvs):
-            keys_out, func = self[mvs]
+            keys_out, func, wrapped_func = self[mvs]
             expr = f"{func.__name__}({', '.join(mv.expr for mv in mvs)})"
             return TapeRecorder(self.algebra, keys=keys_out, expr=expr)
 
@@ -312,11 +313,7 @@ class Registry(OperatorDict):
             raise AlgebraError("Cannot multiply elements of different algebra's.")
 
         values_in = tuple(mv.values() for mv in mvs)
-        keys_out, func = self[mvs]
-
-        if not mvs[0].algebra.wrapper:
-            values_out = func(*values_in)
-        else:
-            values_out = self.algebra.numspace[func.__name__](*values_in)
+        keys_out, func, wrapped_func = self[mvs]
+        values_out = wrapped_func(*values_in)
 
         return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)

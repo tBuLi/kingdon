@@ -188,6 +188,13 @@ class MultiVector(metaclass=MultiVectorType):
     @property
     def shape(self) -> tuple:
         """ Return the shape of the .values() attribute of this multivector. """
+        def _list_shape(v):
+            if isinstance(v, (list, tuple)) and v and isinstance(v[0], (list, tuple)):
+                inner = _list_shape(v[0])
+                if all(isinstance(w, (list, tuple)) and len(w) == len(v[0]) for w in v[1:]):
+                    return (len(v), *inner)
+            return (len(v),)
+
         if hasattr(self._values, 'shape'):
             return self._values.shape
         if self._values:
@@ -195,7 +202,7 @@ class MultiVector(metaclass=MultiVectorType):
             if hasattr(first, 'shape') and all(getattr(v, 'shape', None) == first.shape for v in self._values[1:]):
                 return (len(self._values), *first.shape)
             if isinstance(first, (list, tuple)) and all(isinstance(v, (list, tuple)) and len(v) == len(first) for v in self._values[1:]):
-                return (len(self._values), len(first))
+                return (len(self._values), *_list_shape(first))
         return (len(self._values),)
 
     @cached_property
@@ -336,6 +343,8 @@ class MultiVector(metaclass=MultiVectorType):
                 item = (item,)
             return_values = values[(slice(None), *item)]
         elif values and all(iterable(value) for value in values):
+            if isinstance(item, tuple) and len(item) == 1 and isinstance(values[0], (list, tuple)):
+                item = item[0]
             return_values = values.__class__(value[item] for value in values)
         else:
             raise IndexError("Cannot index a multivector with a non-iterable value.")
@@ -355,7 +364,7 @@ class MultiVector(metaclass=MultiVectorType):
                 self_values[indices] = other_value
         else:
             self.values()[(slice(None), *indices)] = values
-    
+
     def set(self, other: 'MultiVector') -> "Self":
         """Overwrite the values of this MV with the values of another MV."""
         if self.keys() != other.keys():
