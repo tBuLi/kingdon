@@ -3,7 +3,7 @@ from __future__ import annotations
 import string
 from itertools import product, combinations, groupby, chain
 from collections import namedtuple, defaultdict
-from typing import NamedTuple, Callable, Tuple, Dict, Optional, List
+from typing import NamedTuple, Callable, Tuple, Dict, Optional, List, Type
 from functools import reduce, cached_property
 import linecache
 import warnings
@@ -33,6 +33,7 @@ class CodegenOutput(NamedTuple):
     """
     keys_out: Tuple[int]
     func: Callable
+    MVType: Type = None
 
 
 def codegen_product(x, y, filter_func=None, sign_func=None, keyout_func=operator.xor):
@@ -384,7 +385,7 @@ def codegen_add(x, y):
             vals[k] = vals[k] + v
         else:
             vals[k] = v
-    return vals
+    return {k: v for k, v in vals.items() if v != 0}
 
 
 def codegen_sub(x, y):
@@ -394,7 +395,7 @@ def codegen_sub(x, y):
             vals[k] = vals[k] - v
         else:
             vals[k] = -v
-    return vals
+    return {k: v for k, v in vals.items() if v != 0}
 
 def codegen_neg(x):
     return {k: -v for k, v in x.items()}
@@ -452,10 +453,7 @@ def codegen_polarity(x, undual=False):
     sign = x.algebra.signs[key_pss, key_pss]
     if sign == -1:
         return - x * x.algebra.pss
-    if sign == 1:
-        return x * x.algebra.pss
-    if sign == 0:
-        raise ZeroDivisionError
+    return codegen_gp(x, x.algebra.pss)
 
 
 def codegen_unpolarity(x):
@@ -484,7 +482,53 @@ def _lambdify_mv(mv):
     return CodegenOutput(tuple(mv.keys()), func)
 
 
-def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
+def best_fit_layout(res_layout, layouts):
+    """
+    Find the candidate layout from ``layouts`` that best fits ``res_layout``.
+
+    A layout ``L`` is feasible iff:
+
+    - every fixed float in ``res_layout`` is matched by the same float in ``L``
+      or by ``...`` in ``L`` (a free slot can absorb a fixed value);
+    - every Ellipsis key in ``res_layout`` is present in ``L`` as ``...``;
+    - ``L`` has no fixed-float entries at keys absent from ``res_layout``.
+
+    Among feasible candidates, the lexicographic minimum of ``(loose, excess)``
+    wins, where ``loose`` counts floats in ``res_layout`` that ``L`` fills with
+    ``...`` (looser than needed), and ``excess`` counts free slots in ``L`` that
+    are not in ``res_layout``. Ties resolve by ``layouts`` insertion order.
+
+    :param res_layout: dict mapping blade key to ``float`` or ``Ellipsis``.
+    :param layouts: dict mapping ``MVType`` to its layout dict.
+    :return: ``(MVType, layout)`` of the best fit, or ``(None, None)`` if no
+        layout fits.
+    """
+    res_keys = res_layout.keys()
+
+    def cost(L):
+        loose = 0
+        for k, v in res_layout.items():
+            lv = L.get(k)
+            if v is Ellipsis:
+                if lv is not Ellipsis:
+                    return None
+            elif lv == v:
+                pass
+            elif lv is Ellipsis:
+                loose += 1
+            else:
+                return None
+        if any(lv is not Ellipsis for k, lv in L.items() if k not in res_keys):
+            return None
+        excess = sum(1 for k in L if k not in res_keys)
+        return loose, excess
+
+    scored = ((cls, L, c) for cls, L in layouts.items() if (c := cost(L)) is not None)
+    best = min(scored, key=lambda t: t[2], default=None)
+    return (best[0], best[1]) if best else (None, None)
+
+
+def do_codegen(codegen, *mvs, printer=None, func_printer=None, type_patterns=None) -> CodegenOutput:
     """
     :param codegen: callable that performs codegen for the given :code:`mvs`. This can be any callable
         that returns either a :class:`~kingdon.multivector.MultiVector`, a dictionary, or an instance of :class:`CodegenOutput`.
@@ -496,14 +540,28 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
     algebra = mvs[0].algebra
     mvs_orig = [copy.deepcopy(mv) for mv in mvs]
 
-    res = codegen(*mvs)
+    res = codegen(*(mv.asmvtype() for mv in mvs))
 
     output_mv_idx = None  # If codegen modified one of the mvs using set, this will be the index of the modified mv.
     if res is None:
         output_mv_idx = next(i for i, mv in enumerate(mvs) if mv != mvs_orig[i])
         res = mvs[output_mv_idx]
         mvs = mvs_orig
-
+    else:
+        # Determine the type of the output multivector, either exact or heuristically.
+        MVType = type_patterns.get(tuple(type(mv) for mv in mvs))
+        if MVType is not None:
+            archetype = algebra.archetypes.setdefault(MVType, algebra.bind_archetype(MVType, 'z'))
+            layout = archetype.layout
+            if not all(res[k] == v for k, v in layout.items() if v != ...):
+                raise ValueError(f"Output of {codegen.__name__} does not match layout of {MVType.__name__}.")
+        else:  # If we did not get the answer from the type patterns, we need to heuristically determine the type of the output multivector.
+            res_layout = {k: v if isinstance(v, float) else ... for k, v in res.items()}
+            MVType, layout = best_fit_layout(res_layout, algebra.type_layouts)
+        
+        if layout is not None:
+            res = {k: v for k, v in res.items() if layout[k] == ...}
+            
     funcname = f'{codegen.__name__}_' + '_x_'.join(f"{format(mv[0].type_number if isinstance(mv, list) else mv.type_number, 'X')}" for mv in mvs)
     args = {arg_name: [tuple(chain(*(x.values() for x in arg)))] if isinstance(arg, list) else arg.values()
             for arg_name, arg in zip(string.ascii_uppercase, mvs)}
@@ -513,7 +571,7 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
            for canon, bin in algebra.canon2bin.items() if bin in res.keys()}
 
     if all(isinstance(v, str) for v in res.values()):
-        return func_builder(res, *mvs, funcname=funcname)  # TODO: add output_mv_idx support
+        return func_builder(res, *mvs, args=args, funcname=funcname, MVType=MVType)  # TODO: add output_mv_idx support
 
     keys, exprs = tuple(res.keys()), list(res.values())
     if output_mv_idx is not None:
@@ -524,7 +582,7 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
                     )
     func.output_mv_idx = output_mv_idx
     return CodegenOutput(
-        keys, func
+        keys, func, MVType
     )
 
 def do_compile(codegen, *tapes):
@@ -583,7 +641,7 @@ def _build_and_cache_func(header, body_lines, funcname, namespace=None):
     return func_locals[funcname]
 
 
-def func_builder(res_vals: defaultdict, *mvs, funcname: str) -> CodegenOutput:
+def func_builder(res_vals: defaultdict, *mvs, args: dict, funcname: str, MVType: Type = None) -> CodegenOutput:
     """
     Build a Python function for the product between given multivectors.
 
@@ -593,17 +651,16 @@ def func_builder(res_vals: defaultdict, *mvs, funcname: str) -> CodegenOutput:
     :param funcname: Name of the function. Be aware: if a function by that name already existed, it will be overwritten.
     :return: tuple of output keys of the callable, and the callable.
     """
-    args = string.ascii_uppercase[:len(mvs)]
-    header = f'def {funcname}({", ".join(args)}):'
+    header = f'def {funcname}({", ".join(args.keys())}):'
     body_lines = []
     if res_vals:
-        for mv, arg in zip(mvs, args):
-            body_lines.append(f'    [{", ".join(str(v) for v in mv.values())}] = {arg}')
+        for name, arg in args.items():
+            body_lines.append(f'    [{", ".join(str(v) for v in arg)}] = {name}')
         body_lines.append(f'    return [{", ".join(res_vals.values())},]')
     else:
         body_lines.append(f'    return list()')
     func = _build_and_cache_func(header, body_lines, funcname, namespace={})
-    return CodegenOutput(tuple(res_vals.keys()), func)
+    return CodegenOutput(tuple(res_vals.keys()), func, MVType)
 
 
 def _poly_cse_compute(exprs: List[RationalPolynomial], common_denom: Optional[Polynomial] = None):

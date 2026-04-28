@@ -152,6 +152,14 @@ def test_codegen_wgp_generic(codegen_symbolcls):
     alg = Algebra(2)
 
     @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    def number_of_weights_wgp(X: MultiVector, Y: MultiVector) -> int:
+        i = 0
+        for gx, gy in itertools.product(X.grades, Y.grades):
+            Z = X.grade(gx) * Y.grade(gy)
+            i += len(Z.grades)
+        return i
+
+    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def wgp(X: MultiVector, Y: MultiVector, weights: MultiVector[None]) -> MultiVector:
         """
         Compute the weighted geometric product between X and Y.
@@ -170,10 +178,13 @@ def test_codegen_wgp_generic(codegen_symbolcls):
 
     assert wgp.codegen_input_types == {'X': MultiVector, 'Y': MultiVector, 'weights': (MultiVector, None)}
     assert wgp.codegen_output_type == MultiVector
+    assert number_of_weights_wgp.codegen_input_types == {'X': MultiVector, 'Y': MultiVector}
+    assert number_of_weights_wgp.codegen_output_type == int
 
     x = alg.multivector(name='x')
     y = alg.multivector(name='y')
-    ws = symbols('w:10')
+    num_weights = number_of_weights_wgp(x, y)
+    ws = symbols(f'w:{num_weights}')
     w0, w1, w2, w4, w3, w6, w5, w9, w8, w7 = ws
     weights = alg.scalar(e=ws)
     x0, x1, x2 = x.grade(0), x.grade(1), x.grade(2)

@@ -519,11 +519,18 @@ class mathstr(str):
         return self.__class__('-'+self)
 
     def __mul__(self, other: str):
+        if not isinstance(other, str):
+            other = mathstr(other)
         if other[0] != '-':
             return self.__class__(f'{self}*{other}')
         elif self[0] == '-':
             return self.__class__(f'{self[1:]}*{other[1:]}')
         return self.__class__(f'-{self}*{other[1:]}')
+    
+    def __rmul__(self, other):
+        if not isinstance(other, str):
+            other = mathstr(other)
+        return other.__mul__(self)  # Mind commutativity!
 
     def __pow__(self, power):
         if power == 0.5:
@@ -697,6 +704,8 @@ class RationalPolynomial:
             denom = orig.denom
         elif isinstance(numer, (list, tuple)):
             numer = Polynomial(numer)
+        elif isinstance(numer, (int, float)):
+            numer = Polynomial([[numer]])
         if denom is None:
             denom = Polynomial([[1]])
         elif isinstance(denom, (list, tuple)):

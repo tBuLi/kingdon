@@ -1,5 +1,6 @@
 import operator
 import re
+import string
 from itertools import combinations, product, chain
 from functools import partial, reduce
 from collections import Counter
@@ -29,9 +30,14 @@ from kingdon.codegen import (
     KingdonPrinter,
 )
 from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry, do_operation, resolve_and_expand
-from kingdon.polynomial import mathstr
+from kingdon.polynomial import mathstr, RationalPolynomial
 from kingdon.matrixreps import matrix_rep
-from kingdon.multivector import MultiVector
+from kingdon.multivector import (
+    MultiVector, MultiVectorType, _bit_count,
+    Scalar, Vector, Bivector, PseudoVector, PseudoBivector, PseudoScalar, # k-vectors
+    Blade2, Reflection2, # compositions
+    Direction, EVector, UPoint, Point, Translation, Line,  # PGA Types.
+)
 from kingdon.graph import GraphWidget
 
 operation_field = partial(field, default_factory=dict, init=False, repr=False, compare=False)
@@ -64,6 +70,7 @@ class Algebra:
         printing into a python function slower.
     :param wrapper: A function that is always applied to the generated functions as a decorator. For example,
         using :code:`numba.njit` as a wrapper will ensure that all kingdon code is jitted using numba.
+    :param symbolcls: The symbol class used for symbolic multivectors. By default, this :class:`sympy.Symbol`.
     :param codegen_symbolcls: The symbol class used during codegen. By default, this is our own fast
         :class:`~kingdon.polynomial.RationalPolynomial` class.
     :param printer: Sympy code printer used for codegen, see `https://docs.sympy.org/latest/modules/printing.html`.
@@ -127,8 +134,12 @@ class Algebra:
     pretty_blade: str = field(default='𝐞', repr=False, compare=False)
     pretty_digits: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # TODO: this can be defined outside Algebra
     large: bool = field(default=None, repr=False, compare=False)
+    archetypes: dict = field(default_factory=dict, init=False, repr=False, compare=False)
+    type_layouts: dict = field(default_factory=dict, init=False, repr=False, compare=False)
+    type_patterns: dict = field(default_factory=dict, init=False, repr=False, compare=False)
 
     # Codegen & call customization.
+    symbolcls: object = field(default=None, repr=False, compare=False)
     # The symbol class used in codegen. By default, use our own fast RationalPolynomial class.
     codegen_symbolcls: object = field(default=None, repr=False, compare=False)
     # The sympy style printer and evaluator printer used to generate the code with sympy-style printing.
@@ -136,7 +147,7 @@ class Algebra:
     func_printer: KingdonPrinter = field(default=None, repr=False, compare=False)
     # Wrapper function applied to the codegen generated functions.
     wrapper: Callable = field(default=None, repr=False, compare=False)
-    
+
     # This simplify func is applied to every component after a symbolic expression is called, to simplify and filter by.
     simp_func: Callable = field(default=lambda v: v if not isinstance(v, sympy.Expr) else sympy.simplify(sympy.expand(v)), repr=False, compare=False)
 
@@ -215,6 +226,19 @@ class Algebra:
         for name, op in self.registry.items():
             setattr(self, name, op)
 
+        if not self.archetypes:
+            self.type_patterns = MultiVectorType.pattern
+            subclasses = [Scalar, Vector, Bivector, PseudoVector, PseudoBivector, PseudoScalar, Blade2, Reflection2]
+            if self.r == 1: subclasses.extend([Direction, EVector, UPoint, Point, Translation, Line])
+            # subclasses = recursive_subclasses(MultiVector)
+            subclasses = [*sorted(subclasses, key=lambda x: (len(x.grades), x.grades))]
+            self.archetypes = {
+                cls: self.bind_archetype(cls, name=''.join(letters))
+                for cls, letters in zip(subclasses, product(string.ascii_lowercase, repeat=3))
+            }
+            self.type_layouts = {cls: l for cls, at in self.archetypes.items() if (l := getattr(at, 'layout', None))}
+            pass
+
     @classmethod
     def fromname(cls, name: str, **kwargs):
         """
@@ -250,8 +274,10 @@ class Algebra:
             >>> alg = Algebra(2)
             >>> tuple(alg.indices_for_grade(1))
             (1, 2)
+        
+        The indices are returned in the same order as the basis blades.
         """
-        return (sum(2**bin for bin in bins) for bins in combinations(range(self.d), r=grade))
+        return (k for k in self.canon2bin.values() if _bit_count(k) == grade)
 
     def indices_for_grades(self, grades: Tuple[int]):
         """
@@ -264,7 +290,8 @@ class Algebra:
             >>> tuple(alg.indices_for_grades((1, 2)))
             (1, 2, 3)
         """
-        return (chain.from_iterable(self.indices_for_grade(grade) for grade in sorted(grades)))
+        grades = tuple(sorted(grades))
+        return (k for k in self.canon2bin.values() if _bit_count(k) in grades)
 
     @cached_property
     def matrix_basis(self):
@@ -338,7 +365,7 @@ class Algebra:
 
     def compile(self, expr=None, /, *, name=None, symbolic=False, codegen_symbolcls=None, printer=None, func_printer=None, wrapper=None):
         """
-        Compile a function with the algebra to optimize its execution times. 
+        Compile a function with the algebra to optimize its execution times.
         The function must be a valid GA expression, not an arbitrary python function.
 
         Examples:
@@ -348,11 +375,11 @@ class Algebra:
             @alg.compile(symbolic=True)
             def proj(a, b):
                 return a @ b
-            
+
             @alg.compile(symbolic=True)
             def proj_allocated(a, b, c):
                 c.set(a @ b)
-            
+
             @alg.compile(symbolic=True)
             def proj(mvs: MultiVector[2]):
                 mv1, mv2 = mvs
@@ -393,8 +420,8 @@ class Algebra:
                 self.registry[expr] = Registry(name, codegen=expr, algebra=self, wrapper=wrapper)
             else:
                 self.registry[expr] = OperatorDict(
-                    name, codegen=expr, algebra=self, 
-                    codegen_symbolcls=codegen_symbolcls or OperatorDict.codegen_symbolcls, 
+                    name, codegen=expr, algebra=self,
+                    codegen_symbolcls=codegen_symbolcls or OperatorDict.codegen_symbolcls,
                     printer=printer, func_printer=func_printer, wrapper=wrapper)
             return self.registry[expr]
 
@@ -406,61 +433,67 @@ class Algebra:
         # Called as @compile
         return wrap(expr, name=name, symbolic=symbolic)
 
-    def multivector(self, *args, **kwargs) -> MultiVector:
-        """ Create a new :class:`~kingdon.multivector.MultiVector`. """
-        return MultiVector(self, *args, **kwargs)
+    # def multivector(self, *args, **kwargs) -> MultiVector:
+    #     """ Create a new :class:`~kingdon.multivector.MultiVector`. """
+    #     return MultiVector(self, *args, **kwargs)
 
-    def evenmv(self, *args, **kwargs) -> MultiVector:
-        """ Create a new :class:`~kingdon.multivector.MultiVector` in the even subalgebra. """
-        grades = tuple(filter(lambda x: x % 2 == 0, range(self.d + 1)))
-        return MultiVector(self, *args, grades=grades, **kwargs)
+    # def evenmv(self, *args, **kwargs) -> MultiVector:
+    #     """ Create a new :class:`~kingdon.multivector.MultiVector` in the even subalgebra. """
+    #     grades = tuple(filter(lambda x: x % 2 == 0, range(self.d + 1)))
+    #     return MultiVector(self, *args, grades=grades, **kwargs)
 
-    def oddmv(self, *args, **kwargs) -> MultiVector:
-        """
-        Create a new :class:`~kingdon.multivector.MultiVector` of odd grades.
-        (There is technically no such thing as an odd subalgebra, but
-        otherwise this is similar to :class:`~kingdon.algebra.Algebra.evenmv`.)
-        """
-        grades = tuple(filter(lambda x: x % 2 == 1, range(self.d + 1)))
-        return MultiVector(self, *args, grades=grades, **kwargs)
+    # def oddmv(self, *args, **kwargs) -> MultiVector:
+    #     """
+    #     Create a new :class:`~kingdon.multivector.MultiVector` of odd grades.
+    #     (There is technically no such thing as an odd subalgebra, but
+    #     otherwise this is similar to :class:`~kingdon.algebra.Algebra.evenmv`.)
+    #     """
+    #     grades = tuple(filter(lambda x: x % 2 == 1, range(self.d + 1)))
+    #     return MultiVector(self, *args, grades=grades, **kwargs)
 
-    def purevector(self, *args, grade, **kwargs) -> MultiVector:
-        """
-        Create a new :class:`~kingdon.multivector.MultiVector` of a specific grade.
+    # def purevector(self, *args, grade, **kwargs) -> MultiVector:
+    #     """
+    #     Create a new :class:`~kingdon.multivector.MultiVector` of a specific grade.
 
-        :param grade: Grade of the mutivector to create.
-        """
-        return MultiVector(self, *args, grades=(grade,), **kwargs)
+    #     :param grade: Grade of the mutivector to create.
+    #     """
+    #     return MultiVector(self, *args, grades=(grade,), **kwargs)
 
-    def scalar(self, *args, **kwargs) -> MultiVector:
-        return self.purevector(*args, grade=0, **kwargs)
+    # def scalar(self, *args, **kwargs) -> MultiVector:
+    #     return self.purevector(*args, grade=0, **kwargs)
 
-    def vector(self, *args, **kwargs) -> MultiVector:
-        return self.purevector(*args, grade=1, **kwargs)
+    # def vector(self, *args, **kwargs) -> MultiVector:
+    #     return self.purevector(*args, grade=1, **kwargs)
 
-    def bivector(self, *args, **kwargs) -> MultiVector:
-        return self.purevector(*args, grade=2, **kwargs)
+    # def bivector(self, *args, **kwargs) -> MultiVector:
+    #     return self.purevector(*args, grade=2, **kwargs)
 
-    def trivector(self, *args, **kwargs) -> MultiVector:
-        return self.purevector(*args, grade=3, **kwargs)
+    # def trivector(self, *args, **kwargs) -> MultiVector:
+    #     return self.purevector(*args, grade=3, **kwargs)
 
-    def quadvector(self, *args, **kwargs) -> MultiVector:
-        return self.purevector(*args, grade=4, **kwargs)
+    # def quadvector(self, *args, **kwargs) -> MultiVector:
+    #     return self.purevector(*args, grade=4, **kwargs)
 
-    def pseudoscalar(self, *args, **kwargs) -> MultiVector:
-        return self.purevector(*args, grade=self.d - 0, **kwargs)
+    # def pseudoscalar(self, *args, **kwargs) -> MultiVector:
+    #     return self.purevector(*args, grade=self.d - 0, **kwargs)
 
-    def pseudovector(self, *args, **kwargs) -> MultiVector:
-        return self.purevector(*args, grade=self.d - 1, **kwargs)
+    # def pseudovector(self, *args, **kwargs) -> MultiVector:
+    #     return self.purevector(*args, grade=self.d - 1, **kwargs)
 
-    def pseudobivector(self, *args, **kwargs) -> MultiVector:
-        return self.purevector(*args, grade=self.d - 2, **kwargs)
+    # def pseudobivector(self, *args, **kwargs) -> MultiVector:
+    #     return self.purevector(*args, grade=self.d - 2, **kwargs)
 
-    def pseudotrivector(self, *args, **kwargs) -> MultiVector:
-        return self.purevector(*args, grade=self.d - 3, **kwargs)
+    # def pseudotrivector(self, *args, **kwargs) -> MultiVector:
+    #     return self.purevector(*args, grade=self.d - 3, **kwargs)
 
-    def pseudoquadvector(self, *args, **kwargs) -> MultiVector:
-        return self.purevector(*args, grade=self.d - 4, **kwargs)
+    # def pseudoquadvector(self, *args, **kwargs) -> MultiVector:
+    #     return self.purevector(*args, grade=self.d - 4, **kwargs)
+    def __getattr__(self, name: str):
+        # TODO: make this faster by storing this dict.
+        names = {cls.__name__.lower(): cls for cls in self.archetypes.keys()}
+        if name in names:
+            return partial(names[name], self)
+        raise AttributeError(f"Algebra has no attribute '{name}'")
 
     def graph(self, *subjects, graph_widget=GraphWidget, **options):
         """
@@ -553,7 +586,20 @@ class Algebra:
         t ^= t >> 8
         t ^= t >> 4
         return [res, 1 - 2 * (27030 >> (t & 15) & 1)]
-
+    
+    def bind_archetype(self, MVType: type[MultiVector], name: str):
+        """ Bind a MVType to this algebra to create an archetype intance for this mutivector type in this algebra. """
+        archetype = MVType.archetype(self, name)
+        def is_number(x):
+            try:
+                float(x)
+                return True
+            except (ValueError, TypeError):
+                return False
+        layout = {k: float(f) if is_number(f := str(v)) else ... 
+                  for k, v in archetype.items()}
+        archetype.layout = layout
+        return archetype
 
 def _swap_blades(blade1: str, blade2: str, target: str = '') -> (int, str, str):
     """
@@ -625,6 +671,8 @@ class BladeDict(Mapping):
         if not self.lazy:
             # If not lazy, retrieve all blades once to force initiation.
             for blade in self.algebra.canon2bin: self[blade]
+        else:
+            self.grade(1)  # Initiate basis vectors only.
 
     def __getitem__(self, basis_blade):
         """ Blade must be in canonical form, e.g. 'e12'. """
@@ -661,3 +709,12 @@ class BladeDict(Mapping):
 
         return {(blade := self.algebra.bin2canon[k]): self[blade]
                 for k in self.algebra.indices_for_grades(grades)}
+
+def recursive_subclasses(cls):
+    seen = set()
+    for subclass in cls.__subclasses__():
+        yield subclass
+        for subsubclass in recursive_subclasses(subclass):
+            if subsubclass not in seen:
+                seen.add(subsubclass)
+                yield subsubclass
