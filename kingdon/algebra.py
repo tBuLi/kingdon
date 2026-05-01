@@ -129,7 +129,7 @@ class Algebra:
     bin2canon: dict = field(init=False, repr=False, compare=False)
 
     # Options for the algebra
-    cse: bool = field(default=True, repr=False)  # Common Subexpression Elimination (CSE)
+    cse: bool = field(default=True, repr=False, compare=False)  # Common Subexpression Elimination (CSE)
     graded: bool = field(default=False, repr=False)  # If true, precompute products per grade.
     pretty_blade: str = field(default='𝐞', repr=False, compare=False)
     pretty_digits: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # TODO: this can be defined outside Algebra
@@ -441,19 +441,17 @@ class Algebra:
         """ Create a new :class:`~kingdon.multivector.MultiVector`. """
         return MultiVector(self, *args, **kwargs)
 
-    # def evenmv(self, *args, **kwargs) -> MultiVector:
-    #     """ Create a new :class:`~kingdon.multivector.MultiVector` in the even subalgebra. """
-    #     grades = tuple(filter(lambda x: x % 2 == 0, range(self.d + 1)))
-    #     return MultiVector(self, *args, grades=grades, **kwargs)
+    def evenmv(self, *args, **kwargs) -> MultiVector:
+        """ Create a new :class:`~kingdon.multivector.MultiVector` in the even subalgebra. """
+        grades = tuple(filter(lambda x: x % 2 == 0, range(self.d + 1)))
+        return MultiVector(self, *args, grades=grades, **kwargs)
 
-    # def oddmv(self, *args, **kwargs) -> MultiVector:
-    #     """
-    #     Create a new :class:`~kingdon.multivector.MultiVector` of odd grades.
-    #     (There is technically no such thing as an odd subalgebra, but
-    #     otherwise this is similar to :class:`~kingdon.algebra.Algebra.evenmv`.)
-    #     """
-    #     grades = tuple(filter(lambda x: x % 2 == 1, range(self.d + 1)))
-    #     return MultiVector(self, *args, grades=grades, **kwargs)
+    def oddmv(self, *args, **kwargs) -> MultiVector:
+        """
+        Create a new :class:`~kingdon.multivector.MultiVector` of odd grades.
+        """
+        grades = tuple(filter(lambda x: x % 2 == 1, range(self.d + 1)))
+        return MultiVector(self, *args, grades=grades, **kwargs)
 
     def graph(self, *subjects, graph_widget=GraphWidget, **options):
         """

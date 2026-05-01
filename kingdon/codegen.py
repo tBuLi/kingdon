@@ -572,6 +572,7 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None, type_patterns=Non
     """
     algebra = mvs[0].algebra
     mvs_orig = [copy.deepcopy(mv) for mv in mvs]
+    type_patterns = type_patterns or {}
 
     res = codegen(*(mv.asmvtype() for mv in mvs))
 

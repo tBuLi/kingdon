@@ -488,6 +488,7 @@ def poly_cse(expr, prot=None, iso=None):
 
     return prelude, expr
 
+
 def compare(a, b):
     if a is None: return 1
     if b is None: return -1

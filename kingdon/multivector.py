@@ -193,6 +193,8 @@ class MultiVector(metaclass=MultiVectorType):
             keys, values = zip(*((blade, items[blade]) for blade in algebra.canon2bin if blade in items))
             values = list(values)
 
+        keys = keys if keys is not None else tuple()
+        values = values if values is not None else list()
         keys, grades = cls.sanitize_keys_grades(algebra, keys, grades)
         inst = cls.fromkeysvalues(algebra, keys, values)
         if grades is not None:
@@ -257,7 +259,8 @@ class MultiVector(metaclass=MultiVectorType):
         obj.algebra = algebra
         obj._values = values
         obj._keys = keys
-        obj.grades = tuple(g % (algebra.d + 1) for g in cls.grades) if isinstance(cls.grades, tuple) else cls.grades
+        if isinstance(cls.grades, tuple):
+            obj.grades = tuple(g % (algebra.d + 1) for g in cls.grades)
         return obj
 
     @classmethod
@@ -656,7 +659,7 @@ class MultiVector(metaclass=MultiVectorType):
         if (archetype := self.algebra.archetypes.get(type(self))) and (layout := getattr(archetype, 'layout', {})):
             keysvalues = tuple((k, v if v != ... else getattr(self, self.algebra.bin2canon[k]))
                                for k, v in layout.items() if v != ... or k in self.keys())
-            keys, values = zip(*keysvalues)
+            keys, values = zip(*keysvalues) if keysvalues else (tuple(), list())
         else:
             keys, values = self.keys(), self.values()
         if MVType == MultiVector:
