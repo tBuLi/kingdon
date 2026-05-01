@@ -482,6 +482,14 @@ def _lambdify_mv(mv):
     return CodegenOutput(tuple(mv.keys()), func)
 
 
+class LayoutEntry(NamedTuple):
+    cls: Type
+    layout: dict
+    free: frozenset         # keys where value is Ellipsis
+    fixed_items: frozenset  # (key, value) pairs where value is not Ellipsis
+    all_keys: frozenset     # all keys in layout
+
+
 class LayoutResolver:
     """
     Resolves a computed result layout to the most specific registered MVType.
@@ -512,14 +520,16 @@ class LayoutResolver:
     pre-built at construction time, avoiding a per-key Python loop on every
     query.
     """
-    __slots__ = ('_entries',)
 
     def __init__(self, layouts: dict = {}):
-        self._entries = [
-            (cls, L,
-             frozenset(k for k, v in L.items() if v is Ellipsis),
-             frozenset((k, v) for k, v in L.items() if v is not Ellipsis),
-             frozenset(L.keys()))
+        self.entries = [
+            LayoutEntry(
+                cls=cls,
+                layout=L,
+                free=frozenset(k for k, v in L.items() if v is Ellipsis),
+                fixed_items=frozenset((k, v) for k, v in L.items() if v is not Ellipsis),
+                all_keys=frozenset(L.keys()),
+            )
             for cls, L in layouts.items()
         ]
 
@@ -529,25 +539,26 @@ class LayoutResolver:
         res_fixed_items = frozenset((k, v) for k, v in res_layout.items() if v is not Ellipsis)
         res_keys = res_free | res_fixed_keys
 
-        best_cls, best_L, best_cost = None, None, None
+        best_entry, best_cost = None, None
 
-        entries = self._entries if MVType is None else [
-            e for e in self._entries if issubclass(e[0], MVType)
+        entries = self.entries if MVType is None else [
+            e for e in self.entries if issubclass(e.cls, MVType)
         ]
-        for cls, L, L_free, L_fixed_items, L_all_keys in entries:
-            if not res_free.issubset(L_free):
+        for entry in entries:
+            _, _, free, fixed_items, all_keys = entry
+            if not res_free.issubset(free):
                 continue
-            if not L_fixed_items.issubset(res_fixed_items):
+            if not fixed_items.issubset(res_fixed_items):
                 continue
-            if not res_fixed_keys.issubset(L_all_keys):
+            if not res_fixed_keys.issubset(all_keys):
                 continue
-            cost = (len(L_free & res_fixed_keys), len(L_free - res_keys))
+            cost = (len(free & res_fixed_keys), len(free - res_keys))
             if best_cost is None or cost < best_cost:
-                best_cls, best_L, best_cost = cls, L, cost
+                best_entry, best_cost = entry, cost
                 if cost == (0, 0):
                     break  # perfect fit; entries are in insertion order so this is optimal
 
-        return (best_cls, best_L) if best_cls is not None else (None, None)
+        return (best_entry.cls, best_entry.layout) if best_entry is not None else (None, None)
 
 
 def do_codegen(codegen, *mvs, printer=None, func_printer=None, type_patterns=None) -> CodegenOutput:
