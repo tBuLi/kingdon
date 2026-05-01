@@ -27,7 +27,7 @@ from kingdon.codegen import (
     codegen_involute, codegen_conjugate, codegen_sub, codegen_sqrt,
     codegen_outerexp, codegen_outersin, codegen_outercos, codegen_outertan,
     codegen_polarity, codegen_unpolarity, codegen_hodge, codegen_unhodge,
-    KingdonPrinter,
+    KingdonPrinter, LayoutResolver,
 )
 from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry, do_operation, resolve_and_expand
 from kingdon.polynomial import mathstr, RationalPolynomial
@@ -35,8 +35,8 @@ from kingdon.matrixreps import matrix_rep
 from kingdon.multivector import (
     MultiVector, MultiVectorType, _bit_count,
     Scalar, Vector, Bivector, PseudoVector, PseudoBivector, PseudoScalar, # k-vectors
-    Blade2, Reflection2, # compositions
-    Direction, EVector, UPoint, Point, Translation, Line,  # PGA Types.
+    Bireflection, # compositions
+    Direction, EVector, UPoint, Point, Translation,  # PGA Types.
 )
 from kingdon.graph import GraphWidget
 
@@ -135,7 +135,7 @@ class Algebra:
     pretty_digits: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # TODO: this can be defined outside Algebra
     large: bool = field(default=None, repr=False, compare=False)
     archetypes: dict = field(default_factory=dict, init=False, repr=False, compare=False)
-    type_layouts: dict = field(default_factory=dict, init=False, repr=False, compare=False)
+    layout_resolver: object = field(default=LayoutResolver, init=False, repr=False, compare=False)
     type_patterns: dict = field(default_factory=dict, init=False, repr=False, compare=False)
 
     # Codegen & call customization.
@@ -228,16 +228,20 @@ class Algebra:
 
         if not self.archetypes:
             self.type_patterns = MultiVectorType.pattern
-            subclasses = [Scalar, Vector, Bivector, PseudoVector, PseudoBivector, PseudoScalar, Blade2, Reflection2]
-            if self.r == 1: subclasses.extend([Direction, EVector, UPoint, Point, Translation, Line])
+            subclasses = [Scalar, Vector, Bivector, PseudoVector, PseudoBivector, PseudoScalar, Bireflection]
+            if self.r == 1: subclasses.extend([Direction, EVector, UPoint, Point, Translation])
             # subclasses = recursive_subclasses(MultiVector)
             subclasses = [*sorted(subclasses, key=lambda x: (len(x.grades), x.grades))]
             self.archetypes = {
                 cls: self.bind_archetype(cls, name=''.join(letters))
                 for cls, letters in zip(subclasses, product(string.ascii_lowercase, repeat=3))
             }
-            self.type_layouts = {cls: l for cls, at in self.archetypes.items() if (l := getattr(at, 'layout', None))}
+            type_layouts = {cls: l for cls, at in self.archetypes.items() if (l := getattr(at, 'layout', None))}
+            self.layout_resolver = LayoutResolver(type_layouts)
             pass
+
+        for cls in self.archetypes.keys():
+            setattr(self, cls.__name__.lower(), partial(cls, self))
 
     @classmethod
     def fromname(cls, name: str, **kwargs):
@@ -274,7 +278,7 @@ class Algebra:
             >>> alg = Algebra(2)
             >>> tuple(alg.indices_for_grade(1))
             (1, 2)
-        
+
         The indices are returned in the same order as the basis blades.
         """
         return (k for k in self.canon2bin.values() if _bit_count(k) == grade)
@@ -433,9 +437,9 @@ class Algebra:
         # Called as @compile
         return wrap(expr, name=name, symbolic=symbolic)
 
-    # def multivector(self, *args, **kwargs) -> MultiVector:
-    #     """ Create a new :class:`~kingdon.multivector.MultiVector`. """
-    #     return MultiVector(self, *args, **kwargs)
+    def multivector(self, *args, **kwargs) -> MultiVector:
+        """ Create a new :class:`~kingdon.multivector.MultiVector`. """
+        return MultiVector(self, *args, **kwargs)
 
     # def evenmv(self, *args, **kwargs) -> MultiVector:
     #     """ Create a new :class:`~kingdon.multivector.MultiVector` in the even subalgebra. """
@@ -450,50 +454,6 @@ class Algebra:
     #     """
     #     grades = tuple(filter(lambda x: x % 2 == 1, range(self.d + 1)))
     #     return MultiVector(self, *args, grades=grades, **kwargs)
-
-    # def purevector(self, *args, grade, **kwargs) -> MultiVector:
-    #     """
-    #     Create a new :class:`~kingdon.multivector.MultiVector` of a specific grade.
-
-    #     :param grade: Grade of the mutivector to create.
-    #     """
-    #     return MultiVector(self, *args, grades=(grade,), **kwargs)
-
-    # def scalar(self, *args, **kwargs) -> MultiVector:
-    #     return self.purevector(*args, grade=0, **kwargs)
-
-    # def vector(self, *args, **kwargs) -> MultiVector:
-    #     return self.purevector(*args, grade=1, **kwargs)
-
-    # def bivector(self, *args, **kwargs) -> MultiVector:
-    #     return self.purevector(*args, grade=2, **kwargs)
-
-    # def trivector(self, *args, **kwargs) -> MultiVector:
-    #     return self.purevector(*args, grade=3, **kwargs)
-
-    # def quadvector(self, *args, **kwargs) -> MultiVector:
-    #     return self.purevector(*args, grade=4, **kwargs)
-
-    # def pseudoscalar(self, *args, **kwargs) -> MultiVector:
-    #     return self.purevector(*args, grade=self.d - 0, **kwargs)
-
-    # def pseudovector(self, *args, **kwargs) -> MultiVector:
-    #     return self.purevector(*args, grade=self.d - 1, **kwargs)
-
-    # def pseudobivector(self, *args, **kwargs) -> MultiVector:
-    #     return self.purevector(*args, grade=self.d - 2, **kwargs)
-
-    # def pseudotrivector(self, *args, **kwargs) -> MultiVector:
-    #     return self.purevector(*args, grade=self.d - 3, **kwargs)
-
-    # def pseudoquadvector(self, *args, **kwargs) -> MultiVector:
-    #     return self.purevector(*args, grade=self.d - 4, **kwargs)
-    def __getattr__(self, name: str):
-        # TODO: make this faster by storing this dict.
-        names = {cls.__name__.lower(): cls for cls in self.archetypes.keys()}
-        if name in names:
-            return partial(names[name], self)
-        raise AttributeError(f"Algebra has no attribute '{name}'")
 
     def graph(self, *subjects, graph_widget=GraphWidget, **options):
         """
@@ -586,7 +546,7 @@ class Algebra:
         t ^= t >> 8
         t ^= t >> 4
         return [res, 1 - 2 * (27030 >> (t & 15) & 1)]
-    
+
     def bind_archetype(self, MVType: type[MultiVector], name: str):
         """ Bind a MVType to this algebra to create an archetype intance for this mutivector type in this algebra. """
         archetype = MVType.archetype(self, name)
@@ -596,7 +556,7 @@ class Algebra:
                 return True
             except (ValueError, TypeError):
                 return False
-        layout = {k: float(f) if is_number(f := str(v)) else ... 
+        layout = {k: float(f) if is_number(f := str(v)) else ...
                   for k, v in archetype.items()}
         archetype.layout = layout
         return archetype

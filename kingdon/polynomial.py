@@ -504,14 +504,28 @@ def compare(a, b):
 class mathstr(str):
     """ Lightweight string subclass that overloads maths operators to form expressions. """
     def __add__(self, other: str):
+        if not isinstance(other, str):
+            other = mathstr(other)
         if other[0] == '-':
             return self.__class__(f'{self}{other}')
         return self.__class__(f'{self}+{other}')
 
+    def __radd__(self, other):
+        if not isinstance(other, str):
+            other = mathstr(other)
+        return other.__add__(self)  # Mind commutativity!
+
     def __sub__(self, other: str):
+        if not isinstance(other, str):
+            other = mathstr(other)
         if other[0] == '-':
             return self.__class__(f'{self}+{other[1:]}')
         return self.__class__(f'{self}-{other}')
+
+    def __rsub__(self, other):
+        if not isinstance(other, str):
+            other = mathstr(other)
+        return other.__sub__(self)  # Mind commutativity!
 
     def __neg__(self):
         if self[0] == '-':
