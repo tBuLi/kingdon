@@ -42,14 +42,18 @@ def dynamic_archetype(operator):
     @wraps(operator)
     def make_mvtype(*classes, name=None):
         pattern = MultiVectorType.pattern[operator_name]
-        if cached := pattern.get(classes):
+        # Replace each operand by its atom decomposition (or itself if atomic),
+        # so cache keys for associative operators collapse onto one tuple regardless of grouping.
+        key = sum((pattern.get(c, (c,)) for c in classes), ())
+        if cached := pattern.get(key):
             return cached
         new_cls = operator(*classes, name=name)
         if new_cls is None:
             return MultiVector
-        pattern[classes] = new_cls
-        if len(classes) == 2:  # assume binary operators are symmetric.
-            pattern[classes[::-1]] = new_cls
+        pattern[key] = new_cls
+        if len(classes) == 2:  # assume binary operators are associative and symmetric.
+            pattern[new_cls] = key
+            pattern[key[::-1]] = new_cls
         elif len(classes) == 1:  # assume unary operators are involutions.
             pattern[(new_cls,)] = classes[0]
 
@@ -117,14 +121,23 @@ class MultiVectorType(type):
 
     @dynamic_archetype
     def gp(cls, other_cls, name=None):
-        if len(cls.grades) == 1 and len(other_cls.grades) == 1:
-            if cls.grades[0] >= 0 and other_cls.grades[0] >= 0:
-                grades = tuple(sorted((cls.grades[0] - other_cls.grades[0], cls.grades[0] + other_cls.grades[0])))
-            elif cls.grades[0] < 0 and other_cls.grades[0] < 0:
-                g1, g2 = -cls.grades[0] - 1, -other_cls.grades[0] - 1
-                grades = tuple(sorted((g1 - g2, g1 + g2)))
-            else: return
-            return type(name or f'Reflection{grades[-1]}', cls.__bases__, {'grades': grades})
+        # The geometric product of pure grade-r and grade-s blades spans grades
+        # {|r-s|, |r-s|+2, ..., r+s}.
+        # Negative grades encode co-dimension; convert to codims, apply the same
+        # formula, then return the resulting (positive) grades.
+        if all(g >= 0 for g in cls.grades) and all(g >= 0 for g in other_cls.grades):
+            gs1, gs2 = cls.grades, other_cls.grades
+        elif all(g < 0 for g in cls.grades) and all(g < 0 for g in other_cls.grades):
+            gs1 = tuple(-g - 1 for g in cls.grades)
+            gs2 = tuple(-g - 1 for g in other_cls.grades)
+        else:
+            return
+        result = set()
+        for g1 in gs1:
+            for g2 in gs2:
+                result.update(range(abs(g1 - g2), g1 + g2 + 1, 2))
+        grades = tuple(sorted(result))
+        return type(name or f'Reflection{grades[-1]}', cls.__bases__, {'grades': grades})
 
     __mul__ = gp
 
@@ -897,7 +910,8 @@ class Vector(MultiVector):
 
 Bivector = MultiVectorType.op(Vector, Vector, name='Bivector')  # Also available as Vector ^ Vector after this definition.
 Bireflection = MultiVectorType.gp(Vector, Vector, name='Bireflection')  # Also available as Vector * Vector after this definition.
-
+Trireflection = MultiVectorType.gp(Bireflection, Vector, name='Trireflection')
+Quadreflection = MultiVectorType.gp(Bireflection, Bireflection, name='Quadreflection')
 
 class PseudoScalar(MultiVector, hodge=Scalar):
     grades = (-1,)

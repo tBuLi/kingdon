@@ -492,33 +492,30 @@ class LayoutEntry(NamedTuple):
 
 class LayoutResolver:
     """
-    Resolves a computed result layout to the most specific registered MVType.
+    Looks up the best-matching MVType for a given result layout from a list of registered types.
 
-    Constructed once from ``Algebra.type_layouts`` (a dict mapping MVType
-    subclasses to their layout dicts).  Each layout maps blade keys (integers)
-    to either ``...`` (a free slot whose value is determined at runtime) or a
-    fixed ``float`` (a structural constant of that type, e.g. the homogeneous
-    coordinate of a point).
+    Each registered type has a layout: a dict from blade key (integer) to either
+    ``...`` for a free component, or a ``float`` for
+    a fixed constant (e.g. the homogeneous coordinate ``1.0`` of a point).
 
-    A candidate layout ``L`` is *feasible* for a query ``res_layout`` iff:
+    A type is considered a *match* for a result if:
 
-    - every ``...`` key in ``res_layout`` is also ``...`` in ``L``;
-    - every fixed-float key in ``L`` appears in ``res_layout`` with the same
-      value (no stray fixed entries, no value conflicts);
-    - every fixed-float key in ``res_layout`` appears somewhere in ``L``
-      (either as a matching fixed or as a free slot) — a layout that has no
-      entry at all for a fixed key in the result cannot represent that result.
+    - all fixed constants in the type's layout agree with the result
+      (no conflicting fixed values, no fixed blades absent from the result);
+    - all free components in the result are also free in the type's layout
+      (the type doesn't fix something the result leaves open);
+    - all structural constants in the result are covered by the type's layout
+      (the type must know about every fixed blade the result carries).
 
-    Among feasible candidates the lexicographic minimum of ``(loose, excess)``
-    is chosen, where ``loose = |L_free ∩ res_fixed_keys|`` counts free slots
-    in ``L`` that cover fixed values in the result (a looser match than needed),
-    and ``excess = |L_free − res_keys|`` counts free slots in ``L`` that lie
-    outside the result entirely.  Ties break by insertion order of
-    ``type_layouts``.
+    When multiple types match, the most specific one wins: first minimising the
+    number of free slots in the registered layout that coincide with fixed values
+    in the result (tighter structural match), then minimising free slots that fall
+    outside the result entirely (smaller footprint). Ties are broken by
+    registration order.
 
-    Feasibility is tested with three ``frozenset.issubset`` calls on sets
-    pre-built at construction time, avoiding a per-key Python loop on every
-    query.
+    Call :meth:`resolve` with an optional ``MVType`` to restrict the search to
+    that type and its subclasses, e.g. to prefer a more specific ``NormalizedPoint``
+    over a generic ``Point`` when the type of the result is already partially known.
     """
 
     def __init__(self, layouts: dict = {}):

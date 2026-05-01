@@ -1,7 +1,7 @@
 import operator
 import re
 import string
-from itertools import combinations, product, chain
+from itertools import combinations, product, chain, repeat
 from functools import partial, reduce
 from collections import Counter
 from dataclasses import dataclass, field, fields
@@ -228,17 +228,26 @@ class Algebra:
 
         if not self.archetypes:
             self.type_patterns = MultiVectorType.pattern
-            subclasses = [Scalar, Vector, Bivector, PseudoVector, PseudoBivector, PseudoScalar, Bireflection]
-            if self.r == 1: subclasses.extend([Direction, EVector, UPoint, Point, Translation])
-            # subclasses = recursive_subclasses(MultiVector)
-            subclasses = [*sorted(subclasses, key=lambda x: (len(x.grades), x.grades))]
+            classes = [Scalar, PseudoScalar]
+            if self.d >= 1:
+                classes.extend([Vector, PseudoVector])
+            if self.d >= 2:
+                classes.extend([Bivector, PseudoBivector, Bireflection])
+            if self.d >= 3:
+                for k in range(3, self.d + 1):
+                    classes.extend([
+                        reduce(operator.xor, repeat(Vector, k - 1), Vector),  # k-blade
+                        reduce(operator.mul, repeat(Vector, k - 1), Vector),  # k-reflection
+                    ])
+            if self.r == 1:  # PGA types.
+                classes.extend([Direction, EVector, UPoint, Point, Translation])
+            classes = [*sorted(classes, key=lambda x: (len(x.grades), x.grades))]
             self.archetypes = {
                 cls: self.bind_archetype(cls, name=''.join(letters))
-                for cls, letters in zip(subclasses, product(string.ascii_lowercase, repeat=3))
+                for cls, letters in zip(classes, product(string.ascii_lowercase, repeat=3))
             }
-            type_layouts = {cls: l for cls, at in self.archetypes.items() if (l := getattr(at, 'layout', None))}
-            self.layout_resolver = LayoutResolver(type_layouts)
-            pass
+        type_layouts = {cls: l for cls, at in self.archetypes.items() if (l := getattr(at, 'layout', None))}
+        self.layout_resolver = LayoutResolver(type_layouts)
 
         for cls in self.archetypes.keys():
             setattr(self, cls.__name__.lower(), partial(cls, self))

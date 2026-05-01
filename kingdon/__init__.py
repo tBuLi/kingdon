@@ -10,7 +10,7 @@ from kingdon.algebra import Algebra
 from kingdon.multivector import (
     MultiVector, # Generic MultiVector type.
     Scalar, PseudoScalar, Vector, Bivector, PseudoBivector, PseudoVector, # k-vectors
-    Bireflection, # compositions
+    Bireflection, Trireflection, Quadreflection, # compositions
     Direction, EVector, UPoint, Point, Translation,  # PGA types
     stack
 )

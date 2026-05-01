@@ -2,7 +2,10 @@ from collections import OrderedDict
 
 import pytest
 
-from kingdon import Algebra, Scalar, PseudoScalar, Vector, Bivector, PseudoVector, PseudoBivector, Bireflection
+from kingdon import (
+    Algebra, Scalar, PseudoScalar, Vector, Bivector, PseudoVector, PseudoBivector, 
+    Bireflection, Trireflection, Quadreflection,
+)
 from kingdon.multivector import (
     MultiVector, Direction, EVector,
     UPoint, Point, Translation,
@@ -234,29 +237,29 @@ def test_asmvtype_incompatible(pga3d, source_type, target_type):
 
 
 @pytest.mark.parametrize(
-    "source_type, target_type, expected_keys, expected_fixed",
+    "source_type, target_type, target_grades, expected_keys, expected_fixed",
     [
-        (Scalar,       MultiVector,  (0,),                     {}),
-        (Vector,       MultiVector,  (1, 2, 4, 8),             {}),
-        (Bivector,     MultiVector,  (9, 10, 12, 3, 5, 6),     {}),
-        (PseudoVector, MultiVector,  (14, 13, 11, 7),          {}),
-        (PseudoScalar, MultiVector,  (15,),                    {}),
-        (Direction,    MultiVector,  (14, 13, 11),             {}),
-        (EVector,      MultiVector,  (1, 2, 4),                {}),
-        (UPoint,       MultiVector,  (1, 2, 4, 8),             {8: 1.0}),
-        (Point,        MultiVector,  (14, 13, 11, 7),          {7: 1.0}),
-        (Translation,  MultiVector,  (0, 9, 10, 12),           {0: 1.0}),
-        (Bireflection,  MultiVector,  (0, 9, 10, 12, 3, 5, 6),  {}),
-        (Point,        PseudoVector, (14, 13, 11, 7),          {7: 1.0}),
-        (Direction,    PseudoVector, (14, 13, 11),             {}),
-        (UPoint,       Vector,       (1, 2, 4, 8),             {8: 1.0}),
-        (EVector,      Vector,       (1, 2, 4),                {}),
-        (Bivector,     PseudoBivector, (9, 10, 12, 3, 5, 6),  {}),
-        (PseudoBivector, Bivector,   (9, 10, 12, 3, 5, 6),    {}),
-        (Translation,  Bireflection,  (0, 9, 10, 12),           {0: 1.0}),
+        (Scalar,       MultiVector,  (0,),   (0,),                     {}),
+        (Vector,       MultiVector,  (1,),   (1, 2, 4, 8),             {}),
+        (Bivector,     MultiVector,  (2,),   (9, 10, 12, 3, 5, 6),     {}),
+        (PseudoVector, MultiVector,  (3,),  (14, 13, 11, 7),          {}),
+        (PseudoScalar, MultiVector,  (4,),  (15,),                    {}),
+        (Direction,    MultiVector,  (3,),  (14, 13, 11),             {}),
+        (EVector,      MultiVector,  (1,),   (1, 2, 4),                {}),
+        (UPoint,       MultiVector,  (1,),   (1, 2, 4, 8),             {8: 1.0}),
+        (Point,        MultiVector,  (3,),  (14, 13, 11, 7),          {7: 1.0}),
+        (Translation,  MultiVector,  (0, 2),  (0, 9, 10, 12),           {0: 1.0}),
+        (Bireflection,  MultiVector,  (0, 2),  (0, 9, 10, 12, 3, 5, 6),  {}),
+        (Point,        PseudoVector, (3,),  (14, 13, 11, 7),          {7: 1.0}),
+        (Direction,    PseudoVector, (3,),  (14, 13, 11),             {}),
+        (UPoint,       Vector,       (1,),   (1, 2, 4, 8),             {8: 1.0}),
+        (EVector,      Vector,       (1,),   (1, 2, 4),                {}),
+        (Bivector,     PseudoBivector, (2,),   (9, 10, 12, 3, 5, 6),  {}),
+        (PseudoBivector, Bivector,   (2,),   (9, 10, 12, 3, 5, 6),    {}),
+        (Translation,  Bireflection,  (0, 2),  (0, 9, 10, 12),           {0: 1.0}),
     ],
 )
-def test_asmvtype(pga3d, source_type, target_type, expected_keys, expected_fixed):
+def test_asmvtype(pga3d, source_type, target_type, target_grades, expected_keys, expected_fixed):
     """ Test conversion of multivector types using the asmvtype method. """
     alg = pga3d
     source = source_type.fromname(alg, 'x')
@@ -264,6 +267,7 @@ def test_asmvtype(pga3d, source_type, target_type, expected_keys, expected_fixed
 
     assert isinstance(result, target_type)
     assert result is not source
+    assert result.grades == target_grades
     assert result.keys() == expected_keys
     for k, v in expected_fixed.items():
         assert getattr(result, alg.bin2canon[k]) == v
@@ -275,9 +279,19 @@ def test_asmvtype(pga3d, source_type, target_type, expected_keys, expected_fixed
 
 @pytest.mark.parametrize("MVType, MVType_alt, grades", [
     (Bivector, Vector ^ Vector, (2,)),
+    (Bivector ^ Vector, Vector ^ Vector ^ Vector, (3,)),
     (Bireflection, Vector * Vector, (0, 2,)),
+    (Bireflection * Vector, Vector * Vector * Vector, (1, 3)),
     (PseudoBivector, PseudoVector & PseudoVector, (-3,)),
+    (PseudoBivector & PseudoVector, PseudoVector & PseudoVector & PseudoVector, (-4,)),
     (Translation, Point * ~Point, (0, 2)),
+    (Trireflection, Vector * Vector * Vector, (1, 3)),
+    (Trireflection, Bireflection * Vector, (1, 3)),
+    (Trireflection, Vector * Bireflection, (1, 3)),
+    (Quadreflection, Bireflection * Bireflection, (0, 2, 4)),
+    (Quadreflection, Trireflection * Vector, (0, 2, 4)),
+    (Quadreflection, Vector * Trireflection, (0, 2, 4)),
+    (Quadreflection, Vector * Vector * Vector * Vector, (0, 2, 4)),
 ])
 def test_mvtype_cache(MVType, MVType_alt, grades):
     """ It is possible to construct MVType's structurally rather than referencing them by name. """
