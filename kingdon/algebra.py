@@ -27,14 +27,14 @@ from kingdon.codegen import (
     codegen_involute, codegen_conjugate, codegen_sub, codegen_sqrt,
     codegen_outerexp, codegen_outersin, codegen_outercos, codegen_outertan,
     codegen_polarity, codegen_unpolarity, codegen_hodge, codegen_unhodge,
-    KingdonPrinter, LayoutResolver,
+    KingdonPrinter,
 )
 from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry, do_operation, resolve_and_expand
-from kingdon.polynomial import mathstr, RationalPolynomial
+from kingdon.polynomial import RationalPolynomial
 from kingdon.matrixreps import matrix_rep
 from kingdon.multivector import (
     MultiVector, MultiVectorType, _bit_count,
-    Scalar, Vector, Bivector, PseudoVector, PseudoBivector, PseudoScalar, # k-vectors
+    Scalar, Vector, Bivector, # k-vectors
     Bireflection, # compositions
     Direction, EVector, UPoint, Point, Translation,  # PGA Types.
 )
@@ -135,8 +135,7 @@ class Algebra:
     pretty_digits: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # TODO: this can be defined outside Algebra
     large: bool = field(default=None, repr=False, compare=False)
     archetypes: dict = field(default_factory=dict, init=False, repr=False, compare=False)
-    layout_resolver: object = field(default=LayoutResolver, init=False, repr=False, compare=False)
-    type_patterns: dict = field(default_factory=dict, init=False, repr=False, compare=False)
+    _type_layouts: dict = field(default_factory=dict, init=False, repr=False, compare=False)
 
     # Codegen & call customization.
     symbolcls: object = field(default=None, repr=False, compare=False)
@@ -227,13 +226,12 @@ class Algebra:
             setattr(self, name, op)
 
         if not self.archetypes:
-            self.type_patterns = MultiVectorType.pattern
-            classes = [Scalar, PseudoScalar]
+            classes = [Scalar]
             if self.d >= 1:
-                classes.extend([Vector, PseudoVector])
+                classes.extend([Vector])
             if self.d >= 2:
-                classes.extend([Bivector, PseudoBivector, Bireflection])
-            if self.d >= 3:
+                classes.extend([Bivector, Bireflection])
+            if self.d >= 3 and not self.large:
                 for k in range(3, self.d + 1):
                     classes.extend([
                         reduce(operator.xor, repeat(Vector, k - 1), Vector),  # k-blade
@@ -246,10 +244,10 @@ class Algebra:
                 cls: self.bind_archetype(cls, name=''.join(letters))
                 for cls, letters in zip(classes, product(string.ascii_lowercase, repeat=3))
             }
-        type_layouts = {cls: l for cls, at in self.archetypes.items() if (l := getattr(at, 'layout', None))}
-        self.layout_resolver = LayoutResolver(type_layouts)
+        self._type_layouts = {cls: l for cls, at in self.archetypes.items() if (l := getattr(at, 'layout', None))}
 
         for cls in self.archetypes.keys():
+            # TODO: add pseudo constructors
             setattr(self, cls.__name__.lower(), partial(cls, self))
 
     @classmethod
@@ -555,7 +553,7 @@ class Algebra:
         return [res, 1 - 2 * (27030 >> (t & 15) & 1)]
 
     def bind_archetype(self, MVType: type[MultiVector], name: str):
-        """ Bind a MVType to this algebra to create an archetype intance for this mutivector type in this algebra. """
+        """ Bind a MVType to this algebra to create an archetype intance for this multivector type in this algebra. """
         archetype = MVType.archetype(self, name)
         def is_number(x):
             try:
@@ -563,7 +561,7 @@ class Algebra:
                 return True
             except (ValueError, TypeError):
                 return False
-        layout = {k: float(f) if is_number(f := str(v)) else ...
+        layout = {k: v if is_number(str(v)) else ...
                   for k, v in archetype.items()}
         archetype.layout = layout
         return archetype

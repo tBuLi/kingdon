@@ -96,11 +96,10 @@ def codegen_sw(x, y):
     if len(set((g % 2 for g in x.grades))) != 1:
         raise TypeError("x must be a versor (k-reflection) and thus either even or odd.")
     xr = x.reverse()
-    if max(x.grades) % 2 == 1:  # odd versor: grade(x * involute(y) * ~x, grade(y))
-        return sum((x * y.grade(g).involute() * xr).grade(g) for g in y.grades)
-    # even versor: grade(x*y*~x + y*(1 - grade(x*~x, 0)), grade(y))
-    axar_scalar = (x * xr).grade(0)
-    return sum((x * y.grade(g) * xr + y.grade(g) * (1 - axar_scalar)).grade(g) for g in y.grades)
+    axar_scalar = (x * xr).grade(0)  # The scalar part of x * ~x, which is assumed to be 1.
+    if max(x.grades) % 2 == 1:
+        return sum(((x * (yg_involute := y.grade(g).involute()) * xr + yg_involute * (1 - axar_scalar)).grade(g) for g in y.grades), start=type(x)(x.algebra))
+    return sum(((x * y.grade(g) * xr + y.grade(g) * (1 - axar_scalar)).grade(g) for g in y.grades), start=type(x)(x.algebra))
 
 
 def codegen_cp(x, y):
@@ -482,23 +481,24 @@ def _lambdify_mv(mv):
     return CodegenOutput(tuple(mv.keys()), func)
 
 
-class LayoutEntry(NamedTuple):
-    cls: Type
-    layout: dict
-    free: frozenset         # keys where value is Ellipsis
-    fixed_items: frozenset  # (key, value) pairs where value is not Ellipsis
-    all_keys: frozenset     # all keys in layout
-
-
-class LayoutResolver:
+def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None):
     """
-    Looks up the best-matching MVType for a given result layout from a list of registered types.
+    Look up the best-matching MVType for a given result layout from a set of registered types.
 
-    Each registered type has a layout: a dict from blade key (integer) to either
-    ``...`` for a free component, or a ``float`` for
-    a fixed constant (e.g. the homogeneous coordinate ``1.0`` of a point).
+    :param layouts: mapping from MVType (class) to a layout dict. A layout is a
+        dict from blade key (integer) to either ``...`` for a free component, or
+        a number for a fixed constant (e.g. the homogeneous coordinate ``1.0``
+        of a point).
+    :param res_layout: the layout dict of the result whose type we are trying to
+        identify, in the same ``{key: ... | number}`` form.
+    :param MVType: optional class used to restrict the search to that type and
+        its subclasses (e.g. to prefer a more specific ``NormalizedPoint`` over
+        a generic ``Point`` when the type of the result is already partially
+        known). Requires the keys of ``layouts`` to be classes.
+    :return: ``(cls, layout)`` for the best match, or ``(None, None)`` if no
+        registered type matches.
 
-    A type is considered a *match* for a result if:
+    A registered type is considered a *match* for the result if:
 
     - all fixed constants in the type's layout agree with the result
       (no conflicting fixed values, no fixed blades absent from the result);
@@ -511,54 +511,36 @@ class LayoutResolver:
     number of free slots in the registered layout that coincide with fixed values
     in the result (tighter structural match), then minimising free slots that fall
     outside the result entirely (smaller footprint). Ties are broken by
-    registration order.
-
-    Call :meth:`resolve` with an optional ``MVType`` to restrict the search to
-    that type and its subclasses, e.g. to prefer a more specific ``NormalizedPoint``
-    over a generic ``Point`` when the type of the result is already partially known.
+    registration order in ``layouts``.
     """
+    res_free = {k for k, v in res_layout.items() if v is Ellipsis}
+    res_fixed_keys = {k for k, v in res_layout.items() if v is not Ellipsis}
+    res_fixed_items = {(k, v) for k, v in res_layout.items() if v is not Ellipsis}
+    res_keys = res_free | res_fixed_keys
 
-    def __init__(self, layouts: dict = {}):
-        self.entries = [
-            LayoutEntry(
-                cls=cls,
-                layout=L,
-                free=frozenset(k for k, v in L.items() if v is Ellipsis),
-                fixed_items=frozenset((k, v) for k, v in L.items() if v is not Ellipsis),
-                all_keys=frozenset(L.keys()),
-            )
-            for cls, L in layouts.items()
-        ]
+    best, best_cost = (None, None), None
+    for cls, L in layouts.items():
+        if MVType is not None and not issubclass(cls, MVType):
+            continue
+        free = {k for k, v in L.items() if v is Ellipsis}
+        fixed_items = {(k, v) for k, v in L.items() if v is not Ellipsis}
+        all_keys = L.keys()
+        if not res_free.issubset(free):
+            continue
+        if not fixed_items.issubset(res_fixed_items):
+            continue
+        if not res_fixed_keys.issubset(all_keys):
+            continue
+        cost = (len(free & res_fixed_keys), len(free - res_keys))
+        if best_cost is None or cost < best_cost:
+            best, best_cost = (cls, L), cost
+            if cost == (0, 0):
+                break  # perfect fit; layouts are iterated in insertion order so this is optimal
 
-    def resolve(self, res_layout: dict, MVType: type = None):
-        res_free = frozenset(k for k, v in res_layout.items() if v is Ellipsis)
-        res_fixed_keys = frozenset(k for k, v in res_layout.items() if v is not Ellipsis)
-        res_fixed_items = frozenset((k, v) for k, v in res_layout.items() if v is not Ellipsis)
-        res_keys = res_free | res_fixed_keys
-
-        best_entry, best_cost = None, None
-
-        entries = self.entries if MVType is None else [
-            e for e in self.entries if issubclass(e.cls, MVType)
-        ]
-        for entry in entries:
-            _, _, free, fixed_items, all_keys = entry
-            if not res_free.issubset(free):
-                continue
-            if not fixed_items.issubset(res_fixed_items):
-                continue
-            if not res_fixed_keys.issubset(all_keys):
-                continue
-            cost = (len(free & res_fixed_keys), len(free - res_keys))
-            if best_cost is None or cost < best_cost:
-                best_entry, best_cost = entry, cost
-                if cost == (0, 0):
-                    break  # perfect fit; entries are in insertion order so this is optimal
-
-        return (best_entry.cls, best_entry.layout) if best_entry is not None else (None, None)
+    return best
 
 
-def do_codegen(codegen, *mvs, printer=None, func_printer=None, type_patterns=None) -> CodegenOutput:
+def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
     """
     :param codegen: callable that performs codegen for the given :code:`mvs`. This can be any callable
         that returns either a :class:`~kingdon.multivector.MultiVector`, a dictionary, or an instance of :class:`CodegenOutput`.
@@ -569,7 +551,6 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None, type_patterns=Non
     """
     algebra = mvs[0].algebra
     mvs_orig = [copy.deepcopy(mv) for mv in mvs]
-    type_patterns = type_patterns or {}
 
     res = codegen(*(mv.asmvtype() for mv in mvs))
 
@@ -579,11 +560,11 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None, type_patterns=Non
         res = mvs[output_mv_idx]
         mvs = mvs_orig
     else:
-        # Use the type hint from type_patterns (if any and available as archetype) to narrow resolve() to that type and its subclasses.
-        mv_type_hint = type_patterns.get(tuple(type(mv) for mv in mvs))
-        mv_type_hint = mv_type_hint if mv_type_hint in algebra.archetypes else None
-        res_layout = {k: v if isinstance(v, float) else ... for k, v in res.items()}
-        MVType, layout = algebra.layout_resolver.resolve(res_layout, mv_type_hint)
+        def is_number(x):
+            try: float(x); return True
+            except (ValueError, TypeError): return False
+        res_layout = {k: v if is_number(str(v)) else ... for k, v in res.items()}
+        MVType, layout = resolve_layout(algebra._type_layouts, res_layout)
         
         if layout is not None:
             res = {k: v for k, v in res.items() if layout[k] == ...}

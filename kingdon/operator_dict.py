@@ -170,7 +170,7 @@ class OperatorDict(Mapping):
         if types_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
             mvs = self.make_symbolic_mvs(types_in, shapes_in)
-            keys_out, func, MVType = do_codegen(self.codegen, *mvs, printer=self.printer, func_printer=self.func_printer, type_patterns=self.algebra.type_patterns.get(self.name, {}))
+            keys_out, func, MVType = do_codegen(self.codegen, *mvs, printer=self.printer, func_printer=self.func_printer)
             self.algebra.numspace[func.__name__] = wrapped_func = self.wrapper(func) if self.wrapper else func
             self.operator_dict[types_in] = OperatorDictOutput(keys_out, func, wrapped_func, MVType)
         return self.operator_dict[types_in]
@@ -276,7 +276,7 @@ class UnaryOperatorDict(OperatorDict):
         type_in = (type(mv), mv.keys())
         if type_in not in self.operator_dict:
             mv = self.make_symbolic_mvs((type_in,), (mv.shape,))[0]
-            keys_out, func, MVType = do_codegen(self.codegen, mv, printer=self.printer, func_printer=self.func_printer, type_patterns=self.algebra.type_patterns[self.name])
+            keys_out, func, MVType = do_codegen(self.codegen, mv, printer=self.printer, func_printer=self.func_printer)
             self.algebra.numspace[func.__name__] = wrapped_func = self.wrapper(func) if self.wrapper else func
             self.operator_dict[type_in] = OperatorDictOutput(keys_out, func, wrapped_func, MVType)
         return self.operator_dict[type_in]

@@ -9,8 +9,8 @@ from sympy import symbols
 from kingdon.algebra import Algebra
 from kingdon.multivector import (
     MultiVector, # Generic MultiVector type.
-    Scalar, PseudoScalar, Vector, Bivector, PseudoBivector, PseudoVector, # k-vectors
-    Bireflection, Trireflection, Quadreflection, # compositions
+    Scalar, Vector, Bivector,  # k-vectors
+    Bireflection, # compositions
     Direction, EVector, UPoint, Point, Translation,  # PGA types
     stack
 )
