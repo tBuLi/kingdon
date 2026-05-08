@@ -315,6 +315,13 @@ def test_mvtype_cache(MVType, MVType_alt, grades):
     # Point reflection should preserve bireflections
     (Point, Translation, Translation, lambda p, q: p >> q),
     (Point, Bireflection, Bireflection, lambda p, q: p >> q),
+    # Commutator is grade preserving, although not always type preserving
+    (Bivector, Vector, Vector, lambda p, q: p.cp(q)),
+    (Bivector, Bivector, {'2DPGA': Direction, '3DPGA': Bivector}, lambda p, q: p.cp(q)),
+    (Bivector, Bivector ^ Vector, {'2DPGA': Scalar, '3DPGA': Direction}, lambda p, q: p.cp(q)),
+    (Bivector, Point, Direction, lambda p, q: p.cp(q)),
+    (Bivector, Bireflection, {'2DPGA': Direction, '3DPGA': Bivector}, lambda p, q: p.cp(q)),
+    (Bivector, Translation, {'2DPGA': Direction, '3DPGA': Bivector}, lambda p, q: p.cp(q)),
 ])
 @pytest.mark.parametrize("alg_name", ['2DPGA', '3DPGA'])
 def test_type2type(alg_name, T1, T2, T3, func):
@@ -326,4 +333,6 @@ def test_type2type(alg_name, T1, T2, T3, func):
     if isinstance(T3, tuple):
         assert result.grades == pos_grades(alg, T3)
     else:
+        if isinstance(T3, dict):
+            T3 = T3[alg_name]
         assert isinstance(result, T3)
