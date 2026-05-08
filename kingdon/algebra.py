@@ -91,31 +91,31 @@ class Algebra:
     basis: List[str] = field(default_factory=list)
 
     # Clever dictionaries that cache previously symbolically optimized lambda functions between elements.
-    gp: OperatorDict = operation_field(metadata={'codegen': codegen_gp, 'codegen_symbolcls': mathstr})  # geometric product
+    gp: OperatorDict = operation_field(metadata={'codegen': codegen_gp,})  # geometric product
     sw: OperatorDict = operation_field(metadata={'codegen': codegen_sw})  # conjugation
-    cp: OperatorDict = operation_field(metadata={'codegen': codegen_cp, 'codegen_symbolcls': mathstr})  # commutator product
-    acp: OperatorDict = operation_field(metadata={'codegen': codegen_acp, 'codegen_symbolcls': mathstr})  # anti-commutator product
-    ip: OperatorDict = operation_field(metadata={'codegen': codegen_ip, 'codegen_symbolcls': mathstr})  # inner product
-    sp: OperatorDict = operation_field(metadata={'codegen': codegen_sp, 'codegen_symbolcls': mathstr})  # Scalar product
-    lc: OperatorDict = operation_field(metadata={'codegen': codegen_lc, 'codegen_symbolcls': mathstr})  # left-contraction
-    rc: OperatorDict = operation_field(metadata={'codegen': codegen_rc, 'codegen_symbolcls': mathstr})  # right-contraction
-    op: OperatorDict = operation_field(metadata={'codegen': codegen_op, 'codegen_symbolcls': mathstr})  # exterior product
-    rp: OperatorDict = operation_field(metadata={'codegen': codegen_rp, 'codegen_symbolcls': mathstr})  # regressive product
+    cp: OperatorDict = operation_field(metadata={'codegen': codegen_cp,})  # commutator product
+    acp: OperatorDict = operation_field(metadata={'codegen': codegen_acp,})  # anti-commutator product
+    ip: OperatorDict = operation_field(metadata={'codegen': codegen_ip,})  # inner product
+    sp: OperatorDict = operation_field(metadata={'codegen': codegen_sp,})  # Scalar product
+    lc: OperatorDict = operation_field(metadata={'codegen': codegen_lc,})  # left-contraction
+    rc: OperatorDict = operation_field(metadata={'codegen': codegen_rc,})  # right-contraction
+    op: OperatorDict = operation_field(metadata={'codegen': codegen_op,})  # exterior product
+    rp: OperatorDict = operation_field(metadata={'codegen': codegen_rp,})  # regressive product
     proj: OperatorDict = operation_field(metadata={'codegen': codegen_proj})  # projection
-    add: OperatorDict = operation_field(metadata={'codegen': codegen_add, 'codegen_symbolcls': mathstr})  # add
-    sub: OperatorDict = operation_field(metadata={'codegen': codegen_sub, 'codegen_symbolcls': mathstr})  # sub
+    add: OperatorDict = operation_field(metadata={'codegen': codegen_add,})  # add
+    sub: OperatorDict = operation_field(metadata={'codegen': codegen_sub,})  # sub
     div: OperatorDict = operation_field(metadata={'codegen': codegen_div})  # division
     # Unary operators
     inv: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_inv})  # inverse
-    neg: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_neg, 'codegen_symbolcls': mathstr})  # negate
-    reverse: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_reverse, 'codegen_symbolcls': mathstr})  # reverse
-    involute: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_involute, 'codegen_symbolcls': mathstr})  # grade involution
-    conjugate: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_conjugate, 'codegen_symbolcls': mathstr})  # clifford conjugate
+    neg: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_neg,})  # negate
+    reverse: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_reverse,})  # reverse
+    involute: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_involute,})  # grade involution
+    conjugate: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_conjugate,})  # clifford conjugate
     sqrt: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_sqrt})  # Square root
     polarity: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_polarity})
     unpolarity: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_unpolarity})
-    hodge: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_hodge, 'codegen_symbolcls': mathstr})
-    unhodge: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_unhodge, 'codegen_symbolcls': mathstr})
+    hodge: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_hodge,})
+    unhodge: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_unhodge,})
     normsq: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_normsq})  # norm squared
     outerexp: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outerexp})
     outersin: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outersin})
