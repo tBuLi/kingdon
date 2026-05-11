@@ -1,0 +1,40 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: kingdon
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Martin
+    family-names: Roelfs
+    name-particle: Martin
+    orcid: 'https://orcid.org/0000-0002-8646-7693'
+identifiers:
+  - type: url
+    value: 'https://arxiv.org/abs/2503.10451'
+repository-code: 'https://github.com/tBuLi/kingdon'
+abstract: >-
+  Kingdon is an open-source Python package designed to
+  seamlessly integrate Geometric Algebra (GA) into existing
+  workflows. Unlike previous GA libraries, kingdon is
+  input-type-agnostic, and hence supports GA's over e.g.
+  PyTorch tensors, NumPy arrays, or SymPy symbolic
+  expressions, to name but a few. Despite this refusal to
+  specialize, it delivers high performance by symbolically
+  optimizing operators and leveraging input sparsity for
+  Just-In-Time compiled expressions. Additionally, its
+  visualization capabilities in Jupyter notebooks using
+  ganja align with the rapid prototyping workflow common to
+  scientific research.
+license: MIT
+preferred-citation:
+  type: article
+  authors:
+    - family-names: Roelfs
+      given-names: Martin
+  title: "The Willing Kingdon Clifford Algebra Library"
+  year: 2025
+  journal: "Journal of Open Research Software"
