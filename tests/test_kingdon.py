@@ -9,7 +9,7 @@ from dataclasses import replace
 import pytest
 import numpy as np
 
-from sympy import Symbol, expand, sympify, cos, sin, sinc
+from sympy import Symbol, expand, sympify, cos, sin, sinc, I, Piecewise
 from kingdon import Algebra, MultiVector, symbols
 from kingdon.operator_dict import UnaryOperatorDict
 
@@ -909,6 +909,135 @@ def test_simple_exp():
     R = B.exp()
     l = (-(B | B).e) ** 0.5
     assert R == cos(l) + sinc(l) * B
+
+
+def test_log():
+    alg = Algebra(2, 0, 1)
+    # Translation in PGA (B^2 == 0)
+    B_trans = alg.bivector([1, 2, 0])
+    R_trans = B_trans.exp()
+    assert (R_trans.log() - B_trans).filter(lambda v: np.abs(v) > 1e-15) == alg.multivector()
+    assert ((3.0 * R_trans).log() - B_trans).filter(lambda v: np.abs(v) > 1e-15) == alg.multivector()
+
+    # Rotation in PGA (B^2 < 0)
+    B_rot = alg.bivector([0, 0, 2])
+    R_rot = B_rot.exp()
+    assert (R_rot.log() - B_rot).filter(lambda v: np.abs(v) > 1e-15) == alg.multivector()
+    assert ((2.0 * R_rot).log() - B_rot).filter(lambda v: np.abs(v) > 1e-15) == alg.multivector()
+
+    # Symbolic translations simplify exactly.
+    a = Symbol('a', real=True)
+    B_sym = alg.bivector(e01=a, e02=2 * a)
+    assert B_sym.exp().log() == B_sym
+
+    # Complex Symbolic evaluation tests the combined Piecewise fast-path
+    b = Symbol('b', real=True, nonzero=True)
+    B_complex_sym = alg.bivector(e12=a + I * b)
+    # We verify the expression builds correctly. 
+    assert isinstance(B_complex_sym.exp().log().e12, Piecewise)
+
+    # Array-valued rotors can mix translation and rotation branches, even when rescaled per entry.
+    scale = np.array([3.0, 2.0, 1.5])
+    B_arr = alg.multivector(
+        e01=np.array([2.0, 0.0, 0.0]),
+        e02=np.array([0.5, 0.0, 0.0]),
+        e12=np.array([0.0, 0.7, 1.2]),
+    )
+    R_arr = scale * alg.multivector(
+        e=np.array([1.0, np.cos(0.7), np.cos(1.2)]),
+        e01=B_arr.e01,
+        e02=B_arr.e02,
+        e12=np.array([0.0, np.sin(0.7), np.sin(1.2)]),
+    )
+    diff = R_arr.log() - B_arr
+    assert np.allclose(np.array(diff.values()), 0.0, atol=1e-12)
+
+    # Hyperbolic rotations (boosts)
+    alg_mink = Algebra(1, 1)
+    B_boost = alg_mink.bivector(e12=1.5)
+    assert (B_boost.exp().log() - B_boost).filter(lambda v: np.abs(v) > 1e-14) == alg_mink.multivector()
+    assert ((2.0 * B_boost.exp()).log() - B_boost).filter(lambda v: np.abs(v) > 1e-14) == alg_mink.multivector()
+
+    # Multi-branch arrays across all three regions (Circular, Hyperbolic, Null) simultaneously
+    # B_mix.exp() crashes since it triggers an unmasked `.filter()`, so we
+    # construct the exponential array manually to test `log()` handling parallel cases
+    alg_multi = Algebra(2, 1, 1)  
+    B_mix = alg_multi.multivector(
+        e12=np.array([1.5, 0.0, 0.0]),  # Circular: B^2 = -2.25
+        e13=np.array([0.0, 1.2, 0.0]),  # Hyperbolic: B^2 = +1.44
+        e01=np.array([0.0, 0.0, 2.5]),  # Null: B^2 = 0
+    )
+    R_mix = alg_multi.multivector(
+        e=np.array([np.cos(1.5), np.cosh(1.2), 1.0]),
+        e12=np.array([np.sin(1.5), 0.0, 0.0]),
+        e13=np.array([0.0, np.sinh(1.2), 0.0]),
+        e01=np.array([0.0, 0.0, 2.5]),
+    )
+    diff = R_mix.log() - B_mix
+    assert np.allclose(np.array(diff.values()), 0.0, atol=1e-12)
+
+    # Complex simple rotors are supported as well.
+    alg_vga2d = Algebra(2)
+    B_complex = alg_vga2d.bivector(e12=0.4 + 0.2j)
+    diff = B_complex.exp().log() - B_complex
+    assert diff.filter(lambda v: np.abs(v) > 1e-14) == alg_vga2d.multivector()
+
+    # checks for R2,2 (supports complex values needed for invariant decomposition, per paper: https://www.researchgate.net/publication/370750268_Graded_Symmetry_Groups_Plane_and_Simple)
+    alg_r22 = Algebra(2, 2)
+    B2_complex = alg_r22.bivector(e12=1.0 + 1.0j, e13=2.0 - 0.5j)
+    diff2 = B2_complex.exp().log() - B2_complex
+    assert diff2.filter(lambda v: np.abs(v) > 1e-14) == alg_r22.multivector()
+
+    # 3DPGA checks the 4D cases where non-simple bivectors can exist.
+    pga3d = Algebra.fromname('3DPGA')
+    B_pga3d_rot = pga3d.bivector(e12=0.8)
+    B_pga3d_trans = pga3d.bivector(e03=0.7)
+    assert ((2.5 * B_pga3d_rot.exp()).log() - B_pga3d_rot).filter(lambda v: np.abs(v) > 1e-14) == pga3d.multivector()
+    assert ((1.5 * B_pga3d_trans.exp()).log() - B_pga3d_trans).filter(lambda v: np.abs(v) > 1e-14) == pga3d.multivector()
+
+
+def test_log_principal_branch():
+    alg = Algebra(2)
+    B = alg.bivector(e12=3.5)
+    R = B.exp()
+    B_principal = alg.bivector(e12=3.5 - 2 * np.pi)
+    assert (R.log() - B_principal).filter(lambda v: np.abs(v) > 1e-15) == alg.multivector()
+
+
+def test_log_rejects_invalid_inputs():
+    alg = Algebra(2)
+    with pytest.raises(ValueError, match='zero multivector'):
+        alg.multivector().log()
+
+    assert alg.multivector(e=1 + 0j).log() == alg.multivector()
+
+    with pytest.raises(ValueError, match='negative real scalars'):
+        alg.multivector(e=-1).log()
+
+    # Array-valued negative scalar translation rejection
+    with pytest.raises(ValueError, match='negative real scalars'):
+        alg.multivector(e=np.array([1.0, -1.0])).log()
+
+    with pytest.raises(NotImplementedError, match='scalar and bivector parts'):
+        alg.multivector(e=1, e1=1).log()
+
+    pga3d = Algebra.fromname('3DPGA')
+    # Construct a valid screw motion from two skew exponentials, then test both error paths.
+    b1 = 0.5 * pga3d.blades.e12
+    b2 = 0.2 * pga3d.blades.e03
+    M_screw = b1.exp() * b2.exp()
+
+    # Full screw has grade-4 component, so it hits the grade-validation check.
+    with pytest.raises(NotImplementedError, match='scalar and bivector parts'):
+        M_screw.log()
+
+    # Project to grades (0,2) to isolate a non-simple bivector part and hit the simplicity check.
+    M_grade02 = M_screw.grade(0) + M_screw.grade(2)
+    with pytest.raises(NotImplementedError, match='simple bivector part'):
+        M_grade02.log()
+
+    with pytest.raises(TypeError, match='Please provide `arctanh2` and `sqrt` together.'):
+        alg.multivector(e=1).log(arctanh2=lambda y, x: 0)
 
 def test_dual_numbers():
     alg = Algebra(r=1)

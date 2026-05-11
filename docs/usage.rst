@@ -252,6 +252,14 @@ Below is an overview:
      - :math:`\sqrt{a}`
      -
      - :code:`a.sqrt()`
+   * - Exponential of :code:`a`
+     - :math:`\exp(a)`
+     -
+     - :code:`a.exp()`
+   * - Logarithm of :code:`a`
+     - :math:`\log(a)`
+     -
+     - :code:`a.log()`
    * - Dual of :code:`a`
      - :math:`a*`
      -

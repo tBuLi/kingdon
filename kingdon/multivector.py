@@ -614,6 +614,25 @@ class MultiVector:
         l = sqrt(ll)
         return self * sinhc(l) + cosh(l)
 
+    def log(self, arctanh2=None, sqrt=None):
+        r"""
+        Calculate the principal logarithm of a simple rotor with scalar and bivector parts.
+        On normalized simple rotors this is the inverse of `exp` on its principal branch.
+        The rotor need not be normalized.
+
+        Works for python float, int and complex dtypes, numpy arrays, and for symbolic expressions using sympy.
+        For more control, it is possible to explicitly provide `arctanh2` and `sqrt` functions.
+        If you provide one, you must provide both.
+
+        If the coefficients are array-valued, custom `sqrt` and `arctanh2` functions can optionally
+        accept the keyword masks `mask_circular`, `mask_hyperbolic`, and `mask_null`.
+
+        The argument to `sqrt` is the scalar :math:`\langle S^2 \rangle_0`, where :math:`S`
+        is the bivector part of the rotor.
+        """
+        from kingdon.log import log as multivector_log
+        return multivector_log(self, arctanh2=arctanh2, sqrt=sqrt)
+
     def polarity(self):
         return self.algebra.polarity(self)
 
