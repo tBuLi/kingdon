@@ -3,7 +3,8 @@ from collections import OrderedDict
 import pytest
 
 from kingdon import (
-    Algebra, Scalar, Vector, Bivector,
+    Algebra,
+    Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector, # k-vectors
     Bireflection,
 )
 from kingdon.multivector import (
@@ -34,11 +35,13 @@ def pos_grades(alg, grds):
         (Scalar, {0: ...}, (0,), (MultiVector,)),
         (Vector, {1: ..., 2: ..., 4: ..., 8: ...}, (1,), (MultiVector,)),
         (Bivector, {9: ..., 10: ..., 12: ..., 3: ..., 5: ..., 6: ...}, (2,), (MultiVector,)),
+        (Trivector, {14: ..., 13: ..., 11: ..., 7: ...}, (3,), (MultiVector,)),
+        (Quadvector, {15: ...}, (4,), (MultiVector,)),
         (Direction, {14: ..., 13: ..., 11: ...}, (-2,), (PseudoVector,)),
         (EVector, {1: ..., 2: ..., 4: ...}, (1,), (Vector,)),
         (UPoint, {1: ..., 2: ..., 4: ..., 8: 1.0}, (1,), (Vector,)),
         (Point, {14: ..., 13: ..., 11: ..., 7: 1.0}, (-2,), (PseudoVector,)),
-        (Translation, {0: 1.0, 9: ..., 10: ..., 12: ...}, (0, 2), (MultiVector,)),
+        (Translation, {0: 1.0, 9: ..., 10: ..., 12: ...}, (0, 2), (Bireflection,)),
         (Bireflection, {0: ..., 9: ..., 10: ..., 12: ..., 3: ..., 5: ..., 6: ...}, (0, 2), (MultiVector,)),
     ],
 )
@@ -60,16 +63,18 @@ def test_pga_archetypes(alg_name, MVType, layout, grades, bases):
             remap = direct
         remapped = {k2: v for k, v in layout.items() if (k2 := remap(k)) is not None}
         layout = {k: remapped[k] for k in alg.canon2bin.values() if k in remapped}
+    if max(grades) > alg.d: return
 
     # These archetypes should exist on the algebra.
     archetype = alg.archetypes[MVType]
+    assert type(archetype) is MultiVector
     assert archetype.layout == layout
     assert OrderedDict(archetype.layout) == OrderedDict(layout)
     assert issubclass(MVType, bases)
 
-    # Alternative: directly create the archetype
+    # Alternative: directly create the archetype. This does not create a layout however.
     x = MVType.archetype(alg, 'x')
-    assert isinstance(x, MVType)
+    assert type(x) is MultiVector
     assert x.grades == pos_grades(alg, grades)
     assert x.shape == (len(x.keys()),)
     assert x.keys() == tuple(archetype.layout)
@@ -101,14 +106,14 @@ def test_layout(pga3d):
     keys = tuple(k for k, v in archetype.layout.items() if v == ...)
     p = pga3d.point(name='x', keys=keys)
     assert p == pga3d.point(name='x')
-    assert str(p) == 'x032 𝐞₀₃₂ + x013 𝐞₀₁₃ + x021 𝐞₀₂₁ + (1) 𝐞₁₂₃'
+    assert str(p) == 'x032 𝐞₀₃₂ + x013 𝐞₀₁₃ + x021 𝐞₀₂₁ + 1.0 𝐞₁₂₃'
 
     # The origin is the special case of a point with no keys.
     origin = pga3d.point(name='x', keys=())
     assert origin.keys() == ()
     assert origin.values() == []
     assert origin.shape == (0,)
-    assert str(origin) == '(1) 𝐞₁₂₃'
+    assert str(origin) == '1.0 𝐞₁₂₃'
 
     # Let's also test a point with a subset of keys.
     pz = pga3d.point(e012=3)
@@ -116,7 +121,7 @@ def test_layout(pga3d):
     assert pz.keys() == (11,)  # e021 = 8 + 2 + 1
     assert pz.values() == [-3]  # e021 = -e012.
     assert pz.shape == (1,)
-    assert str(pz) == '-3 𝐞₀₂₁ + (1) 𝐞₁₂₃'
+    assert str(pz) == '-3 𝐞₀₂₁ + 1.0 𝐞₁₂₃'
 
 
 # TODO: add 2d and 3d pga parameterizations.
@@ -124,8 +129,8 @@ def test_layout(pga3d):
     (Direction, EVector, EVector, (-2,), (1,)),
     (EVector, Direction, Direction, (1,), (-2,)),
     (Point, Vector, UPoint, (-2,), (1,)),
-    (UPoint, Point, Bivector^Vector, (1,), (-2,)),
-    (Vector, Bivector^Vector, Bivector^Vector, (1,), (3,)),
+    (UPoint, Point, Trivector, (1,), (-2,)),
+    (Vector, Trivector, Trivector, (1,), (3,)),
     (PseudoVector, Vector, Vector, (3,), (1,)),
 ])
 def test_pga_duality_relations(MVType, DType, UDType, grades, dgrades):
@@ -158,7 +163,7 @@ def test_translations(alg_name):
     assert t.shape == (alg.d,)  # x y (z) w are free variables for a Bireflection.
 
     # However, we know it should really be a translation, which can be achieved by compiling the same scenario.
-    @alg.compile(symbolic=True)
+    @alg.jit(symbolic=True)
     def translate(p, q):
         return p * q.reverse()
     t = translate(p, q)
@@ -284,20 +289,6 @@ def test_asmvtype(pga3d, source_type, target_type, target_grades, expected_keys,
         assert getattr(result, blade) == getattr(source, blade)
 
 
-@pytest.mark.parametrize("MVType, MVType_alt, grades", [
-    (Bivector, Vector ^ Vector, (2,)),
-    (Bivector ^ Vector, Vector ^ Vector ^ Vector, (3,)),
-    (Bireflection, Vector * Vector, (0, 2,)),
-    (Bireflection * Vector, Vector * Vector * Vector, (1, 3)),
-    (Translation, Point * ~Point, (0, 2)),
-])
-def test_mvtype_cache(MVType, MVType_alt, grades):
-    """ It is possible to construct MVType's structurally rather than referencing them by name. """
-    assert MVType is MVType_alt
-    assert MVType.grades == grades
-    assert MVType_alt.grades == grades
-
-
 @pytest.mark.parametrize("T1, T2, T3, func", [
     (Point, Direction, Point, lambda p, q: p + q),
     (Point, Point, Direction, lambda p, q: p - q),
@@ -309,7 +300,7 @@ def test_mvtype_cache(MVType, MVType_alt, grades):
     # Test twisted Lipschitz action for orthogonal transformations.
     (Vector, Vector, Vector, lambda p, q: p >> q),
     (Vector, Bivector, Bivector, lambda p, q: p >> q),
-    (Vector, Bivector ^ Vector, Bivector ^ Vector, lambda p, q: p >> q),
+    (Vector, Trivector, Trivector, lambda p, q: p >> q),
     (Bireflection, Vector, Vector, lambda p, q: p >> q),
     (Bireflection, Bireflection, Bireflection, lambda p, q: p >> q),
     # Point reflection should preserve bireflections
@@ -318,7 +309,7 @@ def test_mvtype_cache(MVType, MVType_alt, grades):
     # Commutator is grade preserving, although not always type preserving
     (Bivector, Vector, Vector, lambda p, q: p.cp(q)),
     (Bivector, Bivector, {'2DPGA': Direction, '3DPGA': Bivector}, lambda p, q: p.cp(q)),
-    (Bivector, Bivector ^ Vector, {'2DPGA': Scalar, '3DPGA': Direction}, lambda p, q: p.cp(q)),
+    (Bivector, Trivector, {'2DPGA': Scalar, '3DPGA': Direction}, lambda p, q: p.cp(q)),
     (Bivector, Point, Direction, lambda p, q: p.cp(q)),
     (Bivector, Bireflection, {'2DPGA': Direction, '3DPGA': Bivector}, lambda p, q: p.cp(q)),
     (Bivector, Translation, {'2DPGA': Direction, '3DPGA': Bivector}, lambda p, q: p.cp(q)),
@@ -336,3 +327,25 @@ def test_type2type(alg_name, T1, T2, T3, func):
         if isinstance(T3, dict):
             T3 = T3[alg_name]
         assert isinstance(result, T3)
+
+
+@pytest.mark.parametrize("T, grade", [
+    (Scalar, 0),
+    (Vector, 1),
+    (Bivector, 2),
+    (Trivector, 3),
+    (Quadvector, 4),
+    (Pentavector, 5),
+    (Hexavector, 6),
+    (Heptavector, 7),
+    (Octovector, 8),
+])
+@pytest.mark.parametrize("dim", [4, 8, 9])
+def test_grade_selection(dim, T, grade):
+    alg = Algebra(dim)
+    x = alg.multivector(name='x')
+    xg = x.grade(grade)
+    if grade > dim:
+        assert type(xg) == MultiVector
+    else:
+        assert type(xg) == T

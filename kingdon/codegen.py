@@ -1,14 +1,11 @@
 from __future__ import annotations
 
+import re
 import string
-from itertools import product, combinations, groupby, chain
-from collections import namedtuple, defaultdict
+from itertools import chain
+from collections import defaultdict
 from typing import NamedTuple, Callable, Tuple, Dict, Optional, List, Type
-from functools import reduce, cached_property
 import linecache
-import warnings
-import operator
-from dataclasses import dataclass
 import inspect
 import builtins
 import keyword
@@ -17,11 +14,10 @@ import copy
 from sympy.utilities.iterables import iterable, flatten
 from sympy.printing.lambdarepr import LambdaPrinter
 from sympy.simplify.cse_main import numbered_symbols
-from sympy import Symbol
+from sympy import Symbol, sympify
 
-from kingdon.powers import power_supply
 from kingdon.polynomial import poly_cse, poly_format, Polynomial, RationalPolynomial
-
+from kingdon.operators import MultiVector
 
 class CodegenOutput(NamedTuple):
     """
@@ -33,442 +29,8 @@ class CodegenOutput(NamedTuple):
     """
     keys_out: Tuple[int]
     func: Callable
-    MVType: Type = None
-
-
-def codegen_product(x, y, filter_func=None, sign_func=None, keyout_func=operator.xor):
-    """
-    Helper function for the codegen of all product-type functions.
-
-    :param x: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
-    :param y: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
-    :param filter_func: A condition which should be true in the preprocessing of terms.
-        Input is a TermTuple.
-    :param sign_func: function to compute sign between terms. E.g. algebra.signs[ei, ej]
-        for metric dependent products. Input: 2-tuple of blade indices, e.g. (ei, ej).
-    :param keyout_func:
-    """
-    sign_func = sign_func or (lambda pair: x.algebra.signs[pair])
-
-    res = {}
-    for (kx, vx), (ky, vy) in product(x.items(), y.items()):
-        if (sign := sign_func((kx, ky))):
-            key_out = keyout_func(kx, ky)
-            if filter_func and not filter_func(kx, ky, key_out): continue
-            termstr = vx * vy if sign > 0 else (- vx * vy)
-            if key_out in res:
-                res[key_out] += termstr
-            else:
-                res[key_out] = termstr
-    return res
-
-
-def codegen_gp(x, y):
-    """
-    Generate the geometric product between :code:`x` and :code:`y`.
-
-    :param x: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
-    :param y: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
-    :return: tuple with integers indicating the basis blades present in the
-        product in binary convention, and a lambda function that perform the product.
-    """
-    return codegen_product(x, y)
-
-
-def codegen_sw(x, y):
-    r"""
-    Generate the conjugation of :code:`y` by the versor (k-reflection) :code:`x`,
-    using the conjugation formula :math:`(-1)^{k \ell} x y x^{-1}`, where :math:`k` is the
-    grade of :code:`x` and :math:`\ell` is the grade of the blade :code:`y`. (Eq 7.18 in [GA4CS]_)
-    If :code:`y` is a multivector instead of a blade, the formula is applied to each pure
-    grade component of :code:`y` separately to ensure a consistent result.
-    **Important**: note that :code:`x` is assumed to be normalized such that :math:`x \widetilde{x} = 1`
-    (i.e. :code:`x.normsq() == 1`). Moreover, grade preservation is enforced by the code.
-    Expect unexpected results if this operator is used with non-versors.
-
-    .. [GA4CS] Dorst, Lasenby, and Fontijne. Geometric Algebra for Computer Science. Morgan Kaufmann, 2007.
-
-    :param x: The versor (k-reflection), i.e. a multivector satisfying :math:`x \widetilde{x} = 1`.
-    :param y: The multivector to be conjugated.
-    :return: tuple of keys in binary representation and a lambda function.
-    :raises TypeError: If :code:`x` is not a versor (k-reflection) and thus neither even nor odd.
-    """
-    if len(set((g % 2 for g in x.grades))) != 1:
-        raise TypeError("x must be a versor (k-reflection) and thus either even or odd.")
-    xr = x.reverse()
-    axar_scalar = (x * xr).grade(0)  # The scalar part of x * ~x, which is assumed to be 1.
-    if max(x.grades) % 2 == 1:
-        return sum(((x * (yg_involute := y.grade(g).involute()) * xr + yg_involute * (1 - axar_scalar)).grade(g) for g in y.grades), start=type(x)(x.algebra))
-    return sum(((x * y.grade(g) * xr + y.grade(g) * (1 - axar_scalar)).grade(g) for g in y.grades), start=type(x)(x.algebra))
-
-
-def codegen_cp(x, y):
-    """
-    Generate the commutator product of :code:`x` and :code:`y`: :code:`x.cp(y) = 0.5*(x*y-y*x)`.
-
-    :return: tuple of keys in binary representation and a lambda function.
-    """
-    algebra = x.algebra
-    filter_func = lambda kx, ky, k_out: (algebra.signs[kx, ky] - algebra.signs[ky, kx])
-    return codegen_product(x, y, filter_func=filter_func)
-
-
-def codegen_acp(x, y):
-    """
-    Generate the anti-commutator product of :code:`x` and :code:`y`: :code:`x.acp(y) = 0.5*(x*y+y*x)`.
-
-    :return: tuple of keys in binary representation and a lambda function.
-    """
-    algebra = x.algebra
-    filter_func = lambda kx, ky, k_out: (algebra.signs[kx, ky] + algebra.signs[ky, kx])
-    return codegen_product(x, y, filter_func=filter_func)
-
-
-def codegen_ip(x, y, diff_func=abs):
-    """
-    Generate the inner product of :code:`x` and :code:`y`.
-
-    :param diff_func: How to treat the difference between the binary reps of the basis blades.
-        if :code:`abs`, compute the symmetric inner product. When :code:`lambda x: -x` this
-        function generates left-contraction, and when :code:`lambda x: x`, right-contraction.
-    :return: tuple of keys in binary representation and a lambda function.
-    """
-    filter_func = lambda kx, ky, k_out: k_out == diff_func(kx - ky)
-    return codegen_product(x, y, filter_func=filter_func)
-
-
-def codegen_lc(x, y):
-    """
-    Generate the left-contraction of :code:`x` and :code:`y`.
-
-    :return: tuple of keys in binary representation and a lambda function.
-    """
-    return codegen_ip(x, y, diff_func=lambda x: -x)
-
-
-def codegen_rc(x, y):
-    """
-    Generate the right-contraction of :code:`x` and :code:`y`.
-
-    :return: tuple of keys in binary representation and a lambda function.
-    """
-    return codegen_ip(x, y, diff_func=lambda x: x)
-
-
-def codegen_sp(x, y):
-    """
-    Generate the scalar product of :code:`x` and :code:`y`.
-
-    :return: tuple of keys in binary representation and a lambda function.
-    """
-    return codegen_ip(x, y, diff_func=lambda x: 0)
-
-
-def codegen_proj(x, y):
-    fr"""
-    Generate the projection of :code:`x` onto :code:`y`: :math:`(x \cdot y) \widetilde{y}`,
-    where it is assumed that :code:`y` is a normalized versor (k-reflection) and hence :math:`y^{-1} = \widetilde{y}`.
-
-    :param x: The multivector to be projected.
-    :param y: The versor (k-reflection) onto which :code:`x` is projected.
-    :return: tuple of keys in binary representation and a lambda function.
-    :raises TypeError: If :code:`y` is not a versor (k-reflection).
-    """
-    if len(set((g % 2 for g in y.grades))) != 1:
-        raise TypeError("y must be a versor (k-reflection) and thus either even or odd.")
-    return (x | y) * y.reverse()
-
-
-def codegen_op(x, y):
-    """
-    Generate the outer product of :code:`x` and :code:`y`: :code:`x.op(y) = x ^ y`.
-
-    :x: MultiVector
-    :y: MultiVector
-    :return: dictionary with integer keys indicating the corresponding basis blade in binary convention,
-        and values which are a 3-tuple of indices in `x`, indices in `y`, and a lambda function.
-    """
-    filter_func = lambda kx, ky, k_out: k_out == kx + ky
-    return codegen_product(x, y, filter_func=filter_func)
-
-
-def codegen_rp(x, y):
-    """
-    Generate the regressive product of :code:`x` and :code:`y`:,
-    :math:`x \\vee y`.
-
-    :param x:
-    :param y:
-    :return: tuple of keys in binary representation and a lambda function.
-    """
-    algebra = x.algebra
-    key_pss = len(algebra) - 1
-    keyout_func = lambda kx, ky: key_pss - (kx ^ ky)
-    filter_func = lambda kx, ky, k_out: key_pss == kx + ky - k_out
-    # Sign is composed of dualization of each blade, exterior product, and undual.
-    sign_func = lambda pair: (
-        algebra.signs[pair[0], key_pss - pair[0]] *
-        algebra.signs[pair[1], key_pss - pair[1]] *
-        algebra.signs[key_pss - pair[0], key_pss - pair[1]] *
-        algebra.signs[key_pss - (pair[0] ^ pair[1]), pair[0] ^ pair[1]]
-    )
-
-    return codegen_product(
-        x, y,
-        filter_func=filter_func,
-        keyout_func=keyout_func,
-        sign_func=sign_func,
-    )
-
-
-Fraction = namedtuple('Fraction', ['numer', 'denom'])
-Fraction.__doc__ = """
-Tuple representing a fraction.
-"""
-
-
-def codegen_inv(y, symbolic=False):
-    alg = y.algebra
-    # If y * ~y is a scalar, use the simple blade inverse ~y / (y * ~y).
-    # This matches GAmphetamine's check: if (gradeOf(a*~a) == 0) return gp(reverse(a), inv(sq))
-    # and avoids producing unsimplified rational polynomials like (y * s) / s^2.
-    yr = y.reverse()
-    ynorm = y * yr
-    if ynorm.grades == (0,):
-        num = yr
-        denom = ynorm
-    elif alg.d < 6:
-        num, denom = codegen_hitzer_inv(y, symbolic=True)
-    else:
-        num, denom = codegen_shirokov_inv(y, symbolic=True)
-
-    if symbolic:
-        return Fraction(num, denom)
-
-    d = denom.e
-    return num.map(lambda v: v / d)
-
-
-def codegen_hitzer_inv(x, symbolic=False):
-    """
-    Generate code for the inverse of :code:`x` using the Hitzer inverse,
-    which works up to 5D algebras.
-    """
-    alg = x.algebra
-    d = alg.d
-    if d == 0:
-        num = alg.blades.e
-    elif d == 1:
-        num = x.involute()
-    elif d == 2:
-        num = x.conjugate()
-    elif d == 3:
-        xconj = x.conjugate()
-        num = xconj * ~(x * xconj)
-    elif d == 4:
-        xconj = x.conjugate()
-        x_xconj = x * xconj
-        num = xconj * (x_xconj - 2 * x_xconj.grade(3, 4))
-    elif d == 5:
-        xconj = x.conjugate()
-        x_xconj = x * xconj
-        combo = xconj * ~x_xconj
-        x_combo = x * combo
-        num = combo * (x_combo - 2 * x_combo.grade(1, 4))
-    else:
-        raise NotImplementedError(f"Closed form inverses are not known in {d=} dimensions.")
-    denom = x.sp(num)
-
-    if symbolic:
-        return Fraction(num, denom)
-    denom = denom.e
-    return num.map(lambda v: v / denom)
-
-
-def codegen_shirokov_inv(x, symbolic=False):
-    """
-    Generate code for the inverse of :code:`x` using the Shirokov inverse,
-    which is works in any algebra, but it can be expensive to compute.
-    """
-    alg = x.algebra
-    n = 2 ** ((alg.d + 1) // 2)
-    supply = power_supply(x, tuple(range(1, n + 1)))  # Generate powers of x efficiently.
-    powers = []
-    cs = []
-    xs = []
-    for i in range(1, n + 1):
-        powers.append(next(supply))
-        xi = powers[i - 1]
-        for j in range(i - 1):
-            power_idx = i - j - 2
-            xi_diff = powers[power_idx] * cs[j]
-            xi = xi - xi_diff
-        if xi.grades == (0,):
-            break
-        xs.append(xi)
-        cs.append(s if (s := xi.e) == 0 else n * s / i)
-
-    if i == 1:
-        adj = alg.blades.e
-    else:
-        adj = xs[-1] - cs[-1]
-
-    if symbolic:
-        return Fraction(adj, xi)
-    xi = xi.e
-    return adj.map(lambda v: v / xi)
-
-
-def codegen_div(x, y):
-    """
-    Generate code for :math:`x y^{-1}`.
-    """
-    num, denom = codegen_inv(y, symbolic=True)
-    if not denom:
-        raise ZeroDivisionError
-    d = denom.e
-    return (x * num).map(lambda v: v / d)
-
-
-def codegen_normsq(x):
-    return x * ~x
-
-
-def codegen_outerexp(x, asterms=False):
-    alg = x.algebra
-    if len(x.grades) != 1:
-        warnings.warn('Outer exponential might not converge for mixed-grade multivectors.', RuntimeWarning)
-    k = alg.d
-
-    Ws = [alg.scalar(e=1), x]
-    j = 2
-    while j <= k:
-        Wj = Ws[-1] ^ x
-        # Dividing like this avoids floating point numbers, which is excellent.
-        Wj._values = tuple(v / j for v in Wj._values)
-        if Wj:
-            Ws.append(Wj)
-            j += 1
-        else:
-            break
-
-    if asterms:
-        return Ws
-    return reduce(operator.add, Ws)
-
-def codegen_outersin(x):
-    odd_Ws = codegen_outerexp(x, asterms=True)[1::2]
-    outersin = reduce(operator.add, odd_Ws)
-    return outersin
-
-
-def codegen_outercos(x):
-    even_Ws = codegen_outerexp(x, asterms=True)[0::2]
-    outercos = reduce(operator.add, even_Ws)
-    return outercos
-
-
-def codegen_outertan(x):
-    Ws = codegen_outerexp(x, asterms=True)
-    even_Ws, odd_Ws = Ws[0::2], Ws[1::2]
-    outercos = reduce(operator.add, even_Ws)
-    outersin = reduce(operator.add, odd_Ws)
-    outertan = outersin / outercos
-    return outertan
-
-
-def codegen_add(x, y):
-    vals = dict(x.items())
-    for k, v in y.items():
-        if k in vals:
-            vals[k] = vals[k] + v
-        else:
-            vals[k] = v
-    return {k: v for k, v in vals.items() if v != 0}
-
-
-def codegen_sub(x, y):
-    vals = dict(x.items())
-    for k, v in y.items():
-        if k in vals:
-            vals[k] = vals[k] - v
-        else:
-            vals[k] = -v
-    return {k: v for k, v in vals.items() if v != 0}
-
-def codegen_neg(x):
-    return {k: -v for k, v in x.items()}
-
-
-def codegen_involutions(x, invert_grades=(2, 3)):
-    """
-    Codegen for the involutions of Clifford algebras:
-    reverse, grade involute, and Clifford involution.
-
-    :param invert_grades: The grades that flip sign under this involution mod 4, e.g. (2, 3) for reversion.
-    """
-    return {k: -v if bin(k).count('1') % 4 in invert_grades else v
-            for k, v in x.items()}
-
-
-def codegen_reverse(x):
-    return codegen_involutions(x, invert_grades=(2, 3))
-
-
-def codegen_involute(x):
-    return codegen_involutions(x, invert_grades=(1, 3))
-
-
-def codegen_conjugate(x):
-    return codegen_involutions(x, invert_grades=(1, 2))
-
-
-def codegen_sqrt(x):
-    """
-    Take the square root using the study number approach as described in
-    https://doi.org/10.1002/mma.8639
-    """
-    alg = x.algebra
-    if x.grades == (0,):
-        return x.map(lambda v: v**0.5)
-    a, bI = x.grade(0), x - x.grade(0)
-    has_solution = len(x.grades) <= 2 and 0 in x.grades
-    if not has_solution:
-        warnings.warn("Cannot verify that we really are taking the sqrt of a Study number.", RuntimeWarning)
-
-    bI_sq = bI * bI
-    if not bI_sq:
-        cp = a.e**0.5
-    else:
-        normS = (a * a - bI_sq).e
-        cp = (0.5 * (a.e + normS**0.5))**0.5
-    return (0.5 * bI / cp) + cp
-
-
-def codegen_polarity(x, undual=False):
-    if undual:
-        return x * x.algebra.pss
-    key_pss = len(x.algebra) - 1
-    sign = x.algebra.signs[key_pss, key_pss]
-    if sign == -1:
-        return - x * x.algebra.pss
-    return codegen_gp(x, x.algebra.pss)
-
-
-def codegen_unpolarity(x):
-    return codegen_polarity(x, undual=True)
-
-
-def codegen_hodge(x, undual=False):
-    if undual:
-        return {(key_dual := len(x.algebra) - 1 - eI): -v if x.algebra.signs[key_dual, eI] < 0 else v
-                for eI, v in x.items()}
-    return {(key_dual := len(x.algebra) - 1 - eI): -v if x.algebra.signs[eI, key_dual] < 0 else v
-            for eI, v in x.items()}
-
-
-def codegen_unhodge(x):
-    return codegen_hodge(x, undual=True)
+    MVType: Type = MultiVector
+    output_mv_idx: Optional[int] = None
 
 
 def _lambdify_mv(mv):
@@ -554,6 +116,7 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
 
     res = codegen(*(mv.asmvtype() for mv in mvs))
 
+    MVType = MultiVector
     output_mv_idx = None  # If codegen modified one of the mvs using set, this will be the index of the modified mv.
     if res is None:
         output_mv_idx = next(i for i, mv in enumerate(mvs) if mv != mvs_orig[i])
@@ -563,19 +126,15 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
         def is_number(x):
             try: float(x); return True
             except (ValueError, TypeError): return False
-        res_layout = {k: v if is_number(str(v)) else ... for k, v in res.items()}
+        res_layout = {k: float(f) if is_number(f := str(v)) else ... for k, v in res.items()}
         MVType, layout = resolve_layout(algebra._type_layouts, res_layout)
-        
+
         if layout is not None:
             res = {k: v for k, v in res.items() if layout[k] == ...}
-            
+
     funcname = f'{codegen.__name__}_' + '_x_'.join(f"{format(mv[0].type_number if isinstance(mv, list) else mv.type_number, 'X')}" for mv in mvs)
     args = {arg_name: [tuple(chain(*(x.values() for x in arg)))] if isinstance(arg, list) else arg.values()
             for arg_name, arg in zip(string.ascii_uppercase, mvs)}
-
-    # Sort the keys in canonical order
-    res = {bin: res[bin] if isinstance(res, dict) else getattr(res, canon)
-           for canon, bin in algebra.canon2bin.items() if bin in res.keys()}
 
     if all(isinstance(v, str) for v in res.values()):
         return func_builder(res, *mvs, args=args, funcname=funcname, MVType=MVType)  # TODO: add output_mv_idx support
@@ -587,9 +146,8 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
                     cse=algebra.cse, printer=printer, func_printer=func_printer,
                     output_mv_idx=output_mv_idx
                     )
-    func.output_mv_idx = output_mv_idx
     return CodegenOutput(
-        keys, func, MVType
+        keys, func, MVType or MultiVector, output_mv_idx
     )
 
 def do_compile(codegen, *tapes):
@@ -617,30 +175,40 @@ def do_compile(codegen, *tapes):
     )
 
 
-def _count_muls_adds(funcstr: str) -> tuple:
-    """Count multiplication and addition/subtraction operations in a generated function string.
+_POW_RE = re.compile(r'\*\*\s*(\d+)?')
 
-    :return: Tuple of (muls, adds).
+
+def _count_muls_adds(funcstr: str) -> tuple:
+    """Count multiplications, divisions and additions/subtractions in a generated function string.
+
+    :return: Tuple of (muls, divs, adds).
     """
     muls = funcstr.count('*')
+    divs = funcstr.count('/')
     adds = funcstr.count('+') + funcstr.count('-')
-    return muls, adds
+    # Each ``**`` has been counted as two muls above, correct for that.
+    for m in _POW_RE.finditer(funcstr):
+        muls -= 2
+        exp = m.group(1)
+        muls += max(int(exp) - 1, 0) if exp is not None else 1
+    return muls, divs, adds
 
 
-def _build_and_cache_func(header, body_lines, funcname, namespace=None):
-    """Build a function from header + body lines, insert op-count docstring, compile, exec, cache.
+def _build_and_cache_func(header, body_lines, funcname, namespace=None, doc_lines=None):
+    """Build a function from header + body lines, insert docstring, compile, exec, cache.
 
     :param header: The `def funcname(...):` line.
     :param body_lines: List of indented body lines (without the docstring).
     :param funcname: Name used as the linecache key.
     :param namespace: Execution namespace dict. Defaults to {'builtins': builtins, 'range': range}.
+    :param doc_lines: Optional list of extra lines to place in th docstring.
     :return: The compiled function object.
     """
     if namespace is None:
         namespace = {'builtins': builtins, 'range': range}
     func_source_no_doc = header + '\n' + '\n'.join(body_lines)
-    muls, adds = _count_muls_adds(func_source_no_doc)
-    all_lines = [header, f'    """{muls} muls / {adds} adds"""'] + body_lines
+    muls, divs, adds = _count_muls_adds(func_source_no_doc)
+    all_lines = [header, f'    """', *(doc_lines or []), f'    {muls} muls / {divs} divs / {adds} adds', f'    """'] + body_lines
     func_source = '\n'.join(all_lines)
     func_locals = {}
     exec(compile(func_source, funcname, 'exec'), namespace, func_locals)
@@ -648,7 +216,7 @@ def _build_and_cache_func(header, body_lines, funcname, namespace=None):
     return func_locals[funcname]
 
 
-def func_builder(res_vals: defaultdict, *mvs, args: dict, funcname: str, MVType: Type = None) -> CodegenOutput:
+def func_builder(res_vals: defaultdict, *mvs, args: dict, funcname: str, MVType: Type = MultiVector) -> CodegenOutput:
     """
     Build a Python function for the product between given multivectors.
 
@@ -666,7 +234,7 @@ def func_builder(res_vals: defaultdict, *mvs, args: dict, funcname: str, MVType:
         body_lines.append(f'    return [{", ".join(res_vals.values())},]')
     else:
         body_lines.append(f'    return list()')
-    func = _build_and_cache_func(header, body_lines, funcname, namespace={})
+    func = _build_and_cache_func(header, body_lines, funcname, doc_lines=[str(mv) for mv in mvs], namespace={})
     return CodegenOutput(tuple(res_vals.keys()), func, MVType)
 
 
@@ -839,7 +407,7 @@ def lambdify(
                     return _lambdify_poly_cse(args, exprs, funcname, cse_pairs, numer_simplified, denom_simplified,
                                               output_mv_idx=output_mv_idx)
 
-    tosympy = lambda x: x.tosympy() if hasattr(x, 'tosympy') else x
+    tosympy = lambda x: x.tosympy() if hasattr(x, 'tosympy') else sympify(x)
     if cse_pairs is not None:
         args = {name: [tosympy(v) for v in values] for name, values in args.items()}
         cses = [(name, tosympy(Polynomial(poly_args))) for name, poly_args in cse_pairs]
@@ -974,8 +542,8 @@ class KingdonPrinter:
         funclines = [funcsig]
         funclines.extend(['    ' + line for line in funcbody])
         funcstr = '\n'.join(funclines) + '\n'
-        muls, adds = _count_muls_adds(funcstr)
-        funclines.insert(1, f'    """{muls} muls / {adds} adds"""')
+        muls, divs, adds = _count_muls_adds(funcstr)
+        funclines.insert(1, f'    """{muls} muls / {divs} divs / {adds} adds"""')
 
         return '\n'.join(funclines) + '\n'
 

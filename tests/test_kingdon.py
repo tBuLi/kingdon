@@ -695,13 +695,13 @@ def test_numcompile_operator_existence():
             def myfunc(x):
                 return getattr(x, op_name)()
 
-            myfunc_compiled = alg.compile(myfunc)
+            myfunc_compiled = alg.jit(myfunc)
             assert myfunc_compiled(u) == myfunc(u)
 
         else:
             def myfunc(x, y):
                 return getattr(x, op_name)(y)
-            myfunc_compiled = alg.compile(myfunc)
+            myfunc_compiled = alg.jit(myfunc)
             assert myfunc_compiled(u, v) == myfunc(u, v)
 
 
@@ -712,24 +712,24 @@ def test_numcompile_basics():
     u = alg.multivector(uvals)
     v = alg.multivector(vvals)
 
-    @alg.compile
+    @alg.jit
     def square(x):
         return x * x
 
-    @alg.compile
+    @alg.jit
     def double(x):
         return 2 * x
 
-    @alg.compile
+    @alg.jit
     def add(x, y):
         return x + y
 
-    @alg.compile
+    @alg.jit
     def grade_select(x):
         return x.grade(1, 2)
 
     # Test if we can nest compiled expressions.
-    @alg.compile
+    @alg.jit
     def coupled(u, v):
         uv = add(u, v)
         return square(uv) + double(u)
@@ -746,24 +746,24 @@ def test_symcompile_basics():
     u = alg.multivector(name='u')
     v = alg.multivector(name='v')
 
-    @alg.compile(symbolic=True)
+    @alg.jit(symbolic=True)
     def square(x):
         return x * x
 
-    @alg.compile(symbolic=True)
+    @alg.jit(symbolic=True)
     def double(x):
         return 2 * x
 
-    @alg.compile(symbolic=True)
+    @alg.jit(symbolic=True)
     def add(x, y):
         return x + y
 
-    @alg.compile(symbolic=True)
+    @alg.jit(symbolic=True)
     def grade_select(x):
         return x.grade((1, 2))
 
     # Test if we can nest compiled expressions.
-    @alg.compile(symbolic=True)
+    @alg.jit(symbolic=True)
     def coupled(u, v):
         uv = add(u, v)
         return square(uv) + double(u)

@@ -21,20 +21,23 @@ import numpy as np
 import sympy
 
 from kingdon.codegen import (
+    do_codegen,
+    KingdonPrinter,
+)
+from kingdon.operators import (
     codegen_gp, codegen_sw, codegen_cp, codegen_ip, codegen_op, codegen_div,
     codegen_rp, codegen_acp, codegen_proj, codegen_sp, codegen_lc, codegen_inv,
     codegen_rc, codegen_normsq, codegen_add, codegen_neg, codegen_reverse,
     codegen_involute, codegen_conjugate, codegen_sub, codegen_sqrt,
     codegen_outerexp, codegen_outersin, codegen_outercos, codegen_outertan,
     codegen_polarity, codegen_unpolarity, codegen_hodge, codegen_unhodge,
-    KingdonPrinter,
 )
-from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry, do_operation, resolve_and_expand
+from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry, do_operation, resolve_and_expand, CompiledExpression
 from kingdon.polynomial import RationalPolynomial
 from kingdon.matrixreps import matrix_rep
 from kingdon.multivector import (
     MultiVector, MultiVectorType, _bit_count,
-    Scalar, Vector, Bivector, # k-vectors
+    Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector, # k-vectors
     Bireflection, # compositions
     Direction, EVector, UPoint, Point, Translation,  # PGA Types.
 )
@@ -140,7 +143,7 @@ class Algebra:
     # Codegen & call customization.
     symbolcls: object = field(default=None, repr=False, compare=False)
     # The symbol class used in codegen. By default, use our own fast RationalPolynomial class.
-    codegen_symbolcls: object = field(default=None, repr=False, compare=False)
+    codegen_symbolcls: object = field(default=RationalPolynomial.fromname, repr=False, compare=False)
     # The sympy style printer and evaluator printer used to generate the code with sympy-style printing.
     printer: sympy.printing.lambdarepr.LambdaPrinter = field(default=None, repr=False, compare=False)
     func_printer: KingdonPrinter = field(default=None, repr=False, compare=False)
@@ -225,18 +228,11 @@ class Algebra:
         for name, op in self.registry.items():
             setattr(self, name, op)
 
+        self._kvectors = [Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector][:self.d+1]
         if not self.archetypes:
-            classes = [Scalar]
-            if self.d >= 1:
-                classes.extend([Vector])
+            classes = [*self._kvectors]
             if self.d >= 2:
-                classes.extend([Bivector, Bireflection])
-            if self.d >= 3 and not self.large:
-                for k in range(3, self.d + 1):
-                    classes.extend([
-                        reduce(operator.xor, repeat(Vector, k - 1), Vector),  # k-blade
-                        reduce(operator.mul, repeat(Vector, k - 1), Vector),  # k-reflection
-                    ])
+                classes.extend([Bireflection])
             if self.r == 1:  # PGA types.
                 classes.extend([Direction, EVector, UPoint, Point, Translation])
             classes = [*sorted(classes, key=lambda x: (len(x.grades), x.grades))]
@@ -372,35 +368,36 @@ class Algebra:
         Compile a function with the algebra to optimize its execution times. Deprecated in favor of :meth:`~kingdon.algebra.Algebra.compile`.
         """
         warnings.warn("Use @alg.compile instead of @alg.register", FutureWarning)
-        return self.compile(expr, name=name, symbolic=symbolic)
+        return self.jit(expr, name=name, symbolic=symbolic)
 
-    def compile(self, expr=None, /, *, name=None, symbolic=False, codegen_symbolcls=None, printer=None, func_printer=None, wrapper=None):
+    def jit(self, expr=None, /, *, name=None, symbolic=False, codegen_symbolcls=None, printer=None, func_printer=None, wrapper=None):
         """
-        Compile a function with the algebra to optimize its execution times.
-        The function must be a valid GA expression, not an arbitrary python function.
+        Mark a function for Just-in-time (JIT) compilation to optimize its execution times.
+        The function must accept multivectors as input arguments and is assumed to either
+        return a single multivector or to :code:`set` one of the input multivectors.
 
         Examples:
 
         .. code-block ::
 
-            @alg.compile(symbolic=True)
+            @alg.jit(symbolic=True)
             def proj(a, b):
-                return a @ b
+                return (a | b) / b
 
-            @alg.compile(symbolic=True)
+            @alg.jit(symbolic=True)
             def proj_allocated(a, b, c):
-                c.set(a @ b)
+                c.set((a | b) / b)
 
-            @alg.compile(symbolic=True)
+            @alg.jit(symbolic=True)
             def proj(mvs: MultiVector[2]):
-                mv1, mv2 = mvs
-                return mv1 @ mv2
+                a, b = mvs
+                return (a | b) / b
 
         The examples above show three different ways to compile a function.
         Firstly and most straightforwardly, simply decorate a function that takes MultiVectors as input and a single MultiVector as output.
         Secondly, rather than returning a MultiVector, one can modify one existing MultiVector in place using the `set` method.
         This is useful in combination with e.g. pre-allocated memory like is sometimes the case with PyTorch tensors.
-        Thirdly, using the type annotation `MultiVector[N]` we can signal to compile that the function takes a multivector of shape (_, N).
+        Thirdly, using the type annotation `MultiVector[N]` we can signal to compile that the function takes a multivector of shape (:, N).
 
         With default settings (symbolic=False), the decorator will ensure that every GA unary or binary
         operator is replaced by the corresponding numerical function, and produces
@@ -436,13 +433,53 @@ class Algebra:
                     printer=printer, func_printer=func_printer, wrapper=wrapper)
             return self.registry[expr]
 
-        # See if we are being called as @compile or @compile()
-        if expr is None:
-            # Called as @compile()
+        # See if we are being called as @jit or @jit()
+        if expr is None:  # Called as @jit()
             return partial(wrap, name=name, symbolic=symbolic)
 
-        # Called as @compile
+        # Called as @jit
         return wrap(expr, name=name, symbolic=symbolic)
+
+    def compile(self, expr=None, /, *archetypes, printer=None, func_printer=None, wrapper=None) -> CompiledExpression:
+        """
+        Compile a GA :code:`expr` with specific :code:`archetypes`.
+        For typical use cases you'll probably want to use :code:`Algebra.jit` instead, since that does not require you
+        to provide the symbolical archetypes yourself, and it caches the resulting compiled functions so you don't have to track them yourself.
+        However, the finer level of control of :code:`compile` is extremely powerful in certain use cases.
+        For example, consider that we need to repeatedly rotate the unit vectors of our algebra in order to compute the evolution of the frame vectors::
+
+            def rotate_blade(R, blade):
+                return R >> blade
+
+            alg = Algebra(3)
+            R = alg.bireflection(...)  # Either a symbolic or a numeric rotation
+            e1 = alg.vector(e1=1)
+            e1_prime = rotate_blade(R, e1)
+
+        By inspecting the code generated in :code:`alg.sw[R, v].func` or by looking at its docstring
+        :code:`alg.sw[R, v].func.__doc__`, we find that the generated code uses 14 muls and 5 adds.
+        (Mind you that the built-in :code:`sw` operator already uses :code:`Algebra.jit`, a naive implementation
+        would need 20 muls and 7 adds.)
+        However :code:`Algebra.jit` can never use the runtime values of the multivector coefficients,
+        whereas we know that we only want to rotate unit vectors.
+        So we can use :code:`Algebra.compile` to generate an even more specialized function::
+
+            rotation = alg.bireflection(name='R', symbolcls=alg.codegen_symbolcls)
+            e1 = alg.vector(e1=1)
+            rotate_e1 = alg.compile(rotate_blade, rotation, e1)  # compile the function for these specific mvs.
+            e1_prime = rotate_e1(R, e1)
+
+        If we look at :code:`rotate_e1` we find that it has only 9 muls and 5 adds!
+        Compiling common operations involving constant multivectors such as frames can therefore be highly beneficial.
+
+        Beware that :code:`rotate_e1` should not be used on non-unit vectors, so the onus falls on you to enure you only call it with appropriate vectors.
+        """
+        wrapper = wrapper or self.wrapper
+        printer = printer or self.printer
+        func_printer = func_printer or self.func_printer
+        codegen_output = do_codegen(expr, *archetypes, printer=printer, func_printer=func_printer)
+        wrapped_func = wrapper(codegen_output.func) if wrapper else codegen_output.func
+        return CompiledExpression(self, *codegen_output, wrapped_func=wrapped_func)
 
     def multivector(self, *args, **kwargs) -> MultiVector:
         """ Create a new :class:`~kingdon.multivector.MultiVector`. """
@@ -561,7 +598,7 @@ class Algebra:
                 return True
             except (ValueError, TypeError):
                 return False
-        layout = {k: v if is_number(str(v)) else ...
+        layout = {k: float(f) if is_number(f := str(v)) else ...
                   for k, v in archetype.items()}
         archetype.layout = layout
         return archetype

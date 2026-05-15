@@ -35,7 +35,7 @@ def test_codegen_weights(codegen_symbolcls):
     """ In geometric product layers one needs to be able to provide weights as an array of scalars. """
     alg = Algebra(2)
 
-    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    @alg.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def weighted_gp(x, y, weights: MultiVector[10]):
         w0,w1,w2,w3,w4,w5,w6,w7,w8,w9 = weights
         X0, X1, X2 = (x.grade(g) for g in range(alg.d + 1))
@@ -57,7 +57,7 @@ def test_codegen_weights(codegen_symbolcls):
     weighted_gp_output = weighted_gp(x, y, weights)
     assert weighted_gp_output == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0
 
-    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    @alg.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def weighted_gp_grad_weights(x, y, weights: MultiVector[10]) -> MultiVector[10]:
         """ Output a single mv of shape (coeff, 10). These are all stacked with the same shape, so zeros are not eliminated."""
         weighted_gp_output = weighted_gp(x, y, weights)
@@ -69,7 +69,7 @@ def test_codegen_weights(codegen_symbolcls):
     for wi, grad_w in zip(weights.e, grad_weights):
         assert grad_w == weighted_gp_output.map(lambda v: v.diff(wi))
 
-    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    @alg.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def weighted_gp_grad(x, y, weights: MultiVector[10], go) -> MultiVector[18]:
         syms: list[Symbol] = [*x.values(), *y.values(), *weights.e]
         wgp_output = weighted_gp(x, y, weights)
@@ -89,7 +89,7 @@ def test_codegen_weights(codegen_symbolcls):
     # Test non-scalar shaped multivector type-hint
     alg2 = Algebra(2)
 
-    @alg2.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    @alg2.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def reduce_gp(mvs: MultiVector[2]):
         mv1, mv2 = mvs
         return mv1*mv2
@@ -109,7 +109,7 @@ def test_wgp_list(codegen_symbolcls):
     """Generate a function that returns a list of multivectors."""
     alg = Algebra(2)
 
-    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    @alg.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def weighted_gp(x, y, weights: MultiVector[10]):
         w0, w1, w2, w3, w4, w5, w6, w7, w8, w9 = weights
         X0, X1, X2 = (x.grade(g) for g in range(alg.d + 1))
@@ -126,7 +126,7 @@ def test_wgp_list(codegen_symbolcls):
     weights = alg.scalar(e=ws)
     weighted_gp_output = weighted_gp(x, y, weights)
 
-    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    @alg.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def weighted_gp_grad_weights_list(x, y, weights: MultiVector[10]) -> list[MultiVector]:
         """
         Generate a list of output mv's of different shape. Same content as weighted_gp_grad_weight,
@@ -151,7 +151,7 @@ def test_codegen_wgp_generic(codegen_symbolcls):
     """
     alg = Algebra(2)
 
-    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    @alg.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def number_of_weights_wgp(X: MultiVector, Y: MultiVector) -> int:
         i = 0
         for gx, gy in itertools.product(X.grades, Y.grades):
@@ -159,7 +159,7 @@ def test_codegen_wgp_generic(codegen_symbolcls):
             i += len(Z.grades)
         return i
 
-    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    @alg.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def wgp(X: MultiVector, Y: MultiVector, weights: MultiVector[None]) -> MultiVector:
         """
         Compute the weighted geometric product between X and Y.
@@ -204,15 +204,16 @@ def test_codegen_set(codegen_symbolcls):
     w0, w1, w2, w3, w4, w5, w6, w7, w8, w9 = ws
     weights = alg.scalar(e=ws)
 
-    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    @alg.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def set_gp(x, y, z):
-        z.set(x*y)
+        _z = x*y
+        z.set(_z)
 
     res = set_gp(x, y, z)
     assert res == None
     assert z == x*y
 
-    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    @alg.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def weighted_gp_set(x, y, weights: MultiVector[10], z):
         w0,w1,w2,w3,w4,w5,w6,w7,w8,w9 = weights
         X0, X1, X2 = (x.grade(g) for g in range(alg.d + 1))
@@ -249,7 +250,7 @@ def test_codegen_printer(codegen_symbolcls):
     my_printer = MyPrinter()
     my_func_printer = MyEvaluatorPrinter(my_printer)
 
-    @alg.compile(symbolic=True, codegen_symbolcls=codegen_symbolcls, printer=my_printer, func_printer=my_func_printer, wrapper=my_wrapper)
+    @alg.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls, printer=my_printer, func_printer=my_func_printer, wrapper=my_wrapper)
     def my_gp(x, y):
         return x*y
     res = my_gp(x, y)
