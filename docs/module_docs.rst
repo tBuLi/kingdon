@@ -15,20 +15,32 @@ MultiVector
    :members:
    :undoc-members:
 
+GA Operators
+------------
+
+The operators module holds the GA operations themselves, written as ordinary
+functions on purely symbolic :class:`~kingdon.multivector.MultiVector` objects.
+E.g. :func:`~kingdon.operators.gp` computes the geometric product between two
+multivectors for the specific non-zero basis blades present in the input.
+These functions are also what the multivector types use to define their
+archetypes, see :doc:`workings`.
+
+.. automodule:: kingdon.operators
+   :members:
+   :undoc-members:
+
+Powers
+------
+
+.. automodule:: kingdon.powers
+   :members:
+   :undoc-members:
+
 Codegen
 -------
 
-The codegen module generates python functions from operations
-between/on purely symbolic :class:`~kingdon.multivector.MultiVector` objects.
-
-As a general rule, these functions take in pure symbolic
-:class:`~kingdon.multivector.MultiVector` objects and return a tuple of keys
-present in the output, and a pure python function which represents the
-respective operation.
-
-E.g. :func:`~kingdon.codegen.codegen_gp` computes the geometric product
-between two multivectors for the specific non-zero basis blades present in
-the input.
+The codegen module turns the symbolic result of an operation into a python
+function, applying Common Subexpression Elimination along the way.
 
 .. automodule:: kingdon.codegen
    :members:
@@ -65,8 +77,17 @@ Rational Polynomial
 Taperecorder
 ------------
 
-Used `Algebra.compile` to generate code.
+Used by `Algebra.jit` to generate code without symbolic optimization.
 
 .. automodule:: kingdon.taperecorder
+   :members:
+   :undoc-members:
+
+Einops backend
+--------------
+
+Import this module to register kingdon's multivectors with `einops`, see :doc:`arrays`.
+
+.. automodule:: kingdon.einops_backend
    :members:
    :undoc-members:

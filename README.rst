@@ -52,7 +52,7 @@ making it an extremely well rounded GA package.
 
 In bullet points:
 
-- Symbolically optimized.
+- Symbolically optimized code generation.
 - Leverage sparseness of input.
 - `ganja.js <https://github.com/enkimute/ganja.js>`__ enabled graphics in jupyter notebooks.
 - Agnostic to the input types: work with GA's over `numpy <https://numpy.org/>`__ arrays, `torch <https://pytorch.org/>`__ tensors, `sympy <https://www.sympy.org/>`__ expressions, etc. Any object that overloads addition, subtraction and multiplication makes for valid multivector coefficients in :code:`kingdon`.
@@ -177,15 +177,6 @@ It is also possible to define some coefficients to be symbolic by inputting a st
     >>> w = b.cp(v)
     >>> w
     3 𝐞₀ + (-b12) 𝐞₂
-
-
-A :code:`kingdon` MultiVector with symbols is callable. So in order to evaluate :code:`w` from the previous example,
-for a specific value of :code:`b12`, simply call :code:`w`:
-
-.. code-block:: python
-
-    >>> w(b12=10)
-    3 𝐞₀ + -10 𝐞₂
 
 
 Overview of Operators
