@@ -2,16 +2,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from collections.abc import Mapping
-from typing import Callable, Tuple, NamedTuple
+from typing import Callable, Tuple, NamedTuple, Type, List
 from functools import wraps, cached_property
 import inspect
 import string
+from types import GenericAlias
 
 from sympy import Symbol, Expr, simplify
 from sympy.printing.lambdarepr import LambdaPrinter
 
-from kingdon.multivector import MultiVector, MultiVectorType, stack
-from kingdon.codegen import do_codegen, do_compile, KingdonPrinter
+from kingdon.multivector import MultiVector, MultiVectorType, Scalar, stack
+from kingdon.codegen import do_compile_symbolic, do_compile, KingdonPrinter
 from kingdon.taperecorder import TapeRecorder
 from kingdon.polynomial import RationalPolynomial
 
@@ -88,34 +89,6 @@ def do_operation(*mvs, codegen, algebra, MVType=MultiVector) -> MultiVector:
     return res
 
 
-class CompiledExpression(NamedTuple):
-    """
-    Output of a codegen function.
-
-    :param keys_out: tuple with the output blades in binary rep.
-    :param func: callable that takes (several) sequence(s) of values
-        returns a tuple of :code:`len(keys_out)`.
-    :param wrapped_func: decorated func if a wrapper was provided, else identical to func.
-    :param MVType: type of the output multivector. Defaults to :code:`MultiVector`.
-    """
-    algebra: "Algebra"
-    keys_out: Tuple[int]
-    func: Callable
-    MVType: MultiVectorType = MultiVector
-    output_mv_idx: int | None = None
-    wrapped_func: Callable | None = None
-
-    def __call__(self, *mvs):
-        values_in = tuple(mv.values() for mv in mvs)
-        values_out = self.func(*values_in)
-        return self.MVType.fromkeysvalues(self.algebra, self.keys_out, values_out)
-
-    def wrapped_call(self, *mvs):
-        values_in = tuple(mv.values() for mv in mvs)
-        values_out = self.wrapped_func(*values_in)
-        return self.MVType.fromkeysvalues(self.algebra, self.keys_out, values_out)
-
-
 @dataclass
 class OperatorDict(Mapping):
     """
@@ -123,11 +96,12 @@ class OperatorDict(Mapping):
     and caches the result for future use. For example, to generate the geometric product,
     we create an OperatorDict as follows::
 
+        import kingdon.operators as ops
         alg = Algebra(3, 0, 1)
-        gp = OperatorDict('gp', codegen=codegen_gp, algebra=alg)
+        gp = OperatorDict('gp', codegen=ops.gp, algebra=alg)
 
-    Here, :code:`codegen_gp` is a function that outputs the keys of the result, and a callable that
-    produces the corresponding values. See :class:`~kingdon.codegen.CodegenOutput` for more info.
+    Here, :code:`ops.gp` is a function that takes two symbolic :class:`MultiVector` as input
+    and outputs a single :class:`MultiVector`.
     """
     name: str
     codegen: Callable
@@ -152,18 +126,18 @@ class OperatorDict(Mapping):
     def __len__(self):
         return len(self.operator_dict)
 
-    def _make_symbolic_mv(self, name, MVType, keys, shape):
-        MVType, depth = MVType if isinstance(MVType, tuple) else (MVType, 0)  # Can come from the type-hint.
-        depth = shape[1] if depth is None else depth
+    def _make_symbolic_mv(self, name, keys, shape, mvtype, mvtypehint) -> MultiVector:
+        depth = mvtypehint[1] if isinstance(mvtypehint, tuple) else 0  # Must come from the type-hint.
+        if depth is None: depth = shape[1]  # If the type hint was MultiVector[None] than the depth should be taken from the input
         if not depth:
-            return MVType.fromname(self.algebra, name, keys, symbolcls=self.codegen_symbolcls)
-        return stack([MVType.fromname(self.algebra, f'{name}_{k}', keys, symbolcls=self.codegen_symbolcls)
+            return mvtype.fromname(self.algebra, name, keys, symbolcls=self.codegen_symbolcls)
+        return stack([mvtype.fromname(self.algebra, f'{name}_{k}', keys, symbolcls=self.codegen_symbolcls)
                       for k in range(depth)])
 
-    def make_symbolic_mvs(self, types_in: Tuple[Type, Tuple[int]], shapes_in: Tuple[Tuple[int]]) -> tuple[MultiVector]:
+    def make_symbolic_mvs(self, types_in: Tuple[Tuple[Type, Tuple[int]]], shapes_in: Tuple[Tuple[int]]) -> tuple[MultiVector]:
         return tuple(
-            self._make_symbolic_mv(name, MVType, keys, shape)
-            for (name, MVTypeHint), (MVType, keys), shape in zip(self.codegen_input_types.items(), types_in, shapes_in)
+            self._make_symbolic_mv(name, keys, shape, MVtype, MVTypeHint)
+            for (name, MVTypeHint), (MVtype, keys), shape in zip(self.codegen_input_types.items(), types_in, shapes_in)
         )
 
     def __getitem__(self, mvs: Tuple[MultiVector]):
@@ -185,13 +159,13 @@ class OperatorDict(Mapping):
 
     @cached_property
     def codegen_input_types(self):
-        return {name: MultiVector if p.annotation == inspect.Parameter.empty else p.annotation
+        return {name: MultiVector if p.annotation in (inspect.Parameter.empty, "MultiVector") else p.annotation
                 for name, p in inspect.signature(self.codegen).parameters.items()}
 
     @cached_property
     def codegen_output_type(self):
         return_annotation = inspect.signature(self.codegen).return_annotation
-        return MultiVector if return_annotation == inspect.Signature.empty else return_annotation
+        return MultiVector if return_annotation in (inspect.Parameter.empty, "MultiVector") else return_annotation
 
     def _sanitize_mvs(self, mvs: tuple[MultiVector]):
         """
@@ -202,15 +176,15 @@ class OperatorDict(Mapping):
         """
         if len(mvs) == 1:
             mv = mvs[0]
-            mv = mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv])
+            mv = mv if isinstance(mv, MultiVector) else Scalar.fromkeysvalues(self.algebra, (0,), [mv])
             return (mv,)
         if len(mvs) == 2:
             mv1, mv2 = mvs
-            mv1 = mv1 if isinstance(mv1, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv1])
-            mv2 = mv2 if isinstance(mv2, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv2])
+            mv1 = mv1 if isinstance(mv1, MultiVector) else Scalar.fromkeysvalues(self.algebra, (0,), [mv1])
+            mv2 = mv2 if isinstance(mv2, MultiVector) else Scalar.fromkeysvalues(self.algebra, (0,), [mv2])
             mvs = (mv1, mv2)
         else:
-            mvs = [mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv])
+            mvs = [mv if isinstance(mv, MultiVector) else Scalar.fromkeysvalues(self.algebra, (0,), [mv])
                    for mv in mvs]
         if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
             raise AlgebraError("Cannot multiply elements of different algebra's.")
@@ -230,10 +204,10 @@ class OperatorDict(Mapping):
             mv_out = compiled_expr.wrapped_call(*mvs)
 
         if issymbolic and self.algebra.simp_func:
-            mv_out = mv_out.filter(self.algebra.simp_func)
-            if (output_mv_idx := compiled_expr.output_mv_idx):
-                mvs[output_mv_idx].set(mv_out)
-                return None
+            if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
+                mvs[output_mv_idx].set(mvs[output_mv_idx].filter(self.algebra.simp_func, map=True))
+            else:
+                mv_out = mv_out.filter(self.algebra.simp_func, map=True)
         return mv_out
 
     def _call_binary(self, mv1, mv2):
@@ -246,7 +220,11 @@ class OperatorDict(Mapping):
             mv_out = compiled_expr.wrapped_call(mv1, mv2)
 
         if issymbolic and self.algebra.simp_func:
-            mv_out = mv_out.filter(self.algebra.simp_func)
+            if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
+                mvs = [mv1, mv2]
+                mvs[output_mv_idx].set(mvs[output_mv_idx].filter(self.algebra.simp_func, map=True))
+            else:
+                mv_out = mv_out.filter(self.algebra.simp_func, map=True)
 
         return mv_out
 
@@ -258,8 +236,8 @@ class UnaryOperatorDict(OperatorDict):
     operators that act on multiple multivectors.
     """
     def __contains__(self, mv: MultiVector):
-        keys_in = mv.keys()
-        return keys_in in self.operator_dict
+        types_in = (type(mv), mv.keys())
+        return types_in in self.operator_dict
 
     def __getitem__(self, mv: MultiVector):
         type_in = (type(mv), mv.keys())
@@ -281,29 +259,34 @@ class UnaryOperatorDict(OperatorDict):
             mv_out = compiled_expr.wrapped_call(mv)
 
         if issymbolic and self.algebra.simp_func:
-            mv_out = mv_out.filter(self.algebra.simp_func)
+            if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
+                mv[output_mv_idx].set(mv.filter(self.algebra.simp_func, map=True))
+            else:
+                mv_out = mv_out.filter(self.algebra.simp_func, map=True)
 
         return mv_out
 
 
 class Registry(OperatorDict):
     def __getitem__(self, mvs: Tuple[MultiVector]):
-        keys_in = tuple(mv.keys() for mv in mvs)
-        if keys_in not in self.operator_dict:
+        types_in = tuple((type(mv), mv.keys()) for mv in mvs)
+        shapes_in = tuple(mv.shape for mv in mvs)
+        if types_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
-            tapes = [TapeRecorder(algebra=self.algebra, expr=name, keys=keys)
-                     for name, keys in zip(string.ascii_lowercase, keys_in)]
-            keys_out, func = do_compile(self.codegen, *tapes)
-            self.algebra.numspace[func.__name__] = wrapped_func = self.wrapper(func) if self.wrapper else func
-            self.operator_dict[keys_in] = CompiledExpression(keys_out, func, self.algebra, wrapped_func)
-        return self.operator_dict[keys_in]
+            # tapes = [TapeRecorder(algebra=self.algebra, expr=name, mvtype=MVType, keys=keys)
+            #          for name, (MVType, keys) in zip(string.ascii_lowercase, types_in)]
+            tapes = self.make_symbolic_mvs(types_in, shapes_in)
+            compiled = self.operator_dict[types_in] = self.algebra.compile(self.codegen, *tapes, symbolic=False)
+            self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
+        return self.operator_dict[types_in]
 
     @resolve_and_expand
     def __call__(self, *mvs):
         if all(isinstance(mv, TapeRecorder) for mv in mvs):
-            compiled_expr = self[mvs]
+            types_in = tuple((mv.mvtype, mv.keys()) for mv in mvs)
+            compiled_expr = self.operator_dict[types_in]
             expr = f"{compiled_expr.func.__name__}({', '.join(mv.expr for mv in mvs)})"
-            return TapeRecorder(self.algebra, keys=compiled_expr.keys_out, expr=expr)
+            return TapeRecorder(self.algebra, mvtype=compiled_expr.mvtype, keys=compiled_expr.keys_out, expr=expr)
 
         # Make sure all inputs are multivectors. If an input is not, assume its scalar.
         mvs = [mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), (mv,))
@@ -313,3 +296,16 @@ class Registry(OperatorDict):
 
         compiled_expr = self[mvs]
         return compiled_expr.wrapped_call(*mvs)
+
+    def _make_symbolic_mv(self, name, keys, shape, mvtype, mvtypehint) -> TapeRecorder:
+        depth = mvtypehint[1] if isinstance(mvtypehint, tuple) else 0  # Must come from the type-hint.
+        if depth is None: depth = shape[1]  # If the type hint was MultiVector[None] than the depth should be taken from the input
+        if not depth:
+            return TapeRecorder.fromname(self.algebra, name, keys, mvtype=mvtype)
+        return TapeRecorder.fromname(self.algebra, name, keys, mvtype=mvtype, shape=(depth,))
+
+    def make_symbolic_mvs(self, types_in: Tuple[Tuple[Type, Tuple[int]]], shapes_in: Tuple[Tuple[int]]) -> tuple[TapeRecorder]:
+        return tuple(
+            self._make_symbolic_mv(name, keys, shape, MVType, MVTypeHint)
+            for (name, MVTypeHint), (MVType, keys), shape in zip(self.codegen_input_types.items(), types_in, shapes_in)
+        )

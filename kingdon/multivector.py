@@ -41,8 +41,6 @@ class MultiVector(metaclass=MultiVectorType):
     algebra: "Algebra"
     _values: list = field(default_factory=list)
     _keys: tuple[int] = field(default_factory=tuple)
-    grades: ClassVar[tuple[int]] = ()
-    layout: dict = field(default_factory=dict, init=False, compare=False, repr=False)
 
     # Make MultiVector "primary" operand in operations involving ndarray.
     # (forces reflected (swapped) operands operations, like __radd__)
@@ -77,81 +75,38 @@ class MultiVector(metaclass=MultiVectorType):
                 raise ValueError('Cannot provide both name and values.')
             return cls.fromname(algebra, name, keys=keys, grades=grades, symbolcls=symbolcls)
 
+        if isinstance(values, Mapping):
+            items = values; values = None
         if items:
             if keys is not None or values is not None:
                 raise ValueError('Cannot provide both items and keys or values.')
             for key in list(items.keys()):
-                if key not in algebra.canon2bin:
+                if isinstance(key, str):
+                    if not re.match(r'^e[0-9a-fA-Z]*$', key):
+                        raise KeyError(f'The key {key} does not refer to a valid basis blade.')
                     target, swaps = algebra._blade2canon(key)
-                    if swaps % 2:
-                        items[target] = - items.pop(key)
+                    items[target] = - items.pop(key) if swaps % 2 else items.pop(key); key = target
+                    items[algebra.canon2bin[key]] = items.pop(key)  # Switch to binary key
 
-            keys, values = zip(*((blade, items[blade]) for blade in algebra.canon2bin if blade in items))
+            keys, values = zip(*((key, items[key]) for key in algebra.canon2bin.values() if key in items))
             values = list(values)
 
-        keys = keys if keys is not None else tuple()
+        keys = keys if keys is not None else tuple() if values is None else None
         values = values if values is not None else list()
         if any(isinstance(v, str) for v in values):
             converter = symbolcls or sympify
             values = list(val if not isinstance(val, str) else converter(val)
                           for val in values)
-        keys, grades = cls.sanitize_keys_grades(algebra, keys, grades)
-        inst = cls.fromkeysvalues(algebra, keys, values, grades=grades)
-        if grades is not None:
-            inst.grades = grades
+        if grades and not all(0 <= grade <= algebra.d for grade in grades):
+            raise ValueError(f'Each grade in `grades` needs to be a value between 0 and {algebra.d}.')
+        keys = cls.sanitize_keys_grades(algebra, keys, grades)
+        if len(keys) != len(values):
+            raise TypeError(f'Length of `keys` and `values` have to match.')
+        inst = cls.fromkeysvalues(algebra, keys, values)
         return inst
 
-        # # Sanitize input
-        # if keys is not None and not all(isinstance(k, int) for k in keys):
-        #     keys = tuple(k if k in algebra.bin2canon else algebra.canon2bin[k] for k in keys)
-        # if grades is None and name and keys is not None:
-        #     grades = tuple(sorted({_bit_count(k) for k in keys}))
-        # values = values if values is not None else list()
-        # keys = keys if keys is not None else tuple()
-
-        # if grades is not None:
-        #     if not all(0 <= grade <= algebra.d for grade in grades):
-        #         raise ValueError(f'Each grade in `grades` needs to be a value between 0 and {algebra.d}.')
-        # else:
-        #     if keys:
-        #         grades = tuple(sorted({format(k, 'b').count('1') for k in keys}))
-        #     elif isinstance(cls.grades, tuple):
-        #         grades = tuple(g % (algebra.d + 1) for g in cls.grades)
-        #     else:
-        #         grades = tuple(range(algebra.d + 1))
-
-        # if algebra.graded and keys and len(keys) != sum(math.comb(algebra.d, grade) for grade in grades):
-        #     raise ValueError(f"In graded mode, the number of keys should be equal to "
-        #                      f"those expected for a multivector of {grades=}.")
-
-        # # Construct a new MV on the basis of the kind of input we received.
-        # if isinstance(values, Mapping):
-        #     keys, values = zip(*values.items()) if values else (tuple(), list())
-        #     values = list(values)
-        # elif len(values) == sum(math.comb(algebra.d, grade) for grade in grades) and not keys:
-        #     keys = tuple(algebra.indices_for_grades(grades))
-        # elif name and not values:
-        #     # values was not given, but we do have a name. So we are in symbolic mode.
-        #     keys = tuple(algebra.indices_for_grades(grades)) if not keys else keys
-        #     return cls.fromname(algebra, name, keys=keys, symbolcls=symbolcls)
-        # elif len(keys) != len(values):
-        #     raise TypeError(f'Length of `keys` and `values` have to match.')
-
-        # if not all(isinstance(k, int) for k in keys):
-        #     keys = tuple(key if key in algebra.bin2canon else algebra.canon2bin[key]
-        #                  for key in keys)
-
-        # if any(isinstance(v, str) for v in values):
-        #     values = list(val if not isinstance(val, str) else sympify(val)
-        #                   for val in values)
-
-        # if not all(_bit_count(k) in grades for k in keys):
-        #     raise ValueError(f"All keys should be of grades {grades}.")
-
-        # return cls.fromkeysvalues(algebra, keys, values)
-
     @classmethod
-    def fromkeysvalues(cls, algebra, keys, values, grades=None):
+    def fromkeysvalues(cls, algebra, keys, values):
         """
         Initiate a multivector from a sequence of keys and a sequence of values.
         """
@@ -159,8 +114,6 @@ class MultiVector(metaclass=MultiVectorType):
         obj.algebra = algebra
         obj._values = values
         obj._keys = keys
-        grades = grades or cls.grades
-        obj.grades = cls._pos_grades(algebra, grades) or tuple(sorted({_bit_count(k) for k in keys}))
         return obj
 
     @classmethod
@@ -179,20 +132,18 @@ class MultiVector(metaclass=MultiVectorType):
         Ensure that keys and grades are in agreement with the layout for ``cls``.
         If no keys or grades are provided, they are created.
         """
-        archetype = algebra.archetypes.get(cls, None)
-        layout = getattr(archetype, 'layout', {})
+        layout = algebra._type_layouts.get(cls, {})
         if keys is None:
             # Generate keys from layout. Since they are generated from layout, we don't need to validate them against layout.
             if layout:
                 if grades is None:
                     keys = tuple(k for k, v in layout.items() if v == ...)
-                    grades = tuple(sorted({_bit_count(k) for k in keys + tuple(k for k, v in layout.items() if v != ...)}))
                 else:
                     keys = tuple(k for k, v in layout.items() if v == ... and _bit_count(k) in grades)
-                return keys, grades
+                return keys
 
             if grades is None:
-                grades = cls._pos_grades(algebra, cls.grades) if cls.grades else tuple(range(algebra.d + 1))
+                grades = tuple(range(algebra.d + 1))
             keys = tuple(algebra.indices_for_grades(grades))
         else:
             if not all(isinstance(k, int) for k in keys):  # Not done in one loop because then we would always create a new keys tuple even if it is already all ints.
@@ -205,12 +156,14 @@ class MultiVector(metaclass=MultiVectorType):
             if grades is None:
                 grades = tuple(sorted({_bit_count(k) for k in keys + tuple(k for k, v in layout.items() if v != ...)}))
 
-        return keys, grades
+        if algebra.graded and algebra._type_layouts:  # The second condition is false before archetypes have been bound.
+            if layout and len(keys) != len([v for v in layout.values() if v == ...]):
+                raise ValueError(f"In graded mode, the number of keys should be equal to "
+                                 f"those expected for a {cls} with layout {layout=}.")
+            elif not layout and len(keys) != len(algebra):
+                raise ValueError(f"In graded mode, the number of keys for {cls} should be equal to {len(algebra)}.")
 
-    @staticmethod
-    def _pos_grades(algebra, grades):
-        """ Private method to ensure the grades are valid for the specific algebra: positive values in the range [0, d]. """
-        return tuple(g % (algebra.d + 1) for g in grades if (-algebra.d - 1) <= g <= algebra.d)
+        return keys
 
     @classmethod
     def fromname(cls, algebra, name: str, keys=None, grades=None, symbolcls=None):
@@ -219,17 +172,15 @@ class MultiVector(metaclass=MultiVectorType):
         """
         if symbolcls is None:
             symbolcls = algebra.symbolcls or Symbol
-        keys, grades = cls.sanitize_keys_grades(algebra, keys, grades)
+        keys = cls.sanitize_keys_grades(algebra, keys, grades)
         values = list(symbolcls(f'{name}{algebra.bin2canon[k][1:]}') for k in keys)
-        instance = cls.fromkeysvalues(algebra, keys, values, grades=grades)
-        if grades is not None:
-            instance.grades = grades
+        instance = cls.fromkeysvalues(algebra, keys, values)
         return instance
 
-    def keys(self):
+    def keys(self) -> tuple:
         return self._keys
 
-    def values(self):
+    def values(self) -> list:
         return self._values
 
     def items(self):
@@ -284,6 +235,23 @@ class MultiVector(metaclass=MultiVectorType):
             if isinstance(first, (list, tuple)) and all(isinstance(v, (list, tuple)) and len(v) == len(first) for v in self._values[1:]):
                 return (len(self._values), *_list_shape(first))
         return (len(self._values),)
+
+    @property
+    def layout(self) -> dict:
+        r"""
+        Layout of :code:`type(self)` in this algebra: a mapping from blade key to either
+        :code:`...` for a free component, or to the value of a structural constant, e.g.
+        the :code:`1.0` a normalized point has on :math:`\mathbf{e}_0^*`. Types without a layout,
+        such as a type that is unknown to this algebra, get an empty dict.
+        """
+        return self.algebra._type_layouts.get(type(self), {})
+
+    @cached_property
+    def grades(self):
+        """ Tuple of the grades present in `self`. """
+        grades_in_keys = {_bit_count(k) for k in self.keys()}
+        grades_in_fixed_layout = {_bit_count(k) for k, v in self.layout.items() if v != ...}
+        return tuple(sorted(grades_in_keys | grades_in_fixed_layout))
 
     def grade(self, *grades):
         """
@@ -372,8 +340,7 @@ class MultiVector(metaclass=MultiVectorType):
         return self.algebra.div(other, self)
 
     def __str__(self):
-        archetype = self.algebra.archetypes.get(type(self))
-        layout = getattr(archetype, 'layout', None) if archetype else None
+        layout = self.layout
 
         if not len(self.values()) and not layout:
             return '0'
@@ -432,8 +399,8 @@ class MultiVector(metaclass=MultiVectorType):
                 item = (item,)
             return_values = values[(slice(None), *item)]
         elif values and all(iterable(value) for value in values):
-            if isinstance(item, tuple) and len(item) == 1 and isinstance(values[0], (list, tuple)):
-                item = item[0]
+            if isinstance(values[0], (list, tuple)):  # These can only be sliced with integers.
+                if isinstance(item, tuple) and len(item) == 1: item = item[0]
             return_values = values.__class__(value[item] for value in values)
         else:
             raise IndexError("Cannot index a multivector with a non-iterable value.")
@@ -471,8 +438,9 @@ class MultiVector(metaclass=MultiVectorType):
         try:
             idx = self.keys().index(k := self.algebra.canon2bin[basis_blade])
         except ValueError:
-            if (archetype := self.algebra.archetypes.get(type(self))) and (layout := getattr(archetype, 'layout', None)):
-                return layout.get(k, 0)
+            if layout := self.layout:
+                val = layout.get(k, 0)
+                return 0 if val == ... else val
             return 0
         return self._values[idx] if swaps % 2 == 0 else - self._values[idx]
 
@@ -513,42 +481,27 @@ class MultiVector(metaclass=MultiVectorType):
             vals = [func(v) for v in self.values()]
         return self.fromkeysvalues(self.algebra, keys=self.keys(), values=vals)
 
-    def filter(self, func=None) -> "MultiVector":
+    def filter(self, func=None, map=False) -> "MultiVector":
         """
         Returns a new multivector containing only those elements for which `func` was true-ish.
         If no function was provided, use the simp_func of the Algebra.
         If `func` has one argument, it is called on each entry of self.values().
         If `func` has two arguments, the function is called with the key, value pairs as per
         self.items() instead.
+        If :code:`map` is true, the func is also applied as a map function at the same time.
         """
         if func is None:
             func = self.algebra.simp_func
         if hasattr(func, '__code__') and func.__code__.co_argcount == 2:
-            keysvalues = tuple((k, v) for k, v in self.items() if func(k, v))
+            if map: keysvalues = tuple((k, fv) for k, v in self.items() if (fv := func(k, v)))
+            else:   keysvalues = tuple((k, v) for k, v in self.items() if func(k, v))
         else:
-            keysvalues = tuple((k, v) for k, v in self.items() if func(v))
+            if map: keysvalues = tuple((k, fv) for k, v in self.items() if (fv := func(v)))
+            else:   keysvalues = tuple((k, v) for k, v in self.items() if func(v))
         if not keysvalues:
             return self.fromkeysvalues(self.algebra, keys=tuple(), values=list())
         keys, values = zip(*keysvalues)
         return self.fromkeysvalues(self.algebra, keys=keys, values=list(values))
-
-    @cached_property
-    def _callable(self):
-        """ Return the callable function for this MV. """
-        from kingdon.codegen import _lambdify_mv
-        return _lambdify_mv(self)
-
-    def __call__(self, *args, **kwargs):
-        if args and kwargs:
-            raise Exception('Please provide all input either as positional arguments or as keywords arguments, not both.')
-
-        if not self.free_symbols:
-            return self
-        keys_out, func = self._callable
-        if kwargs:
-            args = [v for k, v in sorted(kwargs.items(), key=lambda x: x[0])]
-        values = func(args)
-        return self.fromkeysvalues(self.algebra, keys_out, values)
 
     def asmatrix(self):
         """ Returns a matrix representation of this multivector. """
@@ -575,16 +528,14 @@ class MultiVector(metaclass=MultiVectorType):
         MVType = MVType or MultiVector
         if type(self) == MVType:
             return self
-        if (archetype := self.algebra.archetypes.get(type(self))) and (layout := getattr(archetype, 'layout', {})):
+        if layout := self.layout:
             keysvalues = tuple((k, v if v != ... else getattr(self, self.algebra.bin2canon[k]))
                                for k, v in layout.items() if v != ... or k in self.keys())
             keys, values = zip(*keysvalues) if keysvalues else (tuple(), list())
-            grades = tuple(sorted({_bit_count(k) for k in keys + tuple(k for k, v in layout.items() if v != ...)}))
         else:
             keys, values = self.keys(), self.values()
-            grades = self.grades
         if MVType == MultiVector:
-            return MVType.fromkeysvalues(self.algebra, keys, values, grades=grades)  # Faster than the generic constructor because it doesn't validate the input.
+            return MVType.fromkeysvalues(self.algebra, keys, values)  # Faster than the generic constructor because it doesn't validate the input.
         return MVType(self.algebra, keys=keys, values=values)
 
     def gp(self, other):
@@ -701,7 +652,7 @@ class MultiVector(metaclass=MultiVectorType):
     # TODO: perhaps exp should a function not a method?
     def exp(self: "Bivector", cosh=None, sinhc=None, sqrt=None) -> "Bireflection":
         r"""
-        Calculate the exponential of simple elements, meaning an element that squares to a scalar.
+        Calculate the exponential of simple bivectors, meaning a bivector that squares to a scalar.
         Works for python float, int and complex dtypes, and for symbolic expressions using sympy.
         For more control, it is possible to explicitly provide a `cosh`, `sinhc`, and `sqrt` function.
         If you provide one, you must provide all.
@@ -721,7 +672,7 @@ class MultiVector(metaclass=MultiVectorType):
                 sqrt=lambda s: (-s)**0.5,
             )
         """
-        ll = (self * self).filter()
+        ll = (-self.normsq()).filter()
         if ll.grades and ll.grades != (0,):
             raise NotImplementedError(
                 'Currently only elements that square to a scalar (i.e. are simple) can be exponentiated.'
@@ -741,7 +692,7 @@ class MultiVector(metaclass=MultiVectorType):
             elif isinstance(ll, (float, int)) and ll == 0:
                 sqrt = lambda x: x ** 0.5
                 import numpy as np
-                cosh = sinhc = lambda x: 1
+                cosh = sinhc = lambda x: self.algebra.blades.e
             else:
                 # Assume numpy
                 sqrt = lambda x: (-x) ** 0.5
@@ -803,78 +754,102 @@ class MultiVector(metaclass=MultiVectorType):
 
     @classmethod
     def archetype(cls, algebra, name):
-        # TODO: create a layout on the returned instance!
-        # grades = cls.grades if isinstance(cls.grades, tuple) else None
-        return MultiVector.fromname(algebra, name, grades=cls.grades, symbolcls=algebra.codegen_symbolcls or RationalPolynomial.fromname)
+        return MultiVector.fromname(algebra, name, symbolcls=algebra.codegen_symbolcls or RationalPolynomial.fromname)
 
 
 ### Below are common multivector types.
-class Scalar(MultiVector): grades = (0,)
-class Vector(MultiVector): grades = (1,)
-class Bivector(MultiVector): grades = (2,)
-class Trivector(MultiVector): grades = (3,)
-class Quadvector(MultiVector): grades = (4,)
-class Pentavector(MultiVector): grades = (5,)
-class Hexavector(MultiVector): grades = (6,)
-class Heptavector(MultiVector): grades = (7,)
-class Octovector(MultiVector): grades = (8,)
+class KVector(MultiVector):
+    """ Baseclass for k-vectors. """
+    archetypal_grades: ClassVar[tuple[int] | None] = None
+
+    @classmethod
+    def archetype(cls, algebra, name):
+        return MultiVector.fromname(algebra, name, grades=cls.archetypal_grades,
+                                    symbolcls=algebra.codegen_symbolcls or RationalPolynomial.fromname)
+class Scalar(KVector): archetypal_grades = (0,)
+class Vector(KVector): archetypal_grades = (1,)
+class Bivector(KVector): archetypal_grades = (2,)
+class Trivector(KVector): archetypal_grades = (3,)
+class Quadvector(KVector): archetypal_grades = (4,)
+class Pentavector(KVector): archetypal_grades = (5,)
+class Hexavector(KVector): archetypal_grades = (6,)
+class Heptavector(KVector): archetypal_grades = (7,)
+class Octovector(KVector): archetypal_grades = (8,)
 
 # k-reflections
 class Bireflection(MultiVector):
-    """ A bireflection :math:`R` is assumed to satisfy :math:`R \widetilde{R} = 1`."""
-    grades = (0, 2)
-
-class PseudoScalar(MultiVector):
-    grades = (-1,)
-
+    r"""
+    A bireflection :math:`R` is assumed to be identical to :math:`\mathbf{R} = p \widetilde{q}`
+    with :math:`p` and :math:`q` normalized vectors, such that :math:`R \widetilde{R} = 1`.
+    """
     @classmethod
     def archetype(cls, algebra, name):
-        return ops.codegen_polarity(Scalar.archetype(algebra, name))
+        p = Vector.archetype(algebra, f'{name}_1')
+        q = Vector.archetype(algebra, f'{name}_2')
+        qr = ops.reverse(q)
+        return ops.gp(p, qr)
 
-
-class PseudoVector(MultiVector):
-    grades = (-2,)
-
-    @classmethod
-    def archetype(cls, algebra, name):
-        return ops.codegen_hodge(Vector.archetype(algebra, name))
 
 ### PGA types
-class Direction(PseudoVector):
+class Direction(MultiVector):
+    r"""
+    PGA type. A direction is the dual of a Euclidean vector, i.e. :math:`d = d^i \mathbf{e}_i^*`.
+    As such it is an ideal point and a pseudovector.
+    """
     @classmethod
     def archetype(cls, algebra, name):
-        return ops.codegen_polarity(Vector.archetype(algebra, name))
+        return ops.polarity(Vector.archetype(algebra, name))
 
 
 class EVector(Vector):
+    r"""
+    PGA type. A Euclidean vector, i.e. :math:`v = v^i \mathbf{e}_i`.
+    Its dual is a direction.
+    """
     @classmethod
     def archetype(cls, algebra, name):
-        return ops.codegen_unhodge(Direction.archetype(algebra, name))
+        return ops.unhodge(Direction.archetype(algebra, name))
 
 
 class UPoint(Vector):
+    r"""
+    PGA type. Undual of a point, i.e. :math:`x = \mathbf{e}_0 + x^i \mathbf{e}_i`.
+    Defined such that the hodge dual of this type is of type :class:`Point`.
+    """
     @classmethod
     def archetype(cls, algebra, name):
         ev = EVector.archetype(algebra, name)
-        origin = Vector(algebra, e0=(ev.values()[0] * 0 + 1))
-        return ops.codegen_add(ev, origin)
+        idx = algebra.signature.index(0) + algebra.start_index  # Find the correct index of 'e0'
+        key = algebra.canon2bin[f'e{idx}']
+        origin = MultiVector.fromkeysvalues(algebra, (key,), [algebra.codegen_symbolcls('x') * 0 + 1])
+        return ops.add(ev, origin)
 
 
-class Point(PseudoVector):
+class Point(MultiVector):
+    r"""
+    PGA type. A point, i.e. :math:`p = \mathbf{e}_0^* + x^i \mathbf{e}_i^*`.
+    Defined as the hodge dual of :class:`UPoint`, such that points can be created in a dimension agnostic way as
+
+    .. code-block:: python
+
+        p = alg.upoint(e1='x').dual()
+    """
     @classmethod
     def archetype(cls, algebra, name):
-        return ops.codegen_hodge(UPoint.archetype(algebra, name))
+        return ops.hodge(UPoint.archetype(algebra, name))
 
 
 class Translation(Bireflection):
-    grades = (0, 2)
-
+    r"""
+    PGA type. A translation :math:`R` is assumed to be identical to :math:`\mathbf{R} = p \widetilde{q}`
+    with :math:`p` and :math:`q` points, such that :math:`\langle R \widetilde{R} \rangle_0 = 1`.
+    """
     @classmethod
     def archetype(cls, algebra, name):
         p = Point.archetype(algebra, f'{name}_1')
         q = Point.archetype(algebra, f'{name}_2')
-        qr = ops.codegen_reverse(q)
-        return ops.codegen_gp(p, qr)
+        qr = ops.reverse(q)
+        return ops.gp(p, qr)
 
 
 def stack(mvs: list[MultiVector], stack_func=list) -> MultiVector[None]:

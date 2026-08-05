@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import numpy as np
 from einops._backends import AbstractBackend, get_backend
 
 from kingdon.multivector import MultiVector

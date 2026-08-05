@@ -8,8 +8,9 @@ from kingdon import (
     Bireflection,
 )
 from kingdon.multivector import (
-    MultiVector, Direction, EVector, PseudoVector,
+    MultiVector, Direction, EVector,
     UPoint, Point, Translation,
+    KVector,
 )
 from kingdon.polynomial import RationalPolynomial
 from kingdon.codegen import resolve_layout
@@ -27,20 +28,20 @@ def pga3d():
     return Algebra.fromname('3DPGA')
 
 def pos_grades(alg, grds):
-    return MultiVector._pos_grades(alg, grds)
+    return tuple(g % (alg.d + 1) for g in grds if (-alg.d - 1) <= g <= alg.d)
 
 @pytest.mark.parametrize(
     "MVType, layout, grades, bases",
     [
-        (Scalar, {0: ...}, (0,), (MultiVector,)),
-        (Vector, {1: ..., 2: ..., 4: ..., 8: ...}, (1,), (MultiVector,)),
-        (Bivector, {9: ..., 10: ..., 12: ..., 3: ..., 5: ..., 6: ...}, (2,), (MultiVector,)),
-        (Trivector, {14: ..., 13: ..., 11: ..., 7: ...}, (3,), (MultiVector,)),
-        (Quadvector, {15: ...}, (4,), (MultiVector,)),
-        (Direction, {14: ..., 13: ..., 11: ...}, (-2,), (PseudoVector,)),
+        (Scalar, {0: ...}, (0,), (KVector,)),
+        (Vector, {1: ..., 2: ..., 4: ..., 8: ...}, (1,), (KVector,)),
+        (Bivector, {9: ..., 10: ..., 12: ..., 3: ..., 5: ..., 6: ...}, (2,), (KVector,)),
+        (Trivector, {14: ..., 13: ..., 11: ..., 7: ...}, (3,), (KVector,)),
+        (Quadvector, {15: ...}, (4,), (KVector,)),
+        (Direction, {14: ..., 13: ..., 11: ...}, (-2,), (MultiVector,)),
         (EVector, {1: ..., 2: ..., 4: ...}, (1,), (Vector,)),
         (UPoint, {1: ..., 2: ..., 4: ..., 8: 1.0}, (1,), (Vector,)),
-        (Point, {14: ..., 13: ..., 11: ..., 7: 1.0}, (-2,), (PseudoVector,)),
+        (Point, {14: ..., 13: ..., 11: ..., 7: 1.0}, (-2,), (MultiVector,)),
         (Translation, {0: 1.0, 9: ..., 10: ..., 12: ...}, (0, 2), (Bireflection,)),
         (Bireflection, {0: ..., 9: ..., 10: ..., 12: ..., 3: ..., 5: ..., 6: ...}, (0, 2), (MultiVector,)),
     ],
@@ -65,19 +66,19 @@ def test_pga_archetypes(alg_name, MVType, layout, grades, bases):
         layout = {k: remapped[k] for k in alg.canon2bin.values() if k in remapped}
     if max(grades) > alg.d: return
 
-    # These archetypes should exist on the algebra.
-    archetype = alg.archetypes[MVType]
-    assert type(archetype) is MultiVector
-    assert archetype.layout == layout
-    assert OrderedDict(archetype.layout) == OrderedDict(layout)
+    # These types should have a layout on the algebra.
+    alg_layout = alg._type_layouts[MVType]
+    assert alg_layout == layout
+    assert OrderedDict(alg_layout) == OrderedDict(layout)
     assert issubclass(MVType, bases)
 
-    # Alternative: directly create the archetype. This does not create a layout however.
+    # Alternative: directly create the archetype. This is the symbolic multivector the
+    # layout is derived from, and is untyped.
     x = MVType.archetype(alg, 'x')
     assert type(x) is MultiVector
     assert x.grades == pos_grades(alg, grades)
     assert x.shape == (len(x.keys()),)
-    assert x.keys() == tuple(archetype.layout)
+    assert x.keys() == tuple(alg_layout)
     assert all([isinstance(a, RationalPolynomial) for a in x.values()])
     assert all(float(str(a)) == b for a, b in zip(x.values(), layout.values()) if b != ...)
 
@@ -86,24 +87,26 @@ def test_pga_archetypes(alg_name, MVType, layout, grades, bases):
     assert isinstance(X, MVType)
     assert X.grades == pos_grades(alg, grades)
     assert X.shape == (len(X.keys()),)
-    assert X.keys() == tuple(k for k, v in archetype.layout.items() if v == ...)
+    assert X.keys() == tuple(k for k, v in alg_layout.items() if v == ...)
+    # Every multivector knows the layout of its own type.
+    assert X.layout == alg_layout
 
     # Similarly, __new__ should produce mv's with only the keys allowed by the layout.
     mv = getattr(alg, MVType.__name__.lower())(name='x')
     assert isinstance(mv, MVType)
     assert mv.grades == pos_grades(alg, grades)
     assert mv.shape == (len(mv.keys()),)
-    assert mv.keys() == tuple(k for k, v in archetype.layout.items() if v == ...)
+    assert mv.keys() == tuple(k for k, v in alg_layout.items() if v == ...)
     assert mv == X
 
 
 def test_layout(pga3d):
-    archetype = pga3d.archetypes[Point]
-    keys = tuple(archetype.layout)
+    layout = pga3d._type_layouts[Point]
+    keys = tuple(layout)
     with pytest.raises(TypeError):  # The origin key is not in the free part of the layout.
         pga3d.point(name='x', keys=keys)
     # Instead, we are only allowed to provide keys in the free part of the layout.
-    keys = tuple(k for k, v in archetype.layout.items() if v == ...)
+    keys = tuple(k for k, v in layout.items() if v == ...)
     p = pga3d.point(name='x', keys=keys)
     assert p == pga3d.point(name='x')
     assert str(p) == 'x032 𝐞₀₃₂ + x013 𝐞₀₁₃ + x021 𝐞₀₂₁ + 1.0 𝐞₁₂₃'
@@ -123,6 +126,11 @@ def test_layout(pga3d):
     assert pz.shape == (1,)
     assert str(pz) == '-3 𝐞₀₂₁ + 1.0 𝐞₁₂₃'
 
+    xyz = ['x', 'y', 'z']
+    pxyz = pga3d.point(xyz)  # Verify that the constructor is in the expected xyz order.
+    assert str(pxyz) == 'x 𝐞₀₃₂ + y 𝐞₀₁₃ + z 𝐞₀₂₁ + 1.0 𝐞₁₂₃'
+
+
 
 # TODO: add 2d and 3d pga parameterizations.
 @pytest.mark.parametrize("MVType, DType, UDType, grades, dgrades", [
@@ -131,7 +139,7 @@ def test_layout(pga3d):
     (Point, Vector, UPoint, (-2,), (1,)),
     (UPoint, Point, Trivector, (1,), (-2,)),
     (Vector, Trivector, Trivector, (1,), (3,)),
-    (PseudoVector, Vector, Vector, (3,), (1,)),
+    (Trivector, Vector, Vector, (3,), (1,)),
 ])
 def test_pga_duality_relations(MVType, DType, UDType, grades, dgrades):
     """ Test if the dual and undual of various types are the expected type. """
@@ -170,7 +178,8 @@ def test_translations(alg_name):
     assert isinstance(t, Translation)
     assert t.grades == (0, 2)
     assert t.shape == (alg.d - 1,)  # Only x y (z) are free variables.
-    layout = alg.archetypes[Translation].layout
+    layout = t.layout
+    assert layout == alg._type_layouts[Translation]
     assert all(layout[k] == ... for k in t.keys())
     assert t.e == 1.0  # While this is not one of the free variables, it is retrieved from the layout.
 
@@ -223,7 +232,7 @@ def test_best_fit_layout_cases(res_layout, layouts, expected):
     """ Test the resolve layout function. """
     mvtype, layout = resolve_layout(layouts, res_layout)
     if expected is None:
-        assert (mvtype, layout) == (None, None)
+        assert (mvtype, layout) == (MultiVector, {})
     else:
         assert mvtype == expected
 
@@ -233,7 +242,7 @@ def test_best_fit_layout_cases(res_layout, layouts, expected):
     [
         # Free key in source conflicts with a fixed (normalisation) key in target.
         (Vector,      UPoint),
-        (PseudoVector, Point),
+        (Trivector, Point),
         (Scalar,      Translation),
         (Bireflection, Translation),
         # Source keys absent from the target layout entirely (grade mismatch).
@@ -257,15 +266,15 @@ def test_asmvtype_incompatible(pga3d, source_type, target_type):
         (Scalar,       MultiVector,  (0,),   (0,),                     {}),
         (Vector,       MultiVector,  (1,),   (1, 2, 4, 8),             {}),
         (Bivector,     MultiVector,  (2,),   (9, 10, 12, 3, 5, 6),     {}),
-        (PseudoVector, MultiVector,  (3,),  (14, 13, 11, 7),          {}),
+        (Trivector,    MultiVector,  (3,),  (14, 13, 11, 7),          {}),
         (Direction,    MultiVector,  (3,),  (14, 13, 11),             {}),
         (EVector,      MultiVector,  (1,),   (1, 2, 4),                {}),
         (UPoint,       MultiVector,  (1,),   (1, 2, 4, 8),             {8: 1.0}),
         (Point,        MultiVector,  (3,),  (14, 13, 11, 7),          {7: 1.0}),
         (Translation,  MultiVector,  (0, 2),  (0, 9, 10, 12),           {0: 1.0}),
-        (Bireflection,  MultiVector,  (0, 2),  (0, 9, 10, 12, 3, 5, 6),  {}),
-        (Point,        PseudoVector, (3,),  (14, 13, 11, 7),          {7: 1.0}),
-        (Direction,    PseudoVector, (3,),  (14, 13, 11),             {}),
+        (Bireflection, MultiVector,  (0, 2),  (0, 9, 10, 12, 3, 5, 6),  {}),
+        (Point,        Trivector, (3,),  (14, 13, 11, 7),          {7: 1.0}),
+        (Direction,    Trivector, (3,),  (14, 13, 11),             {}),
         (UPoint,       Vector,       (1,),   (1, 2, 4, 8),             {8: 1.0}),
         (EVector,      Vector,       (1,),   (1, 2, 4),                {}),
         (Translation,  Bireflection,  (0, 2),  (0, 9, 10, 12),           {0: 1.0}),
@@ -349,3 +358,46 @@ def test_grade_selection(dim, T, grade):
         assert type(xg) == MultiVector
     else:
         assert type(xg) == T
+
+def test_custom_types():
+    """ Allow a user make their own types. """
+    class MyScalar(Scalar):
+        pass
+
+    # Use only custom types
+    mytypes = [MyScalar]
+    alg = Algebra(9, types=mytypes)
+    assert alg.types == mytypes
+    assert type(alg.blades.e) is MyScalar
+
+    # Extend default types with custom types.
+    default_types = Algebra(9).types
+    alg = Algebra(9, extra_types=mytypes)
+    assert alg.types == [*default_types, *mytypes]
+
+def test_constructors(pga2d):
+    """ Every registered type gets a constructor on the algebra. """
+    alg = pga2d
+    kvectors = [Scalar, Vector, Bivector, Trivector]
+
+    # Every k-vector type has a constructor of the matching grade.
+    for grade, T in enumerate(kvectors):
+        x = getattr(alg, T.__name__.lower())(name='x')
+        assert type(x) == T
+        assert x.grades == (grade,)
+
+    # A pseudo-k-vector is the dual of a k-vector, and hence of grade d - k.
+    for grade, T in enumerate(kvectors):
+        px = getattr(alg, f'pseudo{T.__name__.lower()}')(name='x')
+        assert type(px) == kvectors[alg.d - grade]
+        assert px.grades == (alg.d - grade,)
+
+    assert type(alg.pseudoscalar(name='x')) == Trivector
+    assert type(alg.pseudovector(name='x')) == Bivector
+
+    # The PGA types are only registered in algebras where they make sense.
+    for attr, T in [('point', Point), ('upoint', UPoint), ('direction', Direction),
+                    ('evector', EVector), ('translation', Translation),
+                    ('bireflection', Bireflection)]:
+        assert type(getattr(alg, attr)(name='x')) == T
+    assert not hasattr(Algebra(2), 'point')

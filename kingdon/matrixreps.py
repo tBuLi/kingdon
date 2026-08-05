@@ -111,7 +111,7 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
     to the expression are given in the correct order.
     The last of the positional arguments is assumed to be the vector x in the linear equation y = Ax,
     and is *assumed to be symbolic*.
-    The other arguments can also be numeric or e.g. a multidimensional array/torsor, in which case the
+    The other arguments can also be numeric, in which case the
     returned matrix A will be numerical as well. This can e.g. be used to easily generate the matrix
     representations of a given (dual-)quaternion::
 
@@ -140,18 +140,6 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
     *rest, x = inputs
     alg = x.algebra
     numerical = all(not r.issymbolic for r in rest)
-    if numerical and any(len(r.shape) > 1 for r in rest):  # Only do this for multidimensional arrays
-        symbolic_rest = [alg.multivector(name=string.ascii_uppercase[i], keys=mv.keys()) for i, mv in enumerate(rest)]
-        symbolic_inputs = [*symbolic_rest, x]
-        A, y = expr_as_matrix(expr, *symbolic_inputs, res_like=res_like,)
-        symbols2values = dict(itertools.chain(*(zip(smv.values(), mv.values()) for smv, mv in zip(symbolic_rest, rest))))
-        func = sympy.lambdify(symbols2values.keys(), A, modules={'ImmutableDenseMatrix': list})
-        kwargs = {str(k): v for k, v in symbols2values.items()}
-        A = func(**kwargs)  # TODO: vectorize this call correctly
-        symbols2values.update({v: v for v in x.values()})
-        y = y(**{str(k): v for k, v in symbols2values.items() if k in y.free_symbols})
-        return A, y
-
     y = expr(*inputs)
     if res_like is not None:
         y = alg.multivector({k: sympy.sympify(getattr(y, alg.bin2canon[k])) for k in res_like.keys()})

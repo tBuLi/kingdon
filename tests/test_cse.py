@@ -10,10 +10,10 @@ import math
 import re
 import pytest
 from sympy import Symbol
-from kingdon import Algebra, MultiVector
+from kingdon import Algebra, MultiVector, Translation
 from kingdon.polynomial import RationalPolynomial
-from kingdon.codegen import do_codegen
-from kingdon.operators import codegen_sw
+from kingdon.codegen import do_compile_symbolic
+from kingdon.operators import sw
 
 
 # ---------------------------------------------------------------------------
@@ -39,8 +39,18 @@ def pga3d():
 
 
 @pytest.fixture(scope='module')
+def pga2d():
+    return Algebra.fromname('2DPGA', cse=True)
+
+
+@pytest.fixture(scope='module')
 def pga3d_no_cse():
     return Algebra.fromname('3DPGA', cse=False)
+
+
+@pytest.fixture(scope='module')
+def pga2d_no_cse():
+    return Algebra.fromname('2DPGA', cse=False)
 
 
 # ---------------------------------------------------------------------------
@@ -48,8 +58,24 @@ def pga3d_no_cse():
 # ---------------------------------------------------------------------------
 
 def test_sw_even_normalized_point(pga3d, pga3d_no_cse):
-    """3DPGA normalized even >> normalized point: CSE 21 muls/18 adds vs no-CSE 84 muls/33 adds."""
-    a = pga3d.evenmv(name='a')
+    """
+    3DPGA normalized bireflection >> normalized point: CSE 21 muls/18 adds vs no-CSE 72 muls/30 adds.
+
+    GAmphetamine reaches 21/18 with a full 8-component motor (grades 0, 2 and 4) because its type
+    carries ``condition: b => 1-b*~b``, the *whole* normalization equation. In 3DPGA that is two
+    constraints, ``<b~b>_0 = 1`` and ``<b~b>_4 = 0``, which it turns into polynomial rewrite rules.
+    Kingdon's ``ops.sw`` only bakes in the scalar one (the ``.grade(0)`` in its ``condition``), which
+    is why our evenmv costs 24/21: three surviving ``a0123*a..`` terms. Measured in GAmphetamine:
+
+        8-component motor, no condition : 28/21     with condition : 21/18
+        7-component rotor,  no condition : 25/18     with condition : 18/15
+
+    So without constraints kingdon is ahead (24/21 and 21/18 vs their 28/21 and 25/18), but once the
+    constraint system lands the target for this test becomes 18/15, not 21/18. Note that the
+    grade-4 part is genuinely needed: no ``a0123``-free polynomial representative exists modulo the
+    constraint ideal, and GAmphetamine's 21/18 output does still read ``a[7]``.
+    """
+    a = pga3d.bireflection(name='a')
     b = pga3d.point(name='b')
     c = a >> b
     func_cse = pga3d.sw[a, b].func
@@ -58,20 +84,20 @@ def test_sw_even_normalized_point(pga3d, pga3d_no_cse):
     assert divs == 0
     assert adds == 18
 
-    a_nc = pga3d_no_cse.evenmv(name='a')
+    a_nc = pga3d_no_cse.bireflection(name='a')
     b_nc = pga3d_no_cse.point(name='b')
     c_nc = a_nc >> b_nc
     func_nc = pga3d_no_cse.sw[a_nc, b_nc].func
     muls_nc, divs_nc, adds_nc = get_op_counts(func_nc)
-    assert muls_nc == 78
+    assert muls_nc == 72
     assert divs_nc == 0
-    assert adds_nc == 33
+    assert adds_nc == 30
 
     # Verify that the two methods produce the same result
     assert not c - c_nc
 
     # Also check that codegen via sympy CSE produces a suboptimal result
-    func_sp = do_codegen(codegen_sw, a, b).func
+    func_sp = do_compile_symbolic(sw, a, b).func
     muls_sp, divs_sp, adds_sp = get_op_counts(func_sp)
     assert divs_sp == 0
     assert muls < muls_sp < muls_nc
@@ -123,7 +149,7 @@ def test_sw_even_origin(pga3d, pga3d_no_cse):
     assert divs_nc == 0
     assert adds_nc == 12
 
-    assert c == c_nc
+    assert not c - c_nc
 
 
 def test_sw_even_e032_half(pga3d, pga3d_no_cse):
@@ -413,6 +439,167 @@ def test_project_point_on_normalized_line(pga3d, pga3d_no_cse):
     assert not (c - c_nc)
 
 
+def test_reflect_point_in_normalized_plane(pga3d, pga3d_no_cse):
+    """3DPGA reflect point in normalized plane: CSE 9 muls/7 adds vs no-CSE 33 muls/13 adds."""
+    P = pga3d.vector(name='P')
+    p = pga3d.point(name='p')
+    c = P >> p
+    func_cse = pga3d.sw[P, p].func
+    muls, divs, adds = get_op_counts(func_cse)
+    assert muls == 9
+    assert divs == 0
+    assert adds == 7
+
+    P_nc = pga3d_no_cse.vector(name='P')
+    p_nc = pga3d_no_cse.point(name='p')
+    c_nc = P_nc >> p_nc
+    func_nc = pga3d_no_cse.sw[P_nc, p_nc].func
+    muls_nc, divs_nc, adds_nc = get_op_counts(func_nc)
+    assert muls_nc == 33
+    assert divs_nc == 0
+    assert adds_nc == 13
+
+    assert not (c - c_nc)
+
+
+def test_reflect_point_in_normalized_line(pga3d, pga3d_no_cse):
+    """3DPGA reflect point in normalized line: CSE 15 muls/12 adds vs no-CSE 48 muls/20 adds."""
+    l = pga3d.bivector(name='l')
+    p = pga3d.point(name='p')
+    c = l >> p
+    func_cse = pga3d.sw[l, p].func
+    muls, divs, adds = get_op_counts(func_cse)
+    assert muls == 15
+    assert divs == 0
+    assert adds == 12
+
+    l_nc = pga3d_no_cse.bivector(name='l')
+    p_nc = pga3d_no_cse.point(name='p')
+    c_nc = l_nc >> p_nc
+    func_nc = pga3d_no_cse.sw[l_nc, p_nc].func
+    muls_nc, divs_nc, adds_nc = get_op_counts(func_nc)
+    assert muls_nc == 48
+    assert divs_nc == 0
+    assert adds_nc == 20
+
+    assert not (c - c_nc)
+
+
+# ---------------------------------------------------------------------------
+# Tests 15-17: the k-simplex measures from https://bivector.net/CLEANUP.html
+# The CSE targets are the muls/adds of the vector algebra equivalents, since
+# the point of that table is that the PGA expressions compile down to them.
+# The square root and the scalar prefactor are ignored on both sides, so these
+# are the *squared* length and area, and 6x the signed volume.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skip(reason='Needs the factoring step of the most recent GAmphetamine polynomial CSE.')
+def test_norm_sq_join_two_points(pga3d, pga3d_no_cse):
+    """3DPGA squared length of a line segment: CSE 3 muls/5 adds vs no-CSE 12 muls/8 adds.
+
+    Expression: (a & b) * ~(a & b), the PGA equivalent of (b - a) | (b - a).
+    The join by itself is 6 muls/6 adds (see test_rp_point_point), but the ideal
+    parts do not participate in the norm, so taking the norm *reduces* the count.
+    """
+    def _codegen_norm_sq_join2(a, b):
+        return (a & b) * ~(a & b)
+
+    norm_sq_join2 = pga3d.jit(symbolic=True)(_codegen_norm_sq_join2)
+    a = pga3d.point(name='a')
+    b = pga3d.point(name='b')
+    c = norm_sq_join2(a, b)
+    func_cse = norm_sq_join2[a, b].func
+    muls, divs, adds = get_op_counts(func_cse)
+    assert muls == 3
+    assert divs == 0
+    assert adds == 5
+
+    norm_sq_join2_nc = pga3d_no_cse.jit(symbolic=True)(_codegen_norm_sq_join2)
+    a_nc = pga3d_no_cse.point(name='a')
+    b_nc = pga3d_no_cse.point(name='b')
+    c_nc = norm_sq_join2_nc(a_nc, b_nc)
+    func_nc = norm_sq_join2_nc[a_nc, b_nc].func
+    muls_nc, divs_nc, adds_nc = get_op_counts(func_nc)
+    assert muls_nc == 12
+    assert divs_nc == 0
+    assert adds_nc == 8
+
+    assert not c - c_nc
+
+
+@pytest.mark.skip(reason='Needs the factoring step of the most recent GAmphetamine polynomial CSE.')
+def test_norm_sq_join_three_points(pga3d, pga3d_no_cse):
+    """3DPGA squared area of a triangle: CSE 9 muls/11 adds vs no-CSE 234 muls/62 adds.
+
+    Expression: (a & b & c) * ~(a & b & c), the PGA equivalent of the squared
+    norm of the cross product (b - a) x (c - a).
+    """
+    def _codegen_norm_sq_join3(a, b, c):
+        return (a & b & c) * ~(a & b & c)
+
+    norm_sq_join3 = pga3d.jit(symbolic=True)(_codegen_norm_sq_join3)
+    a = pga3d.point(name='a')
+    b = pga3d.point(name='b')
+    c = pga3d.point(name='c')
+    d = norm_sq_join3(a, b, c)
+    func_cse = norm_sq_join3[a, b, c].func
+    muls, divs, adds = get_op_counts(func_cse)
+    assert muls == 9
+    assert divs == 0
+    assert adds == 11
+
+    norm_sq_join3_nc = pga3d_no_cse.jit(symbolic=True)(_codegen_norm_sq_join3)
+    a_nc = pga3d_no_cse.point(name='a')
+    b_nc = pga3d_no_cse.point(name='b')
+    c_nc = pga3d_no_cse.point(name='c')
+    d_nc = norm_sq_join3_nc(a_nc, b_nc, c_nc)
+    func_nc = norm_sq_join3_nc[a_nc, b_nc, c_nc].func
+    muls_nc, divs_nc, adds_nc = get_op_counts(func_nc)
+    assert muls_nc == 234
+    assert divs_nc == 0
+    assert adds_nc == 62
+
+    assert not d - d_nc
+
+
+@pytest.mark.skip(reason='Needs the factoring step of the most recent GAmphetamine polynomial CSE.')
+def test_join_four_points(pga3d, pga3d_no_cse):
+    """3DPGA signed volume of a tetrahedron: CSE 9 muls/14 adds vs no-CSE 48 muls/24 adds.
+
+    Expression: a & b & c & d, the PGA equivalent of the scalar triple product
+    ((b - a) x (c - a)) | (d - a). Like its vector counterpart it is already a
+    scalar, so there is no need to square it first.
+    """
+    def _codegen_join4(a, b, c, d):
+        return a & b & c & d
+
+    join4 = pga3d.jit(symbolic=True)(_codegen_join4)
+    a = pga3d.point(name='a')
+    b = pga3d.point(name='b')
+    c = pga3d.point(name='c')
+    d = pga3d.point(name='d')
+    e = join4(a, b, c, d)
+    func_cse = join4[a, b, c, d].func
+    muls, divs, adds = get_op_counts(func_cse)
+    assert muls == 9
+    assert divs == 0
+    assert adds == 14
+
+    join4_nc = pga3d_no_cse.jit(symbolic=True)(_codegen_join4)
+    a_nc = pga3d_no_cse.point(name='a')
+    b_nc = pga3d_no_cse.point(name='b')
+    c_nc = pga3d_no_cse.point(name='c')
+    d_nc = pga3d_no_cse.point(name='d')
+    e_nc = join4_nc(a_nc, b_nc, c_nc, d_nc)
+    func_nc = join4_nc[a_nc, b_nc, c_nc, d_nc].func
+    muls_nc, divs_nc, adds_nc = get_op_counts(func_nc)
+    assert muls_nc == 48
+    assert divs_nc == 0
+    assert adds_nc == 24
+
+    assert not e - e_nc
+
+
 def test_rotate_constant_blade():
     """
     Test the compilation for the rotation of a unit vector.
@@ -453,3 +640,37 @@ def test_rotate_constant_blade():
     assert adds == 7
 
     assert not e1p - w_nc
+
+
+def test_inv_div(pga2d, pga2d_no_cse):
+    u = pga2d.multivector(name='u', symbolcls=RationalPolynomial.fromname)
+    # Multiply by inverse results in a scalar exp, which numerically evaluates to 1.
+    def u_uinv(u):
+        return u*u.inv()
+    func_u_uinv = pga2d.compile(u_uinv, u)
+    muls, divs, adds = get_op_counts(func_u_uinv.func)
+    assert muls == 0
+    assert divs == 0
+    assert adds == 0
+    assert isinstance(func_u_uinv(u), Translation)
+    assert func_u_uinv(u).shape == (0,)
+
+    def udivu(u): return u / u
+    func_udivu = pga2d.compile(udivu, u)
+    muls, divs, adds = get_op_counts(func_udivu.func)
+    assert muls == 0
+    assert divs == 0
+    assert adds == 0
+    assert isinstance(func_udivu(u), Translation)
+    assert func_udivu(u).shape == (0,)
+
+    # Now without CSE. Inversion works too well it seems, even here it is already symbolically 1 before CSE comes into the picture.
+    u = pga2d_no_cse.multivector(name='u', symbolcls=RationalPolynomial.fromname)
+    func_uinv_nc = pga2d_no_cse.compile(u_uinv, u)
+    muls_nc, divs_nc, adds_nc = get_op_counts(func_uinv_nc.func)
+    assert muls_nc == 0
+    assert divs_nc == 0
+    assert adds_nc == 0
+    assert isinstance(func_udivu(u), Translation)
+    assert func_udivu(u).shape == (0,)
+

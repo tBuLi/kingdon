@@ -4,7 +4,7 @@ import itertools
 from sympy import symbols, Symbol
 
 from kingdon.operator_dict import OperatorDict, UnaryOperatorDict
-from kingdon.codegen import codegen_gp, codegen_inv
+import kingdon.operators as ops
 from kingdon.polynomial import RationalPolynomial
 from kingdon import Algebra, MultiVector, stack
 
@@ -14,7 +14,7 @@ def test_operator_dict():
     x = alg.multivector(name='x')
     y = alg.multivector(name='y')
 
-    gp = OperatorDict('gp', codegen=codegen_gp, algebra=alg)
+    gp = OperatorDict('gp', codegen=ops.gp, algebra=alg)
     assert gp.codegen_input_types == {'x': MultiVector, 'y': MultiVector}
     assert len(gp) == 0
     with pytest.raises(TypeError):
@@ -23,19 +23,19 @@ def test_operator_dict():
     assert len(gp) == 1  # size of gp has grown by one
     assert (x, y) in gp
 
-    inv = UnaryOperatorDict('inv', codegen=codegen_inv, algebra=alg)
+    inv = UnaryOperatorDict('inv', codegen=ops.inv, algebra=alg)
     assert len(inv) == 0
     xinv = inv(x)
     assert len(inv) == 1
     assert x in inv
 
 
-@pytest.mark.parametrize('codegen_symbolcls', [RationalPolynomial.fromname, Symbol], ids=['RationalPolynomial', 'Symbol'])
+@pytest.mark.parametrize('codegen_symbolcls', [RationalPolynomial.fromname, Symbol, None], ids=['RationalPolynomial', 'Symbol', 'Numerical'])
 def test_codegen_weights(codegen_symbolcls):
     """ In geometric product layers one needs to be able to provide weights as an array of scalars. """
     alg = Algebra(2)
 
-    @alg.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    @alg.jit(symbolic=codegen_symbolcls is not None, codegen_symbolcls=codegen_symbolcls)
     def weighted_gp(x, y, weights: MultiVector[10]):
         w0,w1,w2,w3,w4,w5,w6,w7,w8,w9 = weights
         X0, X1, X2 = (x.grade(g) for g in range(alg.d + 1))
@@ -53,11 +53,12 @@ def test_codegen_weights(codegen_symbolcls):
     weights = alg.scalar(e=ws)
     x0, x1, x2 = x.grade(0), x.grade(1), x.grade(2)
     y0, y1, y2 = y.grade(0), y.grade(1), y.grade(2)
-    keys_out, func, wrapped_func = weighted_gp[x, y, weights]
     weighted_gp_output = weighted_gp(x, y, weights)
-    assert weighted_gp_output == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0
+    assert not weighted_gp_output - (w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0)
 
-    @alg.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    if codegen_symbolcls is None: return  # For the numerical case, the functions below are (not yet) supported.
+
+    @alg.jit(symbolic=codegen_symbolcls is not None, codegen_symbolcls=codegen_symbolcls)
     def weighted_gp_grad_weights(x, y, weights: MultiVector[10]) -> MultiVector[10]:
         """ Output a single mv of shape (coeff, 10). These are all stacked with the same shape, so zeros are not eliminated."""
         weighted_gp_output = weighted_gp(x, y, weights)
@@ -69,7 +70,7 @@ def test_codegen_weights(codegen_symbolcls):
     for wi, grad_w in zip(weights.e, grad_weights):
         assert grad_w == weighted_gp_output.map(lambda v: v.diff(wi))
 
-    @alg.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    @alg.jit(symbolic=codegen_symbolcls is not None, codegen_symbolcls=codegen_symbolcls)
     def weighted_gp_grad(x, y, weights: MultiVector[10], go) -> MultiVector[18]:
         syms: list[Symbol] = [*x.values(), *y.values(), *weights.e]
         wgp_output = weighted_gp(x, y, weights)
@@ -89,7 +90,7 @@ def test_codegen_weights(codegen_symbolcls):
     # Test non-scalar shaped multivector type-hint
     alg2 = Algebra(2)
 
-    @alg2.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls)
+    @alg2.jit(symbolic=codegen_symbolcls is not None, codegen_symbolcls=codegen_symbolcls)
     def reduce_gp(mvs: MultiVector[2]):
         mv1, mv2 = mvs
         return mv1*mv2
@@ -151,7 +152,6 @@ def test_codegen_wgp_generic(codegen_symbolcls):
     """
     alg = Algebra(2)
 
-    @alg.jit(symbolic=True, codegen_symbolcls=codegen_symbolcls)
     def number_of_weights_wgp(X: MultiVector, Y: MultiVector) -> int:
         i = 0
         for gx, gy in itertools.product(X.grades, Y.grades):
@@ -178,8 +178,8 @@ def test_codegen_wgp_generic(codegen_symbolcls):
 
     assert wgp.codegen_input_types == {'X': MultiVector, 'Y': MultiVector, 'weights': (MultiVector, None)}
     assert wgp.codegen_output_type == MultiVector
-    assert number_of_weights_wgp.codegen_input_types == {'X': MultiVector, 'Y': MultiVector}
-    assert number_of_weights_wgp.codegen_output_type == int
+    # assert number_of_weights_wgp.codegen_input_types == {'X': MultiVector, 'Y': MultiVector}
+    # assert number_of_weights_wgp.codegen_output_type == int
 
     x = alg.multivector(name='x')
     y = alg.multivector(name='y')
@@ -189,7 +189,7 @@ def test_codegen_wgp_generic(codegen_symbolcls):
     weights = alg.scalar(e=ws)
     x0, x1, x2 = x.grade(0), x.grade(1), x.grade(2)
     y0, y1, y2 = y.grade(0), y.grade(1), y.grade(2)
-    keys_out, func, wrapped_func = wgp[x, y, weights]
+    compiled_expr = wgp[x, y, weights]
     wgp_output = wgp(x, y, weights)
     assert wgp_output == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0
 

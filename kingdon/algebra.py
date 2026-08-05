@@ -1,10 +1,9 @@
 import operator
 import re
-import string
-from itertools import combinations, product, chain, repeat
+from itertools import product
 from functools import partial, reduce
 from collections import Counter
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field, fields, InitVar
 from collections.abc import Mapping, Callable
 from typing import List, Tuple
 import warnings
@@ -17,31 +16,25 @@ except ImportError:
     def cached_property(func):
         return property(lru_cache()(func))
 
-import numpy as np
 import sympy
 
 from kingdon.codegen import (
-    do_codegen,
+    do_compile_symbolic,
+    do_compile,
     KingdonPrinter,
 )
-from kingdon.operators import (
-    codegen_gp, codegen_sw, codegen_cp, codegen_ip, codegen_op, codegen_div,
-    codegen_rp, codegen_acp, codegen_proj, codegen_sp, codegen_lc, codegen_inv,
-    codegen_rc, codegen_normsq, codegen_add, codegen_neg, codegen_reverse,
-    codegen_involute, codegen_conjugate, codegen_sub, codegen_sqrt,
-    codegen_outerexp, codegen_outersin, codegen_outercos, codegen_outertan,
-    codegen_polarity, codegen_unpolarity, codegen_hodge, codegen_unhodge,
-)
-from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry, do_operation, resolve_and_expand, CompiledExpression
+import kingdon.operators as ops
+from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry, do_operation, resolve_and_expand
 from kingdon.polynomial import RationalPolynomial
 from kingdon.matrixreps import matrix_rep
 from kingdon.multivector import (
     MultiVector, MultiVectorType, _bit_count,
-    Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector, # k-vectors
+    KVector, Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector, # k-vectors
     Bireflection, # compositions
     Direction, EVector, UPoint, Point, Translation,  # PGA Types.
 )
 from kingdon.graph import GraphWidget
+from kingdon.codegen import resolve_layout, CompiledExpression
 
 operation_field = partial(field, default_factory=dict, init=False, repr=False, compare=False)
 
@@ -60,16 +53,18 @@ class Algebra:
     :param r:  number of null dimensions.
     :param signature: Optional signature of the algebra, e.g. [0, 1, 1] for 2DPGA.
         Mutually exclusive with `p`, `q`, `r`.
-    :param start_index: Optionally set the start index of the dimensions. For PGA this defualts to `0`, otherwise `1`.
+    :param start_index: Optionally set the start index of the dimensions. For PGA this defaults to `0`, otherwise `1`.
     :param basis: Custom basis order, e.g. `["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"]` for 2DPGA.
     :param cse: If :code:`True` (default), attempt Common Subexpression Elimination (CSE)
         on symbolically optimized expressions.
     :param graded: If :code:`True` (default is :code:`False`), perform binary and unary operations on a graded basis.
         This will still be more sparse than computing with a full multivector, but not as sparse as possible.
         It does however, vastly reduce the number of possible expressions that have to be symbolically optimized.
+    :param extra_types: multivector types to use in addition to the standard ones already provided by kingdon.
+    :param types: Complete list of multivector types to use. This will replace the standard ones.
     :param simplify: If :code:`True` (default), we attempt to simplify as much as possible. Setting this to
         :code:`False` will reduce the number of calls to simplify. However, it seems that :code:`True` is still faster,
-        probably because it keeps sympy expressions from growing too large, which makes both symbolic computations and
+        because it keeps sympy expressions from growing too large, which makes both symbolic computations and
         printing into a python function slower.
     :param wrapper: A function that is always applied to the generated functions as a decorator. For example,
         using :code:`numba.njit` as a wrapper will ensure that all kingdon code is jitted using numba.
@@ -94,37 +89,37 @@ class Algebra:
     basis: List[str] = field(default_factory=list)
 
     # Clever dictionaries that cache previously symbolically optimized lambda functions between elements.
-    gp: OperatorDict = operation_field(metadata={'codegen': codegen_gp,})  # geometric product
-    sw: OperatorDict = operation_field(metadata={'codegen': codegen_sw})  # conjugation
-    cp: OperatorDict = operation_field(metadata={'codegen': codegen_cp,})  # commutator product
-    acp: OperatorDict = operation_field(metadata={'codegen': codegen_acp,})  # anti-commutator product
-    ip: OperatorDict = operation_field(metadata={'codegen': codegen_ip,})  # inner product
-    sp: OperatorDict = operation_field(metadata={'codegen': codegen_sp,})  # Scalar product
-    lc: OperatorDict = operation_field(metadata={'codegen': codegen_lc,})  # left-contraction
-    rc: OperatorDict = operation_field(metadata={'codegen': codegen_rc,})  # right-contraction
-    op: OperatorDict = operation_field(metadata={'codegen': codegen_op,})  # exterior product
-    rp: OperatorDict = operation_field(metadata={'codegen': codegen_rp,})  # regressive product
-    proj: OperatorDict = operation_field(metadata={'codegen': codegen_proj})  # projection
-    add: OperatorDict = operation_field(metadata={'codegen': codegen_add,})  # add
-    sub: OperatorDict = operation_field(metadata={'codegen': codegen_sub,})  # sub
-    div: OperatorDict = operation_field(metadata={'codegen': codegen_div})  # division
+    gp: OperatorDict = operation_field(metadata={'codegen': ops.gp,})  # geometric product
+    sw: OperatorDict = operation_field(metadata={'codegen': ops.sw})  # conjugation
+    cp: OperatorDict = operation_field(metadata={'codegen': ops.cp,})  # commutator product
+    acp: OperatorDict = operation_field(metadata={'codegen': ops.acp,})  # anti-commutator product
+    ip: OperatorDict = operation_field(metadata={'codegen': ops.ip,})  # inner product
+    sp: OperatorDict = operation_field(metadata={'codegen': ops.sp,})  # Scalar product
+    lc: OperatorDict = operation_field(metadata={'codegen': ops.lc,})  # left-contraction
+    rc: OperatorDict = operation_field(metadata={'codegen': ops.rc,})  # right-contraction
+    op: OperatorDict = operation_field(metadata={'codegen': ops.op,})  # exterior product
+    rp: OperatorDict = operation_field(metadata={'codegen': ops.rp,})  # regressive product
+    proj: OperatorDict = operation_field(metadata={'codegen': ops.proj})  # projection
+    add: OperatorDict = operation_field(metadata={'codegen': ops.add,})  # add
+    sub: OperatorDict = operation_field(metadata={'codegen': ops.sub,})  # sub
+    div: OperatorDict = operation_field(metadata={'codegen': ops.div})  # division
     # Unary operators
-    inv: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_inv})  # inverse
-    neg: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_neg,})  # negate
-    reverse: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_reverse,})  # reverse
-    involute: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_involute,})  # grade involution
-    conjugate: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_conjugate,})  # clifford conjugate
-    sqrt: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_sqrt})  # Square root
-    polarity: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_polarity})
-    unpolarity: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_unpolarity})
-    hodge: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_hodge,})
-    unhodge: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_unhodge,})
-    normsq: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_normsq})  # norm squared
-    outerexp: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outerexp})
-    outersin: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outersin})
-    outercos: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outercos})
-    outertan: UnaryOperatorDict = operation_field(metadata={'codegen': codegen_outertan})
-    registry: dict = field(default_factory=dict, repr=False, compare=False)  # Dict of all operator dicts. Should be extended using Algebra.register
+    inv: UnaryOperatorDict = operation_field(metadata={'codegen': ops.inv})  # inverse
+    neg: UnaryOperatorDict = operation_field(metadata={'codegen': ops.neg,})  # negate
+    reverse: UnaryOperatorDict = operation_field(metadata={'codegen': ops.reverse,})  # reverse
+    involute: UnaryOperatorDict = operation_field(metadata={'codegen': ops.involute,})  # grade involution
+    conjugate: UnaryOperatorDict = operation_field(metadata={'codegen': ops.conjugate,})  # clifford conjugate
+    sqrt: UnaryOperatorDict = operation_field(metadata={'codegen': ops.sqrt})  # Square root
+    polarity: UnaryOperatorDict = operation_field(metadata={'codegen': ops.polarity})
+    unpolarity: UnaryOperatorDict = operation_field(metadata={'codegen': ops.unpolarity})
+    hodge: UnaryOperatorDict = operation_field(metadata={'codegen': ops.hodge,})
+    unhodge: UnaryOperatorDict = operation_field(metadata={'codegen': ops.unhodge,})
+    normsq: UnaryOperatorDict = operation_field(metadata={'codegen': ops.normsq})  # norm squared
+    outerexp: UnaryOperatorDict = operation_field(metadata={'codegen': ops.outerexp})
+    outersin: UnaryOperatorDict = operation_field(metadata={'codegen': ops.outersin})
+    outercos: UnaryOperatorDict = operation_field(metadata={'codegen': ops.outercos})
+    outertan: UnaryOperatorDict = operation_field(metadata={'codegen': ops.outertan})
+    registry: dict = field(default_factory=dict, repr=False, compare=False)  # Dict of all operator dicts. Should be extended using Algebra.jit
     numspace: dict = field(default_factory=dict, repr=False, compare=False)  # Namespace for numerical functions
 
     # Mappings from binary to canonical reps. e.g. 0b01 = 1 <-> 'e1', 0b11 = 3 <-> 'e12'.
@@ -137,7 +132,8 @@ class Algebra:
     pretty_blade: str = field(default='𝐞', repr=False, compare=False)
     pretty_digits: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # TODO: this can be defined outside Algebra
     large: bool = field(default=None, repr=False, compare=False)
-    archetypes: dict = field(default_factory=dict, init=False, repr=False, compare=False)
+    extra_types: InitVar[list | None] = None
+    types: list = field(default_factory=list, repr=False, compare=False)
     _type_layouts: dict = field(default_factory=dict, init=False, repr=False, compare=False)
 
     # Codegen & call customization.
@@ -157,7 +153,7 @@ class Algebra:
     blades: "BladeDict" = field(init=False, repr=False, compare=False)
     pss: object = field(init=False, repr=False, compare=False)
 
-    def __post_init__(self):
+    def __post_init__(self, extra_types):
         if self.signature is not None:
             counts = Counter(self.signature)
             self.p, self.q, self.r = counts[1], counts[-1], counts[0]
@@ -208,14 +204,10 @@ class Algebra:
             self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
             self.basis = list(self.canon2bin)
 
-        self.signs = self._prepare_signs()
+        self.signs = DefaultKeyDict(self.compute_sign)
 
         if self.large is None:
             self.large = self.d > 6
-        # Blades are not precomputed for large algebras.
-        self.blades = BladeDict(algebra=self, lazy=self.large)
-
-        self.pss = self.blades[self.bin2canon[2 ** self.d - 1]]
 
         if self.large:
             self.registry = {f.name: self.wrapper(resolve_and_expand(partial(do_operation, codegen=codegen, algebra=self)))
@@ -228,23 +220,27 @@ class Algebra:
         for name, op in self.registry.items():
             setattr(self, name, op)
 
-        self._kvectors = [Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector][:self.d+1]
-        if not self.archetypes:
-            classes = [*self._kvectors]
-            if self.d >= 2:
-                classes.extend([Bireflection])
-            if self.r == 1:  # PGA types.
-                classes.extend([Direction, EVector, UPoint, Point, Translation])
-            classes = [*sorted(classes, key=lambda x: (len(x.grades), x.grades))]
-            self.archetypes = {
-                cls: self.bind_archetype(cls, name=''.join(letters))
-                for cls, letters in zip(classes, product(string.ascii_lowercase, repeat=3))
-            }
-        self._type_layouts = {cls: l for cls, at in self.archetypes.items() if (l := getattr(at, 'layout', None))}
+        self._kvectors = []
+        if not self.types:
+            kvectors = [Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector]
+            self._kvectors = kvectors[:self.d+1]
+            self.types = [*self._kvectors]
+            if self.d >= 2: self.types.extend([Bireflection])
+            if self.r == 1: self.types.extend([Direction, EVector, UPoint, Point])
+            if self.d >= 2 and self.r == 1: self.types.extend([Translation])
+        if extra_types:
+            self.types.extend(extra_types)
+        self._type_layouts = {cls: layout for cls in self.types
+                              if (layout := self.bind_archetype(cls, name='x'))}  # an empty layout matches an empty result at zero cost in resolve_layout, and would beat every other type.
 
-        for cls in self.archetypes.keys():
-            # TODO: add pseudo constructors
-            setattr(self, cls.__name__.lower(), partial(cls, self))
+        for cls in self._type_layouts: setattr(self, cls.__name__.lower(), partial(cls, self))
+        for k, cls in enumerate(self._kvectors):
+            if self.d - k < len(self._kvectors):
+                setattr(self, f"pseudo{cls.__name__.lower()}", partial(self._kvectors[self.d - k], self))
+
+        # Blades are not precomputed for large algebras, except for basis vectors.
+        self.blades = BladeDict(algebra=self, lazy=self.large)
+        self.pss = self.blades[self.bin2canon[2 ** self.d - 1]]
 
     @classmethod
     def fromname(cls, name: str, **kwargs):
@@ -320,36 +316,18 @@ class Algebra:
         """
         return [v.inv() for v in self.frame]
 
-    def _prepare_signs(self):
-        r"""
-        Prepares a dict whose keys are a pair of basis-blades (in binary rep) and the
-        result is the sign (1, -1, 0) of the corresponding multiplication.
+    def compute_sign(self, bin_pair: tuple[int, int]):
+        I, J = bin_pair
+        canon_pair = self.bin2canon[I], self.bin2canon[J]
+        eI, eJ = canon_pair
+        # Compute the number of swaps of orthogonal vectors needed to order the basis vectors.
+        swaps, prod, eliminated = _swap_blades(eI[1:], eJ[1:], self.bin2canon[I ^ J][1:])
 
-        E.g. in :math:`\mathbb{R}_2`, sings[(0b11, 0b11)] = -1.
-        """
-        signs = {}
-
-        def _compute_sign(bin_pair, canon_pair=None):
-            I, J = bin_pair
-            if not canon_pair:
-                canon_pair = self.bin2canon[I], self.bin2canon[J]
-            eI, eJ = canon_pair
-            # Compute the number of swaps of orthogonal vectors needed to order the basis vectors.
-            swaps, prod, eliminated = _swap_blades(eI[1:], eJ[1:], self.bin2canon[I ^ J][1:])
-
-            # Remove even powers of basis-vectors.
-            sign = -1 if swaps % 2 else 1
-            for key in eliminated:
-                sign *= self.signature[int(key, base=len(self.pretty_digits)) - self.start_index]
-            return sign
-
-        if self.d > 6:
-            return DefaultKeyDict(_compute_sign)
-
-        for (eI, I), (eJ, J) in product(self.canon2bin.items(), repeat=2):
-            signs[I, J] = _compute_sign((I, J), (eI, eJ))
-
-        return signs
+        # Remove even powers of basis-vectors.
+        sign = -1 if swaps % 2 else 1
+        for key in eliminated:
+            sign *= self.signature[int(key, base=len(self.pretty_digits)) - self.start_index]
+        return sign
 
     @cached_property
     def cayley(self):
@@ -365,9 +343,9 @@ class Algebra:
 
     def register(self, expr=None, /, *, name=None, symbolic=False):
         """
-        Compile a function with the algebra to optimize its execution times. Deprecated in favor of :meth:`~kingdon.algebra.Algebra.compile`.
+        Compile a function with the algebra to optimize its execution times. Deprecated in favor of :meth:`~kingdon.algebra.Algebra.jit`.
         """
-        warnings.warn("Use @alg.compile instead of @alg.register", FutureWarning)
+        warnings.warn("Use @alg.jit instead of @alg.register", FutureWarning)
         return self.jit(expr, name=name, symbolic=symbolic)
 
     def jit(self, expr=None, /, *, name=None, symbolic=False, codegen_symbolcls=None, printer=None, func_printer=None, wrapper=None):
@@ -440,7 +418,7 @@ class Algebra:
         # Called as @jit
         return wrap(expr, name=name, symbolic=symbolic)
 
-    def compile(self, expr=None, /, *archetypes, printer=None, func_printer=None, wrapper=None) -> CompiledExpression:
+    def compile(self, expr=None, /, *archetypes, symbolic=True, printer=None, func_printer=None, wrapper=None) -> CompiledExpression:
         """
         Compile a GA :code:`expr` with specific :code:`archetypes`.
         For typical use cases you'll probably want to use :code:`Algebra.jit` instead, since that does not require you
@@ -456,10 +434,10 @@ class Algebra:
             e1 = alg.vector(e1=1)
             e1_prime = rotate_blade(R, e1)
 
-        By inspecting the code generated in :code:`alg.sw[R, v].func` or by looking at its docstring
-        :code:`alg.sw[R, v].func.__doc__`, we find that the generated code uses 14 muls and 5 adds.
-        (Mind you that the built-in :code:`sw` operator already uses :code:`Algebra.jit`, a naive implementation
-        would need 20 muls and 7 adds.)
+        By inspecting the code generated in :code:`alg.sw[R, e1].func` or by looking at its docstring
+        :code:`alg.sw[R, e1].func.__doc__`, we find that the generated code uses 14 muls and 5 adds.
+        (Mind you that the built-in :code:`sw` operator already benefits from CSE; without it the same
+        expression needs 18 muls and 7 adds.)
         However :code:`Algebra.jit` can never use the runtime values of the multivector coefficients,
         whereas we know that we only want to rotate unit vectors.
         So we can use :code:`Algebra.compile` to generate an even more specialized function::
@@ -477,13 +455,25 @@ class Algebra:
         wrapper = wrapper or self.wrapper
         printer = printer or self.printer
         func_printer = func_printer or self.func_printer
-        codegen_output = do_codegen(expr, *archetypes, printer=printer, func_printer=func_printer)
-        wrapped_func = wrapper(codegen_output.func) if wrapper else codegen_output.func
-        return CompiledExpression(self, *codegen_output, wrapped_func=wrapped_func)
+        if symbolic:
+            compiled_expr = do_compile_symbolic(expr, *archetypes, printer=printer, func_printer=func_printer, wrapper=wrapper)
+        else:
+            compiled_expr = do_compile(expr, *archetypes, wrapper=wrapper)
+        return compiled_expr
 
     def multivector(self, *args, **kwargs) -> MultiVector:
         """ Create a new :class:`~kingdon.multivector.MultiVector`. """
         return MultiVector(self, *args, **kwargs)
+
+    def purevector(self, *args, grade, **kwargs) -> KVector:
+        """
+        Create a new k-vector of the desired grade.
+
+        :param grade: Grade of the multivector to create.
+        """
+        if grade > len(self._kvectors):
+            raise MultiVector(self, *args, grades=(grade,), **kwargs)
+        return self._kvectors[grade](self, *args, **kwargs)
 
     def evenmv(self, *args, **kwargs) -> MultiVector:
         """ Create a new :class:`~kingdon.multivector.MultiVector` in the even subalgebra. """
@@ -555,7 +545,7 @@ class Algebra:
         )
 
     def _blade2canon(self, basis_blade: str):
-        """ Retrieve the canonical blade for a given blade, and the number of sing swaps required. """
+        """ Retrieve the canonical blade for a given blade, and the number of sign swaps required. """
         if basis_blade in self.canon2bin:
             return basis_blade, 0
         # if a generator isn't found, return a generator outside of the current space.
@@ -568,7 +558,7 @@ class Algebra:
 
     def _swap_blades_bin(self, A: int, B: int):
         """
-        Swap basis blades binary style. Not currently used because (suprinsingly) this does not
+        Swap basis blades binary style. Not currently used because (surprisingly) this does not
         seem to be faster than the string manipulation version.
         """
         ab = A & B
@@ -589,8 +579,15 @@ class Algebra:
         t ^= t >> 4
         return [res, 1 - 2 * (27030 >> (t & 15) & 1)]
 
-    def bind_archetype(self, MVType: type[MultiVector], name: str):
-        """ Bind a MVType to this algebra to create an archetype intance for this multivector type in this algebra. """
+    def bind_archetype(self, MVType: type[MultiVector], name: str) -> dict:
+        r"""
+        Bind a MVType to this algebra to obtain the layout of that multivector type in this algebra.
+
+        The archetype is a symbolic multivector, obtained by evaluating the GA expression
+        that defines the type. Its coefficients are what we are after: a coefficient that
+        came out numerical is a structural constant of the type, e.g. the :code:`1.0` a
+        normalized point has on :math:`\mathbf{e}_0^*`, while anything else is a free component.
+        """
         archetype = MVType.archetype(self, name)
         def is_number(x):
             try:
@@ -598,10 +595,8 @@ class Algebra:
                 return True
             except (ValueError, TypeError):
                 return False
-        layout = {k: float(f) if is_number(f := str(v)) else ...
-                  for k, v in archetype.items()}
-        archetype.layout = layout
-        return archetype
+        return {k: float(f) if is_number(f := str(v)) else ...
+                for k, v in archetype.items()}
 
 def _swap_blades(blade1: str, blade2: str, target: str = '') -> (int, str, str):
     """
@@ -683,12 +678,13 @@ class BladeDict(Mapping):
         basis_blade, swaps = self.algebra._blade2canon(basis_blade)
         if basis_blade not in self.blades:
             bin_blade = self.algebra.canon2bin[basis_blade]
+            MVType, layout = resolve_layout(self.algebra._type_layouts, {bin_blade: 1})
             if self.algebra.graded:
-                g = format(bin_blade, 'b').count('1')
-                indices = self.algebra.indices_for_grade(g)
-                self.blades[basis_blade] = self.algebra.multivector(values=[int(bin_blade == i) for i in indices], grades=(g,))
+                keys, values = zip(*((idx, int(bin_blade == idx)) for idx, value in layout.items() if value == ...))
+                values = list(values)
             else:
-                self.blades[basis_blade] = MultiVector.fromkeysvalues(self.algebra, keys=(bin_blade,), values=[1])
+                keys, values = ((bin_blade,), [1]) if layout.get(bin_blade, ...) == ... else ((), [])
+            self.blades[basis_blade] = MVType.fromkeysvalues(self.algebra, keys=keys, values=values)
         return self.blades[basis_blade] if swaps % 2 == 0 else - self.blades[basis_blade]
 
     def __getattr__(self, blade):
@@ -711,12 +707,3 @@ class BladeDict(Mapping):
 
         return {(blade := self.algebra.bin2canon[k]): self[blade]
                 for k in self.algebra.indices_for_grades(grades)}
-
-def recursive_subclasses(cls):
-    seen = set()
-    for subclass in cls.__subclasses__():
-        yield subclass
-        for subsubclass in recursive_subclasses(subclass):
-            if subsubclass not in seen:
-                seen.add(subsubclass)
-                yield subsubclass

@@ -511,7 +511,7 @@ class Polynomial:
             self.args = coeff.args
         elif isinstance(coeff, (list, tuple)):
             self.args = tuple(tuple(m) for m in coeff)
-        elif isinstance(coeff, (int, float)):
+        elif isinstance(coeff, (int, float, Fraction)):
             self.args = ((coeff,),)
         elif isinstance(coeff, str):
             self.args = ((1, coeff),) if coeff[0] != "-" else ((-1, coeff[1:]),)
@@ -619,8 +619,7 @@ class Polynomial:
     def __truediv__(self, other):
         if isinstance(other, self.__class__):
             return RationalPolynomial(self, other)
-        # Assume scalar
-        return self * (1 / other)
+        return self * (Fraction(1, other) if isinstance(other, int) else 1 / other)
 
     def __str__(self):
         return poly_format(self.args)
@@ -782,7 +781,7 @@ class RationalPolynomial:
             *_, last = power_supply(self, -power)
             return 1 / last
         if power == 0.5:
-            return self.fromname(str(self)**0.5)
+            return self.fromname(f'{self}**0.5')
         *_, last = power_supply(self, power)
         return last
 

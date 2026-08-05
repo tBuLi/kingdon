@@ -3,30 +3,33 @@ Built-in geometric operators, such as the geometric product, wedge product, sand
 
 These functions are assumed to operate on multivectors, and return a multivector.
 """
-from itertools import product
+import itertools
 from collections import namedtuple
 import warnings
 import operator
 from typing import Callable
 from functools import reduce, wraps
+from fractions import Fraction as PyFraction
 
-from kingdon.multivector import MultiVector
 from kingdon.powers import power_supply
 
 
-def dict_to_multivector(res: dict, algebra) -> MultiVector:
-    res = {k: v for k, v in res.items() if v}
-    keys, values = zip(*res.items()) if res else ((), [])
-    return MultiVector.fromkeysvalues(algebra, keys, values)
+def dict_to_multivector(res: dict, algebra) -> "MultiVector":
+    from kingdon.multivector import MultiVector  # TODO: Could perhaps be avoided by passing as items?
+    # Drop zeros and put the remaining keys back in canon2bin order.
+    nonzero = {k: v for k, v in res.items() if v}
+    items = [(k, nonzero[k]) for k in algebra.canon2bin.values() if k in nonzero]
+    keys, values = zip(*items) if items else ((), [])
+    return MultiVector.fromkeysvalues(algebra, keys, list(values))
 
 
-def codegen_product(
-    x: MultiVector,
-    y: MultiVector,
+def product(
+    x: "MultiVector",
+    y: "MultiVector",
     filter_func=None,
     sign_func=None,
     keyout_func=operator.xor
-) -> MultiVector:
+) -> "MultiVector":
     """
     Helper function for the codegen of all product-type functions.
 
@@ -41,7 +44,7 @@ def codegen_product(
     sign_func = sign_func or (lambda pair: x.algebra.signs[pair])
 
     res = {k: 0 for k in x.algebra.canon2bin.values()}
-    for (kx, vx), (ky, vy) in product(x.items(), y.items()):
+    for (kx, vx), (ky, vy) in itertools.product(x.items(), y.items()):
         if (sign := sign_func((kx, ky))):
             key_out = keyout_func(kx, ky)
             if filter_func and not filter_func(kx, ky, key_out): continue
@@ -50,7 +53,7 @@ def codegen_product(
     return dict_to_multivector(res, x.algebra)
 
 
-def codegen_gp(x: MultiVector, y: MultiVector) -> MultiVector:
+def gp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     Generate the geometric product between :code:`x` and :code:`y`.
 
@@ -59,10 +62,10 @@ def codegen_gp(x: MultiVector, y: MultiVector) -> MultiVector:
     :return: tuple with integers indicating the basis blades present in the
         product in binary convention, and a lambda function that perform the product.
     """
-    return codegen_product(x, y)
+    return product(x, y)
 
 
-def codegen_sw(x: MultiVector, y: MultiVector) -> MultiVector:
+def sw(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     r"""
     Generate the conjugation of :code:`y` by the versor (k-reflection) :code:`x`,
     using the conjugation formula :math:`(-1)^{k \ell} x y x^{-1}`, where :math:`k` is the
@@ -82,14 +85,15 @@ def codegen_sw(x: MultiVector, y: MultiVector) -> MultiVector:
     """
     if len(set((g % 2 for g in x.grades))) != 1:
         raise TypeError("x must be a versor (k-reflection) and thus either even or odd.")
-    xr = x.reverse()
-    condition = 1 - (x * xr).grade(0)  # The scalar part of x * ~x is assumed to be 1.
+    xr = reverse(x)
+    condition = sub(xr.algebra.multivector(e=1), gp(x, xr).grade(0))  # The scalar part of x * ~x is assumed to be 1.
+    empty_mv = type(x)(x.algebra)
     if max(x.grades) % 2 == 1:
-        return sum(((x * (yg_involute := y.grade(g).involute()) * xr + yg_involute * condition).grade(g) for g in y.grades), start=type(x)(x.algebra))
-    return sum(((x * y.grade(g) * xr + y.grade(g) * condition).grade(g) for g in y.grades), start=type(x)(x.algebra))
+        return sum(((add(gp(x, gp((yg_involute := involute(y.grade(g))), xr)), gp(yg_involute, condition))).grade(g) for g in y.grades), start=empty_mv)
+    return sum(((add(gp(x, gp(y.grade(g), xr)), gp(y.grade(g), condition))).grade(g) for g in y.grades), start=empty_mv)
 
 
-def codegen_cp(x: MultiVector, y: MultiVector) -> MultiVector:
+def cp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     Generate the commutator product of :code:`x` and :code:`y`: :code:`x.cp(y) = 0.5*(x*y-y*x)`.
 
@@ -97,10 +101,10 @@ def codegen_cp(x: MultiVector, y: MultiVector) -> MultiVector:
     """
     algebra = x.algebra
     filter_func = lambda kx, ky, k_out: (algebra.signs[kx, ky] - algebra.signs[ky, kx])
-    return codegen_product(x, y, filter_func=filter_func)
+    return product(x, y, filter_func=filter_func)
 
 
-def codegen_acp(x: MultiVector, y: MultiVector) -> MultiVector:
+def acp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     Generate the anti-commutator product of :code:`x` and :code:`y`: :code:`x.acp(y) = 0.5*(x*y+y*x)`.
 
@@ -108,10 +112,10 @@ def codegen_acp(x: MultiVector, y: MultiVector) -> MultiVector:
     """
     algebra = x.algebra
     filter_func = lambda kx, ky, k_out: (algebra.signs[kx, ky] + algebra.signs[ky, kx])
-    return codegen_product(x, y, filter_func=filter_func)
+    return product(x, y, filter_func=filter_func)
 
 
-def codegen_ip(x: MultiVector, y: MultiVector, diff_func: Callable=abs) -> MultiVector:
+def ip(x: "MultiVector", y: "MultiVector", diff_func: Callable=abs) -> "MultiVector":
     """
     Generate the inner product of :code:`x` and :code:`y`.
 
@@ -121,37 +125,37 @@ def codegen_ip(x: MultiVector, y: MultiVector, diff_func: Callable=abs) -> Multi
     :return: tuple of keys in binary representation and a lambda function.
     """
     filter_func = lambda kx, ky, k_out: k_out == diff_func(kx - ky)
-    return codegen_product(x, y, filter_func=filter_func)
+    return product(x, y, filter_func=filter_func)
 
 
-def codegen_lc(x: MultiVector, y: MultiVector) -> MultiVector:
+def lc(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     Generate the left-contraction of :code:`x` and :code:`y`.
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    return codegen_ip(x, y, diff_func=lambda x: -x)
+    return ip(x, y, diff_func=lambda x: -x)
 
 
-def codegen_rc(x: MultiVector, y: MultiVector) -> MultiVector:
+def rc(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     Generate the right-contraction of :code:`x` and :code:`y`.
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    return codegen_ip(x, y, diff_func=lambda x: x)
+    return ip(x, y, diff_func=lambda x: x)
 
 
-def codegen_sp(x: MultiVector, y: MultiVector) -> MultiVector:
+def sp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     Generate the scalar product of :code:`x` and :code:`y`.
 
     :return: tuple of keys in binary representation and a lambda function.
     """
-    return codegen_ip(x, y, diff_func=lambda x: 0)
+    return ip(x, y, diff_func=lambda x: 0)
 
 
-def codegen_proj(x: MultiVector, y: MultiVector) -> MultiVector:
+def proj(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     fr"""
     Generate the projection of :code:`x` onto :code:`y`: :math:`(x \cdot y) \widetilde{y}`,
     where it is assumed that :code:`y` is a normalized versor (k-reflection) and hence :math:`y^{-1} = \widetilde{y}`.
@@ -163,23 +167,24 @@ def codegen_proj(x: MultiVector, y: MultiVector) -> MultiVector:
     """
     if len(set((g % 2 for g in y.grades))) != 1:
         raise TypeError("y must be a versor (k-reflection) and thus either even or odd.")
-    return ((x | y) * y.reverse() + (x * (1 - y.normsq().grade(0)))).grade(x.grades)
+    condition = sub(y.algebra.multivector(e=1), normsq(y).grade(0))  # The scalar part of x * ~x is assumed to be 1.
+    return add(gp(ip(x, y), reverse(y)), gp(x, condition)).grade(x.grades)
 
 
-def codegen_op(x: MultiVector, y: MultiVector) -> MultiVector:
+def op(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     Generate the outer product of :code:`x` and :code:`y`: :code:`x.op(y) = x ^ y`.
 
-    :x: MultiVector
-    :y: MultiVector
+    :x: "MultiVector"
+    :y: "MultiVector"
     :return: dictionary with integer keys indicating the corresponding basis blade in binary convention,
         and values which are a 3-tuple of indices in `x`, indices in `y`, and a lambda function.
     """
     filter_func = lambda kx, ky, k_out: k_out == kx + ky
-    return codegen_product(x, y, filter_func=filter_func)
+    return product(x, y, filter_func=filter_func)
 
 
-def codegen_rp(x: MultiVector, y: MultiVector) -> MultiVector:
+def rp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     Generate the regressive product of :code:`x` and :code:`y`:,
     :math:`x \\vee y`.
@@ -200,7 +205,7 @@ def codegen_rp(x: MultiVector, y: MultiVector) -> MultiVector:
         algebra.signs[key_pss - (pair[0] ^ pair[1]), pair[0] ^ pair[1]]
     )
 
-    return codegen_product(
+    return product(
         x, y,
         filter_func=filter_func,
         keyout_func=keyout_func,
@@ -214,20 +219,20 @@ Tuple representing a fraction.
 """
 
 
-def codegen_inv(y: MultiVector, symbolic: bool = False) -> MultiVector:
+def inv(y: "MultiVector", symbolic: bool = False) -> "MultiVector":
     alg = y.algebra
     # If y * ~y is a scalar, use the simple blade inverse ~y / (y * ~y).
     # This matches GAmphetamine's check: if (gradeOf(a*~a) == 0) return gp(reverse(a), inv(sq))
     # and avoids producing unsimplified rational polynomials like (y * s) / s^2.
-    yr = y.reverse()
-    ynorm = y.normsq()
+    yr = reverse(y)
+    ynorm = normsq(y)
     if ynorm.grades == (0,):
         num = yr
         denom = ynorm
     elif alg.d < 6:
-        num, denom = codegen_hitzer_inv(y, symbolic=True)
+        num, denom = hitzer_inv(y, symbolic=True)
     else:
-        num, denom = codegen_shirokov_inv(y, symbolic=True)
+        num, denom = shirokov_inv(y, symbolic=True)
 
     if symbolic:
         return Fraction(num, denom)
@@ -236,35 +241,36 @@ def codegen_inv(y: MultiVector, symbolic: bool = False) -> MultiVector:
     return num.map(lambda v: v / d)
 
 
-def codegen_hitzer_inv(x: MultiVector, symbolic: bool = False) -> MultiVector:
+def hitzer_inv(x: "MultiVector", symbolic: bool = False) -> "MultiVector":
     """
     Generate code for the inverse of :code:`x` using the Hitzer inverse,
     which works up to 5D algebras.
     """
     alg = x.algebra
     d = alg.d
+    two = alg.multivector(e=2)
     if d == 0:
         num = alg.blades.e
     elif d == 1:
-        num = x.involute()
+        num = involute(x)
     elif d == 2:
-        num = x.conjugate()
+        num = conjugate(x)
     elif d == 3:
-        xconj = x.conjugate()
-        num = xconj * ~(x * xconj)
+        xconj = conjugate(x)
+        num = gp(xconj, reverse(gp(x, xconj)))
     elif d == 4:
-        xconj = x.conjugate()
-        x_xconj = x * xconj
-        num = xconj * (x_xconj - 2 * x_xconj.grade(3, 4))
+        xconj = conjugate(x)
+        x_xconj = gp(x, xconj)
+        num = gp(xconj, sub(x_xconj, gp(two, x_xconj.grade(3, 4))))
     elif d == 5:
-        xconj = x.conjugate()
-        x_xconj = x * xconj
-        combo = xconj * ~x_xconj
-        x_combo = x * combo
-        num = combo * (x_combo - 2 * x_combo.grade(1, 4))
+        xconj = conjugate(x)
+        x_xconj = gp(x, xconj)
+        combo = gp(xconj, reverse(x_xconj))
+        x_combo = gp(x, combo)
+        num = gp(combo, sub(x_combo, gp(two, x_combo.grade(1, 4))))
     else:
         raise NotImplementedError(f"Closed form inverses are not known in {d=} dimensions.")
-    denom = x.sp(num)
+    denom = sp(x, num)
 
     if symbolic:
         return Fraction(num, denom)
@@ -272,14 +278,14 @@ def codegen_hitzer_inv(x: MultiVector, symbolic: bool = False) -> MultiVector:
     return num.map(lambda v: v / denom)
 
 
-def codegen_shirokov_inv(x: MultiVector, symbolic: bool = False) -> MultiVector:
+def shirokov_inv(x: "MultiVector", symbolic: bool = False) -> "MultiVector":
     """
     Generate code for the inverse of :code:`x` using the Shirokov inverse,
     which is works in any algebra, but it can be expensive to compute.
     """
     alg = x.algebra
     n = 2 ** ((alg.d + 1) // 2)
-    supply = power_supply(x, tuple(range(1, n + 1)))  # Generate powers of x efficiently.
+    supply = power_supply(x, tuple(range(1, n + 1)), operation=gp)  # Generate powers of x efficiently.
     powers = []
     cs = []
     xs = []
@@ -288,8 +294,8 @@ def codegen_shirokov_inv(x: MultiVector, symbolic: bool = False) -> MultiVector:
         xi = powers[i - 1]
         for j in range(i - 1):
             power_idx = i - j - 2
-            xi_diff = powers[power_idx] * cs[j]
-            xi = xi - xi_diff
+            xi_diff = gp(powers[power_idx], cs[j])
+            xi = sub(xi, xi_diff)
         if xi.grades == (0,):
             break
         xs.append(xi)
@@ -298,7 +304,7 @@ def codegen_shirokov_inv(x: MultiVector, symbolic: bool = False) -> MultiVector:
     if i == 1:
         adj = alg.blades.e
     else:
-        adj = xs[-1] - cs[-1]
+        adj = sub(xs[-1], cs[-1])
 
     if symbolic:
         return Fraction(adj, xi)
@@ -306,22 +312,22 @@ def codegen_shirokov_inv(x: MultiVector, symbolic: bool = False) -> MultiVector:
     return adj.map(lambda v: v / xi)
 
 
-def codegen_div(x: MultiVector, y: MultiVector) -> MultiVector:
+def div(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     Generate code for :math:`x y^{-1}`.
     """
-    num, denom = codegen_inv(y, symbolic=True)
+    num, denom = inv(y, symbolic=True)
     if not denom:
         raise ZeroDivisionError
     d = denom.e
-    return (x * num).map(lambda v: v / d)
+    return gp(x, num).map(lambda v: v / d)
 
 
-def codegen_normsq(x: MultiVector) -> MultiVector:
-    return x * ~x
+def normsq(x: "MultiVector") -> "MultiVector":
+    return gp(x, reverse(x))
 
 
-def codegen_outerexp(x: MultiVector, asterms: bool = False) -> MultiVector:
+def outerexp(x: "MultiVector", asterms: bool = False) -> "MultiVector":
     alg = x.algebra
     if len(x.grades) != 1:
         warnings.warn('Outer exponential might not converge for mixed-grade multivectors.', RuntimeWarning)
@@ -330,9 +336,10 @@ def codegen_outerexp(x: MultiVector, asterms: bool = False) -> MultiVector:
     Ws = [alg.scalar(e=1), x]
     j = 2
     while j <= k:
-        Wj = Ws[-1] ^ x
+        Wj = op(Ws[-1], x)
         # Dividing like this avoids floating point numbers, which is excellent.
-        Wj._values = tuple(v / j for v in Wj._values)
+        jinv = PyFraction(1, j)
+        Wj._values = [v*jinv for v in Wj._values]
         if Wj:
             Ws.append(Wj)
             j += 1
@@ -344,28 +351,28 @@ def codegen_outerexp(x: MultiVector, asterms: bool = False) -> MultiVector:
     return reduce(operator.add, Ws)
 
 
-def codegen_outersin(x: MultiVector) -> MultiVector:
-    odd_Ws = codegen_outerexp(x, asterms=True)[1::2]
+def outersin(x: "MultiVector") -> "MultiVector":
+    odd_Ws = outerexp(x, asterms=True)[1::2]
     outersin = reduce(operator.add, odd_Ws)
     return outersin
 
 
-def codegen_outercos(x: MultiVector) -> MultiVector:
-    even_Ws = codegen_outerexp(x, asterms=True)[0::2]
+def outercos(x: "MultiVector") -> "MultiVector":
+    even_Ws = outerexp(x, asterms=True)[0::2]
     outercos = reduce(operator.add, even_Ws)
     return outercos
 
 
-def codegen_outertan(x: MultiVector) -> MultiVector:
-    Ws = codegen_outerexp(x, asterms=True)
+def outertan(x: "MultiVector") -> "MultiVector":
+    Ws = outerexp(x, asterms=True)
     even_Ws, odd_Ws = Ws[0::2], Ws[1::2]
     outercos = reduce(operator.add, even_Ws)
     outersin = reduce(operator.add, odd_Ws)
-    outertan = outersin / outercos
+    outertan = div(outersin, outercos)
     return outertan
 
 
-def codegen_add(x: MultiVector, y: MultiVector) -> MultiVector:
+def add(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     vals = dict(x.items())
     for k, v in y.items():
         if k in vals:
@@ -375,7 +382,7 @@ def codegen_add(x: MultiVector, y: MultiVector) -> MultiVector:
     return dict_to_multivector(vals, x.algebra)
 
 
-def codegen_sub(x: MultiVector, y: MultiVector) -> MultiVector:
+def sub(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     vals = dict(x.items())
     for k, v in y.items():
         if k in vals:
@@ -385,11 +392,11 @@ def codegen_sub(x: MultiVector, y: MultiVector) -> MultiVector:
     return dict_to_multivector(vals, x.algebra)
 
 
-def codegen_neg(x: MultiVector) -> MultiVector:
+def neg(x: "MultiVector") -> "MultiVector":
     return dict_to_multivector({k: -v for k, v in x.items()}, x.algebra)
 
 
-def codegen_involutions(x: MultiVector, invert_grades: tuple[int, int] = (2, 3)) -> MultiVector:
+def involutions(x: "MultiVector", invert_grades: tuple[int, int] = (2, 3)) -> "MultiVector":
     """
     Codegen for the involutions of Clifford algebras:
     reverse, grade involute, and Clifford involution.
@@ -401,19 +408,19 @@ def codegen_involutions(x: MultiVector, invert_grades: tuple[int, int] = (2, 3))
     return dict_to_multivector(res, x.algebra)
 
 
-def codegen_reverse(x: MultiVector) -> MultiVector:
-    return codegen_involutions(x, invert_grades=(2, 3))
+def reverse(x: "MultiVector") -> "MultiVector":
+    return involutions(x, invert_grades=(2, 3))
 
 
-def codegen_involute(x: MultiVector) -> MultiVector:
-    return codegen_involutions(x, invert_grades=(1, 3))
+def involute(x: "MultiVector") -> "MultiVector":
+    return involutions(x, invert_grades=(1, 3))
 
 
-def codegen_conjugate(x: MultiVector) -> MultiVector:
-    return codegen_involutions(x, invert_grades=(1, 2))
+def conjugate(x: "MultiVector") -> "MultiVector":
+    return involutions(x, invert_grades=(1, 2))
 
 
-def codegen_sqrt(x: MultiVector) -> MultiVector:
+def sqrt(x: "MultiVector") -> "MultiVector":
     """
     Take the square root using the study number approach as described in
     https://doi.org/10.1002/mma.8639
@@ -421,44 +428,45 @@ def codegen_sqrt(x: MultiVector) -> MultiVector:
     alg = x.algebra
     if x.grades == (0,):
         return x.map(lambda v: v**0.5)
-    a, bI = x.grade(0), x - x.grade(0)
+    a, bI = x.grade(0), sub(x, x.grade(0))
     has_solution = len(x.grades) <= 2 and 0 in x.grades
     if not has_solution:
         warnings.warn("Cannot verify that we really are taking the sqrt of a Study number.", RuntimeWarning)
 
-    bI_sq = bI * bI
+    bI_sq = gp(bI, bI)
     if not bI_sq:
         cp = a.e**0.5
     else:
-        normS = (a * a - bI_sq).e
+        normS = (sub(gp(a, a), bI_sq)).e
         cp = (0.5 * (a.e + normS**0.5))**0.5
-    return (0.5 * bI / cp) + cp
+    cp = alg.multivector(e=cp)
+    return add(div(gp(alg.multivector(e=0.5), bI), cp), cp)
 
 
-def codegen_polarity(x: MultiVector, undual: bool = False) -> MultiVector:
+def polarity(x: "MultiVector", undual: bool = False) -> "MultiVector":
+    pss = x.algebra.multivector({len(x.algebra) - 1: 1})
     if undual:
-        return x * x.algebra.pss
+        return gp(x, pss)
     key_pss = len(x.algebra) - 1
     sign = x.algebra.signs[key_pss, key_pss]
     if sign == -1:
-        return - x * x.algebra.pss
-    return codegen_gp(x, x.algebra.pss)
+        return - gp(x, pss)
+    return gp(x, pss)
 
 
-def codegen_unpolarity(x: MultiVector) -> MultiVector:
-    return codegen_polarity(x, undual=True)
+def unpolarity(x: "MultiVector") -> "MultiVector":
+    return polarity(x, undual=True)
 
 
-def codegen_hodge(x: MultiVector, undual: bool = False) -> MultiVector:
+def hodge(x: "MultiVector", undual: bool = False) -> "MultiVector":
     if undual:
         res = {(key_dual := len(x.algebra) - 1 - eI): -v if x.algebra.signs[key_dual, eI] < 0 else v
                for eI, v in x.items()}
     else:
         res = {(key_dual := len(x.algebra) - 1 - eI): -v if x.algebra.signs[eI, key_dual] < 0 else v
                for eI, v in x.items()}
-    keys, values = zip(*res.items())
-    return MultiVector.fromkeysvalues(x.algebra, keys, values)
+    return dict_to_multivector(res, x.algebra)
 
 
-def codegen_unhodge(x: MultiVector) -> MultiVector:
-    return codegen_hodge(x, undual=True)
+def unhodge(x: "MultiVector") -> "MultiVector":
+    return hodge(x, undual=True)

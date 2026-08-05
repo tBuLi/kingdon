@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from functools import cached_property, partial, partialmethod
 import re
+from kingdon.multivector import Scalar, MultiVector, MultiVectorType
 
 
 @dataclass(init=False)
@@ -9,13 +10,21 @@ class TapeRecorder:
     algebra: "Algebra"
     expr: str
     _keys: tuple = field(default_factory=tuple)
+    mvtype: MultiVectorType = MultiVector
+    _shape: tuple = ()
 
-    def __new__(cls, algebra, expr, keys):
+    def __new__(cls, algebra, expr, keys, mvtype=MultiVector, shape=()):
         obj = object.__new__(cls)
         obj.algebra = algebra
         obj.expr = expr
         obj._keys = keys
+        obj.mvtype = mvtype
+        obj._shape = shape
         return obj
+
+    @classmethod
+    def fromname(cls, algebra, name, keys, mvtype=MultiVector, shape=()):
+        return cls(algebra, name, keys, mvtype, shape=shape)
 
     def keys(self):
         return self._keys
@@ -25,12 +34,12 @@ class TapeRecorder:
         return int(''.join('1' if i in self.keys() else '0' for i in reversed(self.algebra.canon2bin.values())), 2)
 
     def __len__(self):
-        return len(self._keys)
+        return self.shape[0] if len(self.shape) else 0
 
     @property
     def shape(self):
         """ Return the shape of the .values() attribute of this multivector. """
-        return len(self),
+        return self._shape
 
     def __getattr__(self, basis_blade):
         if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
@@ -39,7 +48,9 @@ class TapeRecorder:
             return self.__class__(
                 algebra=self.algebra,
                 expr=f"(0,)",
-                keys=(0,)
+                mvtype=Scalar,
+                keys=(0,),
+                shape=self.shape,
             )
         try:
             idx = self.keys().index(self.algebra.canon2bin[basis_blade])
@@ -47,14 +58,30 @@ class TapeRecorder:
             return self.__class__(
                 algebra=self.algebra,
                 expr=f"(0,)",
-                keys=(0,)
+                mvtype=Scalar,
+                keys=(0,),
+                shape=self.shape,
             )
         else:
             return self.__class__(
                 algebra=self.algebra,
                 expr=f"({self.expr}[{idx}],)",
-                keys=(self.keys()[idx],)
+                mvtype=Scalar,
+                keys=(self.keys()[idx],),
+                shape=self.shape,
             )
+
+    def __getitem__(self, item):
+        if not len(self.shape):
+            raise IndexError(f'Cannot index a multivector with shape={self.shape}')
+        elif item >= self.shape[0]:
+            raise IndexError(f'Index {item} out of range for a multivector with shape={self.shape}')
+        return self.__class__(
+            algebra=self.algebra,
+            expr=f"[{self.expr}[idx][{item}] for idx in {self.keys()}]",
+            keys=self.keys(),
+            mvtype=self.mvtype,
+        )
 
     def grade(self, *grades):
         if len(grades) == 1 and isinstance(grades[0], tuple):
@@ -67,9 +94,9 @@ class TapeRecorder:
         return self.__class__(
             algebra=self.algebra,
             expr=expr,
+            mvtype=self.algebra._kvectors[grades[0]] if len(grades) == 1 else MultiVector,
             keys=keys,
         )
-
 
     def __str__(self):
         return self.expr
@@ -78,21 +105,21 @@ class TapeRecorder:
         operator_dict = getattr(self.algebra, operator)
         if not isinstance(other, self.__class__):
             # Assume scalar
-            mvs = operator_dict.make_symbolic_mvs((self.keys(), (0,)), (self.shape, (1,)))
-            keys_out, func, *_ = operator_dict[mvs]
-            expr = f'{func.__name__}({self.expr}, ({other},))'
+            mvs = operator_dict.make_symbolic_mvs(((self.mvtype, self.keys()), (Scalar, (0,))), (self.shape, (1,)))
+            compiled_expr = operator_dict[mvs]
+            expr = f'{compiled_expr.func.__name__}({self.expr}, ({other},))'
         else:
-            mvs = operator_dict.make_symbolic_mvs((self.keys(), other.keys()), (self.shape, other.shape))
-            keys_out, func, *_ = operator_dict[mvs]
-            expr = f'{func.__name__}({self.expr}, {other.expr})'
-        return self.__class__(algebra=self.algebra, expr=expr, keys=keys_out)
+            mvs = operator_dict.make_symbolic_mvs(((self.mvtype, self.keys()), (other.mvtype, other.keys())), (self.shape, other.shape))
+            compiled_expr = operator_dict[mvs]
+            expr = f'{compiled_expr.func.__name__}({self.expr}, {other.expr})'
+        return self.__class__(algebra=self.algebra, expr=expr, mvtype=compiled_expr.mvtype, keys=compiled_expr.keys_out)
 
     def unary_operator(self, operator: str):
         operator_dict = getattr(self.algebra, operator)
-        mv = operator_dict.make_symbolic_mvs((self.keys(),), (self.shape,))[0]
-        keys_out, func, *_ = operator_dict[mv]
-        expr = f'{func.__name__}({self.expr})'
-        return self.__class__(algebra=self.algebra, expr=expr, keys=keys_out)
+        mv = operator_dict.make_symbolic_mvs(((self.mvtype, self.keys()),), (self.shape,))[0]
+        compiled_expr = operator_dict[mv]
+        expr = f'{compiled_expr.func.__name__}({self.expr})'
+        return self.__class__(algebra=self.algebra, expr=expr, mvtype=compiled_expr.mvtype, keys=compiled_expr.keys_out)
 
     # Binary operators
     gp = __mul__ = __rmul__ = partialmethod(binary_operator, operator='gp')

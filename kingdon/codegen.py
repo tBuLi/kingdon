@@ -17,30 +17,37 @@ from sympy.simplify.cse_main import numbered_symbols
 from sympy import Symbol, sympify
 
 from kingdon.polynomial import poly_cse, poly_format, Polynomial, RationalPolynomial
-from kingdon.operators import MultiVector
+from kingdon.multivector import MultiVector, MultiVectorType
 
-class CodegenOutput(NamedTuple):
+
+class CompiledExpression(NamedTuple):
     """
     Output of a codegen function.
 
     :param keys_out: tuple with the output blades in binary rep.
     :param func: callable that takes (several) sequence(s) of values
         returns a tuple of :code:`len(keys_out)`.
+    :param wrapped_func: decorated func if a wrapper was provided, else identical to func.
+    :param mvtype: type of the output multivector. Defaults to :code:`MultiVector`.
     """
+    algebra: "Algebra"
     keys_out: Tuple[int]
     func: Callable
-    MVType: Type = MultiVector
-    output_mv_idx: Optional[int] = None
+    mvtype: MultiVectorType = MultiVector
+    output_mv_idx: int | None = None
+    wrapped_func: Callable | None = None
 
+    def __call__(self, *mvs):
+        values_in = tuple(mv.values() for mv in mvs)
+        values_out = self.func(*values_in)
+        if self.output_mv_idx is not None: return None  # The function uses .set
+        return self.mvtype.fromkeysvalues(self.algebra, self.keys_out, values_out)
 
-def _lambdify_mv(mv):
-    func = lambdify(
-        args={'x': sorted(mv.free_symbols, key=lambda x: x.name)},
-        exprs=list(mv.values()),
-        funcname=f'custom_{mv.type_number}',
-        cse=mv.algebra.cse
-    )
-    return CodegenOutput(tuple(mv.keys()), func)
+    def wrapped_call(self, *mvs):
+        values_in = tuple(mv.values() for mv in mvs)
+        values_out = self.wrapped_func(*values_in)
+        if self.output_mv_idx is not None: return None  # The function uses .set
+        return self.mvtype.fromkeysvalues(self.algebra, self.keys_out, values_out)
 
 
 def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None):
@@ -80,7 +87,7 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None):
     res_fixed_items = {(k, v) for k, v in res_layout.items() if v is not Ellipsis}
     res_keys = res_free | res_fixed_keys
 
-    best, best_cost = (None, None), None
+    best_MVType, best_layout, best_cost = MultiVector, {}, None
     for cls, L in layouts.items():
         if MVType is not None and not issubclass(cls, MVType):
             continue
@@ -95,21 +102,21 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None):
             continue
         cost = (len(free & res_fixed_keys), len(free - res_keys))
         if best_cost is None or cost < best_cost:
-            best, best_cost = (cls, L), cost
+            best_MVType, best_layout, best_cost = cls, L, cost
             if cost == (0, 0):
                 break  # perfect fit; layouts are iterated in insertion order so this is optimal
 
-    return best
+    return best_MVType, best_layout
 
 
-def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
+def do_compile_symbolic(codegen, *mvs, printer=None, func_printer=None, wrapper=None) -> CompiledExpression:
     """
     :param codegen: callable that performs codegen for the given :code:`mvs`. This can be any callable
-        that returns either a :class:`~kingdon.multivector.MultiVector`, a dictionary, or an instance of :class:`CodegenOutput`.
+        that returns a :class:`~kingdon.multivector.MultiVector`.
     :param mvs: Any remaining positional arguments are taken to be symbolic :class:`~kingdon.multivector.MultiVector`'s.
     :param printer: The sympy style printer used to generate the code with sympy-style printing.
     :param func_printer: The sympy style evaluator printer used to generate the code with sympy-style printing.
-    :return: Instance of :class:`CodegenOutput`.
+    :return: Instance of :class:`CompiledExpression`.
     """
     algebra = mvs[0].algebra
     mvs_orig = [copy.deepcopy(mv) for mv in mvs]
@@ -129,15 +136,15 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
         res_layout = {k: float(f) if is_number(f := str(v)) else ... for k, v in res.items()}
         MVType, layout = resolve_layout(algebra._type_layouts, res_layout)
 
-        if layout is not None:
+        if layout:
             res = {k: v for k, v in res.items() if layout[k] == ...}
 
     funcname = f'{codegen.__name__}_' + '_x_'.join(f"{format(mv[0].type_number if isinstance(mv, list) else mv.type_number, 'X')}" for mv in mvs)
     args = {arg_name: [tuple(chain(*(x.values() for x in arg)))] if isinstance(arg, list) else arg.values()
             for arg_name, arg in zip(string.ascii_uppercase, mvs)}
 
-    if all(isinstance(v, str) for v in res.values()):
-        return func_builder(res, *mvs, args=args, funcname=funcname, MVType=MVType)  # TODO: add output_mv_idx support
+    if res and all(isinstance(v, str) for v in res.values()):
+        return func_builder(algebra, res, *mvs, args=args, funcname=funcname, MVType=MVType)  # TODO: add output_mv_idx support
 
     keys, exprs = tuple(res.keys()), list(res.values())
     if output_mv_idx is not None:
@@ -146,11 +153,12 @@ def do_codegen(codegen, *mvs, printer=None, func_printer=None) -> CodegenOutput:
                     cse=algebra.cse, printer=printer, func_printer=func_printer,
                     output_mv_idx=output_mv_idx
                     )
-    return CodegenOutput(
-        keys, func, MVType or MultiVector, output_mv_idx
+    return CompiledExpression(
+        algebra, keys, func, MVType or MultiVector, output_mv_idx, wrapper(func) if wrapper else func
     )
 
-def do_compile(codegen, *tapes):
+def do_compile(codegen, *tapes, wrapper=None) -> CompiledExpression:
+    """ Non-symbolic compile. """
     algebra = tapes[0].algebra
     namespace = algebra.numspace
 
@@ -170,8 +178,8 @@ def do_compile(codegen, *tapes):
     linecache.cache[filename] = (len(funcstr), None, funcstr.splitlines(True), filename) # type: ignore
 
     func = funclocals[funcname]
-    return CodegenOutput(
-        res.keys() if not isinstance(res, str) else (0,), func
+    return CompiledExpression(
+        algebra, res.keys() if not isinstance(res, str) else (0,), func, res.mvtype, wrapped_func=wrapper(func) if wrapper else func
     )
 
 
@@ -216,7 +224,7 @@ def _build_and_cache_func(header, body_lines, funcname, namespace=None, doc_line
     return func_locals[funcname]
 
 
-def func_builder(res_vals: defaultdict, *mvs, args: dict, funcname: str, MVType: Type = MultiVector) -> CodegenOutput:
+def func_builder(algebra, res_vals: defaultdict, *mvs, args: dict, funcname: str, MVType: Type = MultiVector) -> CompiledExpression:
     """
     Build a Python function for the product between given multivectors.
 
@@ -235,7 +243,7 @@ def func_builder(res_vals: defaultdict, *mvs, args: dict, funcname: str, MVType:
     else:
         body_lines.append(f'    return list()')
     func = _build_and_cache_func(header, body_lines, funcname, doc_lines=[str(mv) for mv in mvs], namespace={})
-    return CodegenOutput(tuple(res_vals.keys()), func, MVType)
+    return CompiledExpression(algebra, tuple(res_vals.keys()), func, MVType)
 
 
 def _poly_cse_compute(exprs: List[RationalPolynomial], common_denom: Optional[Polynomial] = None):
@@ -363,7 +371,7 @@ def lambdify(
         a = alg.multivector(name='a')
         b = alg.multivector(name='b')
         args = {'A': a.values(), 'B': b.values()}
-        exprs = tuple(codegen_cp(a, b).values())
+        exprs = tuple(ops.cp(a, b).values())
         func = lambdify(args, exprs, funcname='cp', cse=False)
 
     This will produce the following code:
