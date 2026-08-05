@@ -511,10 +511,7 @@ class Algebra:
             :scale: 50%
             :align: center
 
-        If a function is given to :code:`Algebra.graph` then it is called without arguments.
-        This can be used to make animations in a manner identical to :code:`ganja.js`.
-
-        Example usage:
+        If a function is given to :code:`Algebra.graph` then it is called without arguments:
 
         .. code-block ::
 
@@ -529,14 +526,78 @@ class Algebra:
                 lineWidth=3, grid=1, labels=1
             )
 
-        :param `*subjects`: Subjects to be graphed.
-            Can be strings, hexadecimal colors, (lists of) MultiVector, (lists of) callables.
-        :param camera: [optional] a motor that places the camera at the desired viewpoint.
-        :param up: [optional] the 'up' (C) function that takes a Euclidean point and casts it into a larger
-            embedding space. This will invoke ganja's OPNS renderer, which can be used to render any algebra.
-            Examples include 2D CSGA, 3D CCGA, 3D Mother Algebra, etc. See the teahouse for examples.
-        :param `**options`: Other options passed to :code:`ganja.js`'s :code:`Algebra.graph`.
+        This can be used to make animations in a manner identical to :code:`ganja.js` by making
+        :code:`graph_func` depend on time and setting :code:`animate=True`.
 
+        .. rubric:: Subjects
+
+        The following types are accepted as positional arguments:
+
+        - :class:`~kingdon.multivector.MultiVector`: rendered according to its grade and the
+          algebra's signature, e.g. as a point, line, plane, circle, sphere, etc.
+          A multivector with array-valued coefficients (e.g. :code:`numpy` arrays) is unpacked
+          into the individual multivectors it represents.
+        - :code:`int`: a hexadecimal color such as :code:`0x224488`, which sets the color of all
+          subsequent subjects until the next color.
+        - :code:`str`: a label, drawn at the position of the last drawn subject. Strings starting
+          with :code:`"<"` are inserted verbatim as SVG, strings enclosed in :code:`$` are typeset
+          as TeX (when a TeX renderer is loaded on the page), and strings starting with :code:`"_"` are not drawn but
+          do advance the text cursor.
+        - :code:`list` or :code:`tuple`: two multivectors are drawn as a line segment, three or more
+          as a filled polygon. Lists may be nested, and may contain any of the types above.
+        - :code:`Callable`: called without arguments, and the result is graphed. A single callable
+          returning a list of subjects is typically used for animations; callables
+          nested deeper in the input are re-evaluated in the same way.
+
+        Multivectors passed directly as positional arguments (i.e. not nested inside a list) may be
+        draggable: dragging them in the canvas writes the new coefficients back into the Python
+        object in-place. In PGA only points (grade :math:`d-1`) are draggable, in conformal
+        algebras (:code:`conformal=True`) only grade 1 elements are draggable.
+
+        .. rubric:: Options
+
+        All keyword arguments are passed on to :code:`ganja.js`'s :code:`Algebra.graph` directly,
+        with the exception of :code:`camera`, :code:`up`, :code:`width`, :code:`height` and :code:`style`,
+        which are (also) interpreted by :code:`kingdon`.
+        As such, :code:`kingdon` automatically inherits all the options from :code:`ganja.js`.
+        The most useful ones are mentioned in the list below.
+
+        :param `*subjects`: The subjects to be graphed, see above.
+        :param camera: A motor which places the camera at the desired viewpoint. Defaults to the
+            identity motor.
+        :param width: CSS width of the canvas, e.g. :code:`'600px'` or :code:`'100%'`.
+            Defaults to :code:`'min( 100%, 1024px )'`.
+        :param height: CSS height of the canvas, e.g. :code:`'400px'`. Defaults to :code:`'auto'`,
+            in which case the aspect ratio of 16 / 6 determines the height.
+        :param style: Dictionary of additional CSS properties (camelCased, as in JS) applied to the
+            canvas, e.g. :code:`{'background': 'black', 'aspectRatio': '1 / 1'}`.
+        :param animate: If truthy, the scene is redrawn every frame and all callables are
+            re-evaluated, which is what drives animations. Defaults to :code:`False`, in which case
+            the scene is only redrawn when a subject changes or the user interacts with it.
+        :param grid: Draw a grid.
+        :param labels: Label the grid lines.
+        :param gridSize: Size of the grid in world units.
+        :param gridFontSize: Scale of the grid labels.
+        :param scale: Zoom level of the scene (2D/SVG rendering), default 1.
+        :param lineWidth: Line width multiplier.
+        :param pointRadius: Point radius multiplier.
+        :param fontSize: Label size multiplier.
+        :param conformal: Use the conformal renderer, needed for CGA.
+        :param up: The 'up' (:math:`C`) function, a callable taking Euclidean coordinates and
+            returning the corresponding element of the (larger) embedding space. Providing an `up` function
+            invokes ganja's OPNS renderer, which can render any algebra, e.g. CGA, 2D CSGA, 3D CCGA,
+            3D Mother Algebra. The function is traced symbolically and compiled to GLSL, so it must
+            consist of algebraic operations only. See the teahouse for examples.
+        :param ipns: Interpret the subjects as IPNS (dual) elements instead of OPNS.
+        :param gl: Force the WebGL renderer (the default in 3D), which supports raytraced surfaces.
+        :param spin: Rotate the camera continuously at the given rate (WebGL only).
+        :param thresh: Threshold used by the raymarcher to decide when a surface is hit.
+        :param `**options`: Any other option supported by :code:`ganja.js`'s
+            :code:`Algebra.graph`, such as :code:`alpha`, :code:`cull`, :code:`noZ`,
+            :code:`htmlText`, :code:`devicePixelRatio`, :code:`clip`, :code:`still`.
+
+        :return: A :class:`~kingdon.graph.GraphWidget` displaying the scene with :code:`ganja.js`.
+            The :meth:`~kingdon.graph.GraphWidget.update` method can be used to redraw an existing figure.
         """
         return graph_widget(
             algebra=self,

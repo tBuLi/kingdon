@@ -339,7 +339,13 @@ Graphing using :code:`ganja.js`
 
 .. code-block::
 
-    >>> alg.graph(0xff0000, u, "u", lineWidth=3)
+    >>> alg = Algebra(2, 0, 1)
+    >>> A, B, C = alg.upoint(e1=1, e2=1).dual(), alg.upoint(e1=-1, e2=1).dual(), alg.upoint(e1=-1, e2=-1).dual()
+    >>> alg.graph(
+    ...     0xD0FFE1, [A, B, C],
+    ...     0x224488, A, "A", B, "B", C, "C",
+    ...     lineWidth=3, grid=1, labels=1
+    ... )
 
 Running this in a notebook produces:
 
@@ -359,9 +365,14 @@ Running this in a notebook produces:
           new Function("const define=1;" + ganja_source).apply(ctx);
           const Algebra = ctx.Algebra;
 
-          Algebra(2, 0, 0, function () {
-            var u = 1e1 + 2e2;
-            var el = this.graph([0xff0000, u, "u"], {lineWidth: 3});
+          Algebra(2, 0, 1, () => {
+            var A = !(1e0 + 1e1 + 1e2);
+            var B = !(1e0 + -1e1 + 1e2);
+            var C = !(1e0 + -1e1 - 1e2);
+            var el = this.graph([
+              0xD0FFE1, [A, B, C],
+              0x224488, A, "A", B, "B", C, "C",
+            ], {lineWidth: 3, grid: 1, labels: 1});
             el.style.width = "100%";
             el.style.height = "100%";
             document.getElementById("kingdon-graph-demo").appendChild(el);
@@ -371,12 +382,16 @@ Running this in a notebook produces:
 
 The rules are simple: all positional arguments will be passed on to :code:`ganja.js` as
 elements to graph, whereas keyword arguments are passed to :code:`ganja.js` as options.
-Hence, the example above will graph the line :code:`u` with :code:`lineWidth = 3`,
-and will attach the label "u" to it, and all of this will be red.
+Hence, the example above will graph the filled triangle :code:`[A, B, C]` in a light green
+(:code:`0xD0FFE1`), and the points :code:`A`, :code:`B`, :code:`C` in dark blue (:code:`0x224488`)
+each with their own label, all with :code:`lineWidth = 3`, and with the :code:`grid` and point
+:code:`labels` turned on.
 Identical to :code:`ganja.js`, valid inputs to :meth:`~kingdon.algebra.Algebra.graph` are (lists of) instances
 of :class:`~kingdon.multivector.MultiVector`, strings, and hexadecimal numbers to indicate colors,
 or a function without arguments that returns these things.
 The strings can be simple labels, or valid SVG syntax.
+
+See :meth:`~kingdon.algebra.Algebra.graph` for more details.
 
 .. note::
     kingdon supports :code:`ganja.js`'s animation and interactivity in jupyter notebooks,
