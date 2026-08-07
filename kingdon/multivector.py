@@ -5,6 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import reduce, cached_property, wraps
 from typing import Generator, ClassVar
+from types import EllipsisType
 from itertools import product
 import re
 import math
@@ -151,7 +152,7 @@ class MultiVector(metaclass=MultiVectorType):
 
         # Validate keys against layout if one is provided.
         if layout:
-            if not all(layout.get(k) == ... for k in keys):
+            if not all(layout.get(k) == ... or layout.get(-k) == ... for k in keys):
                 raise TypeError(f'The provided keys {keys} are not free variables for {cls.__name__} with layout {layout}.')
             if grades is None:
                 grades = tuple(sorted({_bit_count(k) for k in keys + tuple(k for k, v in layout.items() if v != ...)}))
@@ -237,12 +238,14 @@ class MultiVector(metaclass=MultiVectorType):
         return (len(self._values),)
 
     @property
-    def layout(self) -> dict:
+    def type_layout(self) -> dict[int, float | EllipsisType]:
         r"""
-        Layout of :code:`type(self)` in this algebra: a mapping from blade key to either
-        :code:`...` for a free component, or to the value of a structural constant, e.g.
-        the :code:`1.0` a normalized point has on :math:`\mathbf{e}_0^*`. Types without a layout,
-        such as a type that is unknown to this algebra, get an empty dict.
+        Layout of :code:`type(self)`: a mapping from blade binary key (int) to either
+        :code:`...` for a free component or to the numerical value of a structural constant.
+        For example, a point in :code:`Algebra.fromname("2DPGA")` has layout
+         :code:`{'e20': ..., 'e01': ..., 'e21': 1.0}`.
+        E.g. the :code:`1.0` a normalized point has on :math:`\mathbf{e}_0^*`.
+        Types without a layout return an empty dict.
         """
         return self.algebra._type_layouts.get(type(self), {})
 
@@ -250,7 +253,7 @@ class MultiVector(metaclass=MultiVectorType):
     def grades(self):
         """ Tuple of the grades present in `self`. """
         grades_in_keys = {_bit_count(k) for k in self.keys()}
-        grades_in_fixed_layout = {_bit_count(k) for k, v in self.layout.items() if v != ...}
+        grades_in_fixed_layout = {_bit_count(k) for k, v in self.type_layout.items() if v != ...}
         return tuple(sorted(grades_in_keys | grades_in_fixed_layout))
 
     def grade(self, *grades):
@@ -340,7 +343,7 @@ class MultiVector(metaclass=MultiVectorType):
         return self.algebra.div(other, self)
 
     def __str__(self):
-        layout = self.layout
+        layout = self.type_layout
 
         if not len(self.values()) and not layout:
             return '0'
@@ -438,7 +441,7 @@ class MultiVector(metaclass=MultiVectorType):
         try:
             idx = self.keys().index(k := self.algebra.canon2bin[basis_blade])
         except ValueError:
-            if layout := self.layout:
+            if layout := self.type_layout:
                 val = layout.get(k, 0)
                 return 0 if val == ... else val
             return 0
@@ -528,10 +531,16 @@ class MultiVector(metaclass=MultiVectorType):
         MVType = MVType or MultiVector
         if type(self) == MVType:
             return self
-        if layout := self.layout:
-            keysvalues = tuple((k, v if v != ... else getattr(self, self.algebra.bin2canon[k]))
-                               for k, v in layout.items() if v != ... or k in self.keys())
-            keys, values = zip(*keysvalues) if keysvalues else (tuple(), list())
+        if layout := self.type_layout:
+            # Sort the layout to canonical order, since
+            def _keyinlayout(k, layout):
+                if k in layout: return k
+                elif -k in layout: return -k
+            layout = {key: layout[key] for k in self.algebra.canon2bin.values() if (key := _keyinlayout(k, layout)) is not None}
+            keysvalues = tuple((kabs, v if v != ... else (-1 if k < 0 else 1) * getattr(self, self.algebra.bin2canon[kabs]))
+                               for k, v in layout.items() if (kabs := abs(k)) in self.keys() or v != ...)
+            keys, values = zip(*keysvalues) if keysvalues else (tuple(), tuple())
+            values = list(values)  # Values are always a list, e.g. so they can be updated inplace.
         else:
             keys, values = self.keys(), self.values()
         if MVType == MultiVector:

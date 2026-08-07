@@ -226,12 +226,13 @@ class Algebra:
             self._kvectors = kvectors[:self.d+1]
             self.types = [*self._kvectors]
             if self.d >= 2: self.types.extend([Bireflection])
-            if self.r == 1: self.types.extend([Direction, EVector, UPoint, Point])
-            if self.d >= 2 and self.r == 1: self.types.extend([Translation])
         if extra_types:
             self.types.extend(extra_types)
+        # Dynamically generate classes for types if they are not already.
+        self.types = [type(t['name'], (MultiVector,), {'layout': t['layout']}) if isinstance(t, dict) else t
+                      for t in self.types]
         self._type_layouts = {cls: layout for cls in self.types
-                              if (layout := self.bind_archetype(cls, name='x'))}  # an empty layout matches an empty result at zero cost in resolve_layout, and would beat every other type.
+                              if (layout := self.bind_layout(cls, name='x'))}  # an empty layout matches an empty result at zero cost in resolve_layout, and would beat every other type.
 
         for cls in self._type_layouts: setattr(self, cls.__name__.lower(), partial(cls, self))
         for k, cls in enumerate(self._kvectors):
@@ -243,25 +244,27 @@ class Algebra:
         self.pss = self.blades[self.bin2canon[2 ** self.d - 1]]
 
     @classmethod
-    def fromname(cls, name: str, **kwargs):
+    def fromname(cls, name: str, extra_types=None, **kwargs):
         """
         Initialize a well known algebra by its name. Options are 2DPGA, 3DPGA, and STAP.
         This uses sensible ordering of the basis vectors in the basis blades to avoid minus superfluous signs.
         """
+        extra_pga_types = [Direction, EVector, UPoint, Point, Translation]
+        if extra_types: extra_pga_types.extend(extra_types)
         if name == '2DPGA':
             basis = ["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"]
-            return cls(2, 0, 1, basis=basis, **kwargs)
+            return cls(2, 0, 1, basis=basis, extra_types=extra_pga_types, **kwargs)
         elif name == '3DPGA':
             basis = ["e", "e1", "e2", "e3", "e0",
                      "e01", "e02", "e03", "e12", "e31", "e23",
                      "e032", "e013", "e021", "e123", "e0123"]
-            return cls(3, 0, 1, basis=basis, **kwargs)
+            return cls(3, 0, 1, basis=basis, extra_types=extra_pga_types, **kwargs)
         elif name == 'STAP':
             basis = ["e", "e0", "e1", "e2", "e3", "e4",
                      "e01", "e02", "e03", "e40", "e12", "e31", "e23", "e41", "e42", "e43",
                      "e234", "e314", "e124", "e123", "e014", "e024", "e034", "e032", "e013", "e021",
                      "e0324", "e0134", "e0214", "e0123", "e1234", "e01234"]
-            return cls(3, 1, 1, basis=basis, **kwargs)
+            return cls(3, 1, 1, basis=basis, extra_types=extra_pga_types, **kwargs)
         else:
             raise ValueError("No algebra by this name is known.")
 
@@ -640,20 +643,36 @@ class Algebra:
         t ^= t >> 4
         return [res, 1 - 2 * (27030 >> (t & 15) & 1)]
 
-    def bind_archetype(self, MVType: type[MultiVector], name: str) -> dict:
+    def bind_layout(self, MVType: type[MultiVector], name: str) -> dict:
         r"""
-        Bind a MVType to this algebra to obtain the layout of that multivector type in this algebra.
+        Bind a layout to this algebra. If MVType defines a layout then this is straightforward,
+        otherwise it has to be generated from the archetype.
 
         The archetype is a symbolic multivector, obtained by evaluating the GA expression
         that defines the type. Its coefficients are what we are after: a coefficient that
         came out numerical is a structural constant of the type, e.g. the :code:`1.0` a
         normalized point has on :math:`\mathbf{e}_0^*`, while anything else is a free component.
         """
+        if hasattr(MVType, 'layout') and isinstance(MVType.layout, dict):
+            layout = {}
+            for blade, val in MVType.layout.items():
+                if isinstance(blade, int): layout[blade] = val
+                else:
+                    # For fixed values we apply sign swaps to the value, for free values we store it in the key.
+                    canon, swaps = self._blade2canon(blade)
+                    sign = (-1 if swaps % 2 != 0 else 1)
+                    if val == ...:
+                        k = sign * self.canon2bin[canon]
+                    else:
+                        k = self.canon2bin[canon]
+                        val = sign * val
+                    layout[k] = val
+            return layout
+
         archetype = MVType.archetype(self, name)
         def is_number(x):
             try:
-                float(x)
-                return True
+                float(x); return True
             except (ValueError, TypeError):
                 return False
         return {k: float(f) if is_number(f := str(v)) else ...
@@ -741,10 +760,13 @@ class BladeDict(Mapping):
             bin_blade = self.algebra.canon2bin[basis_blade]
             MVType, layout = resolve_layout(self.algebra._type_layouts, {bin_blade: 1})
             if self.algebra.graded:
-                keys, values = zip(*((idx, int(bin_blade == idx)) for idx, value in layout.items() if value == ...))
+                keys, values = zip(*((idx, int(bin_blade == idx)) if idx >= 0 else (-idx, -int(bin_blade == -idx))
+                                     for idx, value in layout.items() if value == ...))
                 values = list(values)
             else:
-                keys, values = ((bin_blade,), [1]) if layout.get(bin_blade, ...) == ... else ((), [])
+                if layout.get(bin_blade) == ...:    keys, values = ((bin_blade,), [1])
+                elif layout.get(-bin_blade) == ...: keys, values = ((bin_blade,), [-1])
+                else:                               keys, values = ((), [])
             self.blades[basis_blade] = MVType.fromkeysvalues(self.algebra, keys=keys, values=values)
         return self.blades[basis_blade] if swaps % 2 == 0 else - self.blades[basis_blade]
 

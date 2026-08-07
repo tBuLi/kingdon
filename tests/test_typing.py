@@ -89,7 +89,7 @@ def test_pga_archetypes(alg_name, MVType, layout, grades, bases):
     assert X.shape == (len(X.keys()),)
     assert X.keys() == tuple(k for k, v in alg_layout.items() if v == ...)
     # Every multivector knows the layout of its own type.
-    assert X.layout == alg_layout
+    assert X.type_layout == alg_layout
 
     # Similarly, __new__ should produce mv's with only the keys allowed by the layout.
     mv = getattr(alg, MVType.__name__.lower())(name='x')
@@ -178,7 +178,7 @@ def test_translations(alg_name):
     assert isinstance(t, Translation)
     assert t.grades == (0, 2)
     assert t.shape == (alg.d - 1,)  # Only x y (z) are free variables.
-    layout = t.layout
+    layout = t.type_layout
     assert layout == alg._type_layouts[Translation]
     assert all(layout[k] == ... for k in t.keys())
     assert t.e == 1.0  # While this is not one of the free variables, it is retrieved from the layout.
@@ -401,3 +401,153 @@ def test_constructors(pga2d):
                     ('bireflection', Bireflection)]:
         assert type(getattr(alg, attr)(name='x')) == T
     assert not hasattr(Algebra(2), 'point')
+
+@pytest.mark.parametrize("blade, expected_type", [
+    ('e0', UPoint),
+    ('e1', EVector),
+    ('e2', EVector),
+    ('e01', Direction),
+    ('e02', Direction),
+    ('e12', Point),
+    ('e012', Trivector),
+])
+def test_pga2d_blade_types(pga2d, blade, expected_type):
+    assert type(pga2d.blades[blade]) is expected_type
+
+@pytest.mark.parametrize("blade, expected_type", [
+    ('e0', UPoint),
+    ('e1', EVector),
+    ('e2', EVector),
+    ('e3', EVector),
+    ('e23', Bivector),
+    ('e13', Bivector),
+    ('e12', Bivector),
+    ('e01', Bivector),
+    ('e02', Bivector),
+    ('e03', Bivector),
+    ('e023', Direction),
+    ('e013', Direction),
+    ('e012', Direction),
+    ('e123', Point),
+    ('e0123', Quadvector),
+])
+def test_pga3d_blades_types(pga3d, blade, expected_type):
+    assert type(pga3d.blades[blade]) is expected_type
+
+@pytest.mark.parametrize("pqr", [
+    (1, 0, 1), (2, 0, 1), (3, 0, 1), "2DPGA", "3DPGA",
+    (1, 1, 1), (2, 1, 1), (3, 1, 1), "STAP",  # East coast
+    (1, 2, 1), (1, 3, 1),  # West coast
+    (0, 1, 1), (0, 2, 1), (0, 3, 1),  # West coast PGA
+])
+def test_point_signs(pqr):
+    """
+    We want dual(upoint) to always be a point, without introducing sign swaps, for named algebras.
+    This is possible because the basis for the named algebras is chosen in such a way that it
+    compensates for the sign swaps introduced by dualization.
+    Fundamentally this confirms the statement in PGA-dyn that P(x) = dual(e0 + x) = I_n + x I_d from PGA.
+    """
+    extra_pga_types = [Direction, EVector, UPoint, Point, Translation]
+    alg = Algebra.fromname(pqr) if isinstance(pqr, str) else Algebra(*pqr, extra_types=extra_pga_types)
+    basis_vecs = [alg.blades.grade(1)[f'e{i}'] for i in range(alg.d)]
+    e0, *evecs = basis_vecs
+    coeffs = list(range(1, len(evecs) + 1))  # Take positive numbers as coeffs so we can check for sign flips
+    evec = sum((xi * ei for xi, ei in zip(coeffs, evecs)), start=alg.multivector())
+
+    # Construct a point. Dual should distribute across typing as well.
+    p1 = (e0 + evec).dual()
+    assert type(p1) is Point
+    direction = evec.dual()
+    origin = e0.dual()
+    assert type(direction) is Direction
+    assert type(origin) is Point
+    p2 = e0.dual() + direction
+    assert type(p2) is Point
+    assert p1 == p2
+
+    # Now the climax: there should be no sign changes on our coeffs for the named algebras,
+    # but there are for the other.
+    if isinstance(pqr, str):
+        assert all(xi > 0 for xi in p1.values())
+    else:
+        assert not all(xi > 0 for xi in p1.values())
+
+@pytest.mark.parametrize("graded", [False, True])
+def test_custom_types_with_layout(graded):
+    """
+    Users can also directly specify a layout on a multivector type, instead of having to specify an archetype.
+    As we have seen in test_point_signs, the basis of the point archetype only works for the named algebras
+    because they define a specific basis. So an ideal test is to use a custom type with a specific layout
+    that will work in the unnamed equivalent of 2DPGA.
+    """
+    class MyPoint(MultiVector):
+        layout = {'e21': -1, 'e20': ..., 'e01': ...}  # Not all lexographical + different order than in the 2,0,1 basis
+
+    class MyDirection(MultiVector):
+        layout = {'e01': ..., 'e20': ...}  # Different order from the dir part of MyPoint
+
+    class MyUPoint(MultiVector):
+        layout = {'e1': ..., 'e2': ..., 'e0': 1}  # Custom order.
+
+    class MyEVector(MultiVector):
+        layout = {'e2': ..., 'e1': ...}  # Yet another custom order.
+
+    extra_pga_types = [MyDirection, MyEVector, MyUPoint, MyPoint]
+    alg = Algebra(2, 0, 1, extra_types=extra_pga_types, graded=graded)
+    e0, e1, e2 = alg.blades.grade(1).values()
+
+    assert type(alg.blades.e0) is MyUPoint
+    assert type(alg.blades.e1) is MyEVector
+    assert type(alg.blades.e2) is MyEVector
+    assert type(alg.blades.e01) is MyDirection
+    assert type(alg.blades.e20) is MyDirection
+    assert type(alg.blades.e02) is MyDirection
+    assert type(alg.blades.e12) is MyPoint
+    assert type(alg.blades.e21) is Bivector
+    assert type(alg.blades.e012) is Trivector
+
+    def test_custom_type(x, MVType, keys, values, mv_keys, mv_values):
+        assert type(x) is MVType
+        assert x.keys() == keys
+        assert x.values() == values
+        mv = x.asmvtype()
+        assert mv.keys() == mv_keys
+        assert mv.values() == mv_values
+
+    evec = 2*e1 + 3*e2
+    test_custom_type(evec, MyEVector, keys=(4, 2), values=[3, 2], mv_keys=(2, 4), mv_values=[2, 3])
+
+    up1 = e0 + evec
+    test_custom_type(up1, MyUPoint, keys=(2, 4), values=[2, 3], mv_keys=(1, 2, 4), mv_values=[1, 2, 3])
+
+    p1 = up1.dual()  # The layout has different order compared to the lexical basis and also corrects for the sign swap.
+    test_custom_type(p1, MyPoint, keys=(5, 3), values=[2, 3], mv_keys=(3, 5, 6), mv_values=[3, -2, 1])
+
+    direction = evec.dual()
+    test_custom_type(direction, MyDirection, keys=(3, 5), values=[3, 2], mv_keys=(3, 5), mv_values=[3, -2])
+    origin = e0.dual()
+    assert type(origin) is MyPoint
+    p2 = origin + direction
+    assert type(p2) is MyPoint
+    assert p1 == p2
+
+def test_custom_types_from_layout():
+    """
+    Users can also directly provide layouts to Algebra, GAmphetamine style.
+    In this case the classes will be dynamically created.
+    """
+    extra_pga_types = [
+        {'name': 'MyPoint', 'layout': {'e21': -1, 'e20': ..., 'e01': ...}},
+        {'name': 'MyDirection', 'layout': {'e01': ..., 'e20': ...}},
+        {'name': 'MyUPoint', 'layout': {'e1': ..., 'e2': ..., 'e0': 1}},
+        {'name': 'MyEVector', 'layout': {'e2': ..., 'e1': ...}},
+    ]
+    alg = Algebra(2, 0, 1, extra_types=extra_pga_types)
+    assert all(issubclass(cls, MultiVector) for cls in alg.types)
+    reduced_form = {tdict['name']: tdict['layout'] for tdict in extra_pga_types}
+    for t in alg.types:
+        if layout := reduced_form.get(t.__name__):
+            assert t.layout == layout
+
+    up = alg.mypoint(['x', 'y'])
+    assert {6: 1, -5: ..., 3: ...} == up.type_layout  # Check if this property is correctly populated.

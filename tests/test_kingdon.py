@@ -17,17 +17,17 @@ from kingdon.operator_dict import UnaryOperatorDict
 import timeit
 
 @pytest.fixture
-def pga1d():
+def ga101():
     return Algebra(signature=[1, 0], start_index=1)
 
 
 @pytest.fixture
-def pga2d():
+def ga201():
     return Algebra(signature=[1, 1, 0], start_index=1)
 
 
 @pytest.fixture
-def pga3d():
+def ga301():
     return Algebra(signature=[1, 1, 1, 0], start_index=1)
 
 
@@ -53,40 +53,40 @@ def vga3d():
     return Algebra(3)
 
 
-def test_MultiVector(pga1d):
+def test_MultiVector(ga101):
     with pytest.raises(TypeError):
         # If starting from a sequence, it must be of length len(algebra)
-        X = MultiVector(algebra=pga1d, values=[1, 2])
+        X = MultiVector(algebra=ga101, values=[1, 2])
     with pytest.raises(TypeError):
         # vals must be iterable (sequence)
-        X = MultiVector(algebra=pga1d, values=2)
+        X = MultiVector(algebra=ga101, values=2)
     with pytest.raises(TypeError):
         # No algebra provided
         X = MultiVector(name='X')
     with pytest.raises(KeyError):
         # Dict keys must be either (binary) numbers or canonical basis element strings.
-        X = MultiVector(values={'a': 2, 'e12': 1}, algebra=pga1d)
-    X = MultiVector(values={0: 2.2, 'e12': 1.2}, algebra=pga1d)
+        X = MultiVector(values={'a': 2, 'e12': 1}, algebra=ga101)
+    X = MultiVector(values={0: 2.2, 'e12': 1.2}, algebra=ga101)
     assert dict(X.items()) == {0: 2.2, 3: 1.2}
 
-def test_anticommutation(pga1d, vga11, vga2d):
-    for alg in [pga1d, vga11, vga2d]:
+def test_anticommutation(ga101, vga11, vga2d):
+    for alg in [ga101, vga11, vga2d]:
         X = alg.multivector({1: 1})
         Y = alg.multivector({2: 1})
         assert X*Y == -Y*X
 
-def test_gp(pga1d):
+def test_gp(ga101):
     # Multiply two multivectors. Also tests two different MV creation API's
-    X = MultiVector(values={'e': 2, 'e12': 3}, algebra=pga1d)
-    Y = MultiVector(e=7, e12=5, algebra=pga1d)
+    X = MultiVector(values={'e': 2, 'e12': 3}, algebra=ga101)
+    Y = MultiVector(e=7, e12=5, algebra=ga101)
     Z = X * Y
     assert dict(Z.items()) == {0: 2*7, 3: 2*5 + 3*7}
 
-def test_cayley(pga1d, vga2d, vga11):
-    assert pga1d.cayley == {('e', 'e'): 'e', ('e', 'e1'): 'e1', ('e', 'e12'): 'e12', ('e', 'e2'): 'e2',
-                          ('e1', 'e'): 'e1', ('e1', 'e1'): 'e', ('e1', 'e12'): 'e2', ('e1', 'e2'): 'e12',
-                          ('e12', 'e'): 'e12', ('e12', 'e1'): '-e2', ('e12', 'e12'): '0', ('e12', 'e2'): '0',
-                          ('e2', 'e'): 'e2', ('e2', 'e1'): '-e12', ('e2', 'e12'): '0', ('e2', 'e2'): '0'}
+def test_cayley(ga101, vga2d, vga11):
+    assert ga101.cayley == {('e', 'e'): 'e', ('e', 'e1'): 'e1', ('e', 'e12'): 'e12', ('e', 'e2'): 'e2',
+                            ('e1', 'e'): 'e1', ('e1', 'e1'): 'e', ('e1', 'e12'): 'e2', ('e1', 'e2'): 'e12',
+                            ('e12', 'e'): 'e12', ('e12', 'e1'): '-e2', ('e12', 'e12'): '0', ('e12', 'e2'): '0',
+                            ('e2', 'e'): 'e2', ('e2', 'e1'): '-e12', ('e2', 'e12'): '0', ('e2', 'e2'): '0'}
     assert vga2d.cayley == {('e', 'e'): 'e', ('e', 'e1'): 'e1', ('e', 'e2'): 'e2', ('e', 'e12'): 'e12',
                           ('e1', 'e'): 'e1', ('e1', 'e1'): 'e', ('e1', 'e2'): 'e12', ('e1', 'e12'): 'e2',
                           ('e2', 'e'): 'e2', ('e2', 'e1'): '-e12', ('e2', 'e2'): 'e', ('e2', 'e12'): '-e1',
@@ -96,17 +96,17 @@ def test_cayley(pga1d, vga2d, vga11):
                           ('e2', 'e'): 'e2', ('e2', 'e1'): '-e12', ('e2', 'e2'): '-e', ('e2', 'e12'): 'e1',
                           ('e12', 'e'): 'e12', ('e12', 'e1'): '-e2', ('e12', 'e2'): '-e1', ('e12', 'e12'): 'e'}
 
-def test_purevector(pga1d):
+def test_purevector(ga101):
     with pytest.raises(TypeError):
         # Grade needs to be specified.
-        pga1d.purevector({1: 1, 2: 1})
+        ga101.purevector({1: 1, 2: 1})
     with pytest.raises(ValueError):
         # Grade must be valid, in this case no larger than 2.
-        pga1d.purevector({1: 1, 2: 1}, grade=10)
+        ga101.purevector({1: 1, 2: 1}, grade=10)
     with pytest.raises(TypeError):
         # vals must be of the specified grade.
-        pga1d.purevector({0: 1, 2: 1}, grade=1)
-    x = pga1d.purevector({1: 1, 2: 1}, grade=1)
+        ga101.purevector({0: 1, 2: 1}, grade=1)
+    x = ga101.purevector({1: 1, 2: 1}, grade=1)
     assert type(x) == Vector
     assert x.grades == (1,)
 
@@ -140,8 +140,8 @@ def test_reverse(R6):
     assert X.grade((0, 1, 4, 5)) == Xrev.grade((0, 1, 4, 5))
     assert X.grade((2, 3, 6)) == - Xrev.grade((2, 3, 6))
 
-def test_getattr_setattr(pga1d):
-    X = pga1d.multivector({0: 2, 'e12': 3})
+def test_getattr_setattr(ga101):
+    X = ga101.multivector({0: 2, 'e12': 3})
     assert X.e == 2 and X.e12 == 3
     assert X.e1 == 0 and X.e2 == 0
     # Asking for a valid basis blade outside of the algebra should also return 0
@@ -225,26 +225,43 @@ def _assert_blade_typing(alg, basis_blade, expected, expected_full):
     assert blade == expectation
 
 
-@pytest.mark.parametrize("alg", [Algebra(2,0,1), Algebra(2,0,1, graded=True), Algebra.fromname("2DPGA")])
+@pytest.mark.parametrize("alg", [Algebra.fromname("2DPGA"), Algebra.fromname("2DPGA", graded=True)])
 @pytest.mark.parametrize("basis_blade, expected, expected_full", [
     ('e', lambda alg: Translation(alg), lambda alg: Translation(alg, [0, 0])),
     ('e0', lambda alg: UPoint(alg), lambda alg: UPoint(alg, [0, 0])),
     ('e1', lambda alg: EVector(alg, e1=1), lambda alg: EVector(alg, [1, 0])),
     ('e2', lambda alg: EVector(alg, e2=1), lambda alg: EVector(alg, [0, 1])),
     ('e12', lambda alg: Point(alg), lambda alg: Point(alg, [0, 0])),
-    ('e01', lambda alg: Direction(alg, e01=1), lambda alg: Direction(alg, [1, 0])),
-    ('e02', lambda alg: Direction(alg, e02=1), lambda alg: Direction(alg, [0, 1])),
+    ('e01', lambda alg: Direction(alg, e01=1), lambda alg: Direction(alg, [0, 1])),
+    ('e02', lambda alg: Direction(alg, e02=1), lambda alg: Direction(alg, [-1, 0])),
     ('e012', lambda alg: Trivector(alg, e012=1), lambda alg: Trivector(alg, e012=1)),
     ('e012', lambda alg: Trivector(alg, e012=1), lambda alg: alg.pss),
     # Blades whose indices are not in canonical order pick up a sign. Such a blade
     # is not always of the same type as its canonical counterpart, since the
     # normalized types (Point, Translation, ...) fix a coefficient to +1 and hence
     # negating them falls back to the corresponding k-vector.
-    ('e10', lambda alg: Direction(alg, e01=-1), lambda alg: Direction(alg, [-1, 0])),
-    ('e20', lambda alg: Direction(alg, e02=-1), lambda alg: Direction(alg, [0, -1])),
-    ('e21', lambda alg: Bivector(alg, e12=-1), lambda alg: Bivector(alg, [0, 0, -1])),
-    ('e021', lambda alg: Trivector(alg, e012=-1), lambda alg: Trivector(alg, e012=-1)),
+    ('e10', lambda alg: Direction(alg, e10=1), lambda alg: Direction(alg, [0, -1])),
+    ('e20', lambda alg: Direction(alg, e20=1), lambda alg: Direction(alg, [1, 0])),
+    ('e21', lambda alg: Bivector(alg, e21=1), lambda alg: Bivector(alg, [0, 0, -1])),
+    ('e021', lambda alg: Trivector(alg, e021=1), lambda alg: Trivector(alg, e012=-1)),
     ('e120', lambda alg: Trivector(alg, e012=1), lambda alg: Trivector(alg, e012=1)),
+])
+def test_blades_typing_2dpga_named(alg, basis_blade, expected, expected_full):
+    """ Ensure that the basis blades are correctly typed. """
+    _assert_blade_typing(alg, basis_blade, expected, expected_full)
+
+
+@pytest.mark.parametrize("alg", [Algebra(2,0,1), Algebra(2,0,1, graded=True)])
+@pytest.mark.parametrize("basis_blade, expected, expected_full", [
+    ('e', lambda alg: Scalar(alg, e=1), lambda alg: Scalar(alg, [1])),
+    ('e0', lambda alg: Vector(alg, e0=1), lambda alg: Vector(alg, [1, 0, 0])),
+    ('e1', lambda alg: Vector(alg, e1=1), lambda alg: Vector(alg, [0, 1, 0])),
+    ('e2', lambda alg: Vector(alg, e2=1), lambda alg: Vector(alg, [0, 0, 1])),
+    ('e12', lambda alg: Bivector(alg, e12=1), lambda alg: Bivector(alg, [0, 0, 1])),
+    ('e01', lambda alg: Bivector(alg, e01=1), lambda alg: Bivector(alg, [1, 0, 0])),
+    ('e02', lambda alg: Bivector(alg, e02=1), lambda alg: Bivector(alg, [0, 1, 0])),
+    ('e012', lambda alg: Trivector(alg, e012=1), lambda alg: Trivector(alg, e012=1)),
+    ('e012', lambda alg: Trivector(alg, e012=1), lambda alg: alg.pss),
 ])
 def test_blades_typing_2dpga(alg, basis_blade, expected, expected_full):
     """ Ensure that the basis blades are correctly typed. """
@@ -252,7 +269,7 @@ def test_blades_typing_2dpga(alg, basis_blade, expected, expected_full):
 
 
 # In 3DPGA the bivectors are just bivectors, whereas in 2DPGA they are directions.
-@pytest.mark.parametrize("alg", [Algebra(3,0,1), Algebra(3,0,1, graded=True), Algebra.fromname("3DPGA")])
+@pytest.mark.parametrize("alg", [Algebra.fromname('3DPGA'), Algebra.fromname('3DPGA', graded=True)])
 @pytest.mark.parametrize("basis_blade, expected, expected_full", [
     ('e', lambda alg: Translation(alg), lambda alg: Translation(alg, [0, 0, 0])),
     ('e0', lambda alg: UPoint(alg), lambda alg: UPoint(alg, [0, 0, 0])),
@@ -263,21 +280,21 @@ def test_blades_typing_2dpga(alg, basis_blade, expected, expected_full):
     ('e02', lambda alg: Bivector(alg, e02=1), lambda alg: Bivector(alg, [0, 1, 0, 0, 0, 0])),
     ('e03', lambda alg: Bivector(alg, e03=1), lambda alg: Bivector(alg, [0, 0, 1, 0, 0, 0])),
     ('e12', lambda alg: Bivector(alg, e12=1), lambda alg: Bivector(alg, [0, 0, 0, 1, 0, 0])),
-    ('e13', lambda alg: Bivector(alg, e13=1), lambda alg: Bivector(alg, [0, 0, 0, 0, 1, 0])),
+    ('e31', lambda alg: Bivector(alg, e31=1), lambda alg: Bivector(alg, [0, 0, 0, 0, 1, 0])),
     ('e23', lambda alg: Bivector(alg, e23=1), lambda alg: Bivector(alg, [0, 0, 0, 0, 0, 1])),
-    ('e012', lambda alg: Direction(alg, e012=1), lambda alg: Direction(alg, [1, 0, 0])),
+    ('e021', lambda alg: Direction(alg, e021=1), lambda alg: Direction(alg, [0, 0, 1])),
     ('e013', lambda alg: Direction(alg, e013=1), lambda alg: Direction(alg, [0, 1, 0])),
-    ('e023', lambda alg: Direction(alg, e023=1), lambda alg: Direction(alg, [0, 0, 1])),
+    ('e032', lambda alg: Direction(alg, e032=1), lambda alg: Direction(alg, [1, 0, 0])),
     ('e123', lambda alg: Point(alg), lambda alg: Point(alg, [0, 0, 0])),
     ('e0123', lambda alg: Quadvector(alg, e0123=1), lambda alg: Quadvector(alg, e0123=1)),
     ('e0123', lambda alg: Quadvector(alg, e0123=1), lambda alg: alg.pss),
     # Non-canonical basis blades, see the 2DPGA case above.
-    ('e10', lambda alg: Bivector(alg, e01=-1), lambda alg: Bivector(alg, [-1, 0, 0, 0, 0, 0])),
-    ('e21', lambda alg: Bivector(alg, e12=-1), lambda alg: Bivector(alg, [0, 0, 0, -1, 0, 0])),
-    ('e30', lambda alg: Bivector(alg, e03=-1), lambda alg: Bivector(alg, [0, 0, -1, 0, 0, 0])),
-    ('e102', lambda alg: Direction(alg, e012=-1), lambda alg: Direction(alg, [-1, 0, 0])),
-    ('e321', lambda alg: Trivector(alg, e123=-1), lambda alg: Trivector(alg, [0, 0, 0, -1])),
-    ('e1023', lambda alg: Quadvector(alg, e0123=-1), lambda alg: Quadvector(alg, e0123=-1)),
+    ('e10', lambda alg: Bivector(alg, e10=1), lambda alg: Bivector(alg, [-1, 0, 0, 0, 0, 0])),
+    ('e21', lambda alg: Bivector(alg, e21=1), lambda alg: Bivector(alg, [0, 0, 0, -1, 0, 0])),
+    ('e30', lambda alg: Bivector(alg, e30=1), lambda alg: Bivector(alg, [0, 0, -1, 0, 0, 0])),
+    ('e012', lambda alg: Direction(alg, e012=1), lambda alg: Direction(alg, [0, 0, -1])),
+    ('e321', lambda alg: Trivector(alg, e321=1), lambda alg: Trivector(alg, [0, 0, 0, -1])),
+    ('e1023', lambda alg: Quadvector(alg, e1023=1), lambda alg: Quadvector(alg, e0123=-1)),
 ])
 def test_blades_typing_3dpga(alg, basis_blade, expected, expected_full):
     """ Ensure that the basis blades are correctly typed. """
@@ -404,8 +421,8 @@ def test_inner_products(vga2d):
                 str(brca.e2).replace(' ', '') == 'a*b2-a1*b12',
                 str(brca.e12).replace(' ', '') == 'a*b12'])
 
-def test_hodge_dual(pga2d, pga3d):
-    x = pga2d.multivector(name='x')
+def test_hodge_dual(ga201, ga301):
+    x = ga201.multivector(name='x')
     y = x.dual()
     # GAmphetamine.js output
     assert dict(y.items()) == {0: x.e123, 1: x.e23, 2: -x.e13, 4: x.e12, 3: x.e3, 5: -x.e2, 6: x.e1, 7: x.e}
@@ -415,7 +432,7 @@ def test_hodge_dual(pga2d, pga3d):
         x.dual('poincare')
 
     # Test hodge dual in 3DPGA
-    x = pga3d.multivector(name='x')
+    x = ga301.multivector(name='x')
     y = x.dual()
     # GAmphetamine.js output
     "x1234 - x234 e₁ + x134 e₂ - x124 e₃ + x123 e₄ + x34 e₁₂ - x24 e₁₃ + x23 e₁₄ + x14 e₂₃ - x13 e₂₄ + x12 e₃₄ " \
@@ -437,14 +454,14 @@ def test_polarity():
     assert not (xdual - x * alg.pss.inv()).values()
     assert not (xdual.unpolarity() - x).values()
 
-def test_regressive(pga3d):
+def test_regressive(ga301):
     """ Test the regressive product of full mvs in 3DPGA against the known result from GAmphetamine.js"""
-    xvals = symbols(','.join(f'x{i}' for i in range(1, len(pga3d) + 1)))
+    xvals = symbols(','.join(f'x{i}' for i in range(1, len(ga301) + 1)))
     x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16 = xvals
-    x = pga3d.multivector({k: xvals[i] for i, k in enumerate(pga3d.canon2bin)})
-    yvals = symbols(','.join(f'y{i}' for i in range(1, len(pga3d) + 1)))
+    x = ga301.multivector({k: xvals[i] for i, k in enumerate(ga301.canon2bin)})
+    yvals = symbols(','.join(f'y{i}' for i in range(1, len(ga301) + 1)))
     y1, y2, y3, y4, y5, y6, y7, y8, y9, y10, y11, y12, y13, y14, y15, y16 = yvals
-    y = pga3d.multivector({k: yvals[i] for i, k in enumerate(pga3d.canon2bin)})
+    y = ga301.multivector({k: yvals[i] for i, k in enumerate(ga301.canon2bin)})
 
     # Known output from GAmphetamine.js
     known_vals = {
@@ -465,16 +482,16 @@ def test_regressive(pga3d):
         "e234": (x15*y16+x16*y15),
         "e1234": (x16*y16)
     }
-    known = pga3d.multivector(known_vals)
+    known = ga301.multivector(known_vals)
     x_regr_y = x & y
     assert x_regr_y == known
 
 
-def test_projection_3d(pga3d):
+def test_projection_3d(ga301):
     x1, x2, x3 = symbols('x1, x2, x3')
-    x = pga3d.trivector([x1, x2, x3, 1])
+    x = ga301.trivector([x1, x2, x3, 1])
     y1, y2, y3, y4 = symbols('y1, y2, y3, y4')
-    y = pga3d.vector([y1, y2, y3, y4])
+    y = ga301.vector([y1, y2, y3, y4])
     # project the plane y onto the point x
     z = y @ x
     assert z.grades == (1,)
@@ -483,21 +500,21 @@ def test_projection_3d(pga3d):
     assert z.grades == (3,)
 
 
-def test_inv_div(pga2d):
-    u = pga2d.multivector(name='u')
+def test_inv_div(ga201):
+    u = ga201.multivector(name='u')
     # Multiply by inverse results in a scalar exp, which numerically evaluates to 1.
     def uinv(u): return u*u.inv()
-    func_uinv = pga2d.compile(uinv, u)
-    u_num = pga2d.multivector(np.random.random(8))
+    func_uinv = ga201.compile(uinv, u)
+    u_num = ga201.multivector(np.random.random(8))
     res = func_uinv(u_num)
-    assert isinstance(res, Translation)  # In PGA, 1 is a translation and costs no additional memory.
+    assert isinstance(res, Scalar)
     assert res.e == pytest.approx(1.0)
     assert res.grades == (0,)
     # Division by self is truly the scalar 1.
     def udivu(u): return u / u
-    func_udivu = pga2d.compile(udivu, u)
+    func_udivu = ga201.compile(udivu, u)
     res = func_udivu(u_num)
-    assert isinstance(res, Translation)
+    assert isinstance(res, Scalar)
     assert res.e == pytest.approx(1.0)
     assert res.grades == (0,)
 
@@ -706,14 +723,14 @@ def test_clifford_involutions():
     assert (x.conjugate() == x.reverse().involute())
 
 
-def test_normalization(pga3d):
-    vvals = np.random.random(len(tuple(pga3d.indices_for_grade(1))))
-    v = pga3d.vector(vvals).normalized()
+def test_normalization(ga301):
+    vvals = np.random.random(len(tuple(ga301.indices_for_grade(1))))
+    v = ga301.vector(vvals).normalized()
     assert (v*v).e == pytest.approx(1.0)
 
     # Normalizing a non-simple bivector makes it simple!
-    bvals = np.random.random(len(tuple(pga3d.indices_for_grade(2))))
-    B = pga3d.bivector(bvals)
+    bvals = np.random.random(len(tuple(ga301.indices_for_grade(2))))
+    B = ga301.bivector(bvals)
     Bnormalized = B.normalized()
     assert Bnormalized.normsq().e == pytest.approx(1.0)
     assert Bnormalized.normsq().e1234 == pytest.approx(0.0)
@@ -999,7 +1016,7 @@ def test_map_filter():
     assert xcoeffmul.values() == [0, 2, 4, 0]
 
 def test_simple_exp():
-    alg = Algebra(2, 0, 1)
+    alg = Algebra(2, 0, 1, extra_types=[Translation])
     B = alg.bivector([1, 2, 0]).filter()
     assert isinstance(B, Bivector)
     T = B.exp()
@@ -1172,16 +1189,16 @@ def test_apply_to_list():
             assert op(p, R) == transformed_subjects[i]
 
 
-def test_shallow_copy_multivector(pga2d):
-    mv = pga2d.vector(e1=[2, 1], e2=[4, 0])
+def test_shallow_copy_multivector(ga201):
+    mv = ga201.vector(e1=[2, 1], e2=[4, 0])
     copied_mv = copy.copy(mv)
     assert mv is not copied_mv
     assert mv.keys() is copied_mv.keys()
     assert mv.values() is copied_mv.values()
 
 
-def test_deep_copy_multivector(pga2d):
-    mv = pga2d.vector(e1=[[2], [1]], e2=[4, 0])
+def test_deep_copy_multivector(ga201):
+    mv = ga201.vector(e1=[[2], [1]], e2=[4, 0])
     copied_mv = copy.deepcopy(mv)
 
     assert mv is not copied_mv
@@ -1251,13 +1268,13 @@ def test_operators_api():
         assert x * func == x * alg.scalar(e=0.5)
         assert alg.normsq(func) == alg.normsq(alg.scalar(e=0.5))
 
-def test_87(pga2d):
+def test_87(ga201):
     # Test if MVs operators are used when one of the arguments is a numpy ndarray.
-    len_vector = len(pga2d.blades.grade(1))
+    len_vector = len(ga201.blades.grade(1))
     uvals = np.random.random((len_vector, 2))
-    u = pga2d.vector(uvals)
+    u = ga201.vector(uvals)
     one = np.ones(2)
-    expectedmv = pga2d.scalar(e=one) + pga2d.vector(uvals)
+    expectedmv = ga201.scalar(e=one) + ga201.vector(uvals)
     diff1 = (u + one) - expectedmv
     diff2 = (one + u) - expectedmv
     assert all(diff1.map(lambda v: np.allclose(v, 0.0)).values())
