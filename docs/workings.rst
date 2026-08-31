@@ -54,6 +54,13 @@ number (fixed) is called the *layout*:
 .. code-block::
 
     >>> pga = Algebra.fromname('3DPGA')
+        >>> p = pga.point(name='p')
+        >>> p.type_layout
+        {14: Ellipsis, 13: Ellipsis, 11: Ellipsis, 7: 1.0}
+        >>> p.keys()
+        (14, 13, 11)
+
+    Note that
     >>> p = pga.point(name='p')
     >>> p.layout
     {14: Ellipsis, 13: Ellipsis, 11: Ellipsis, 7: 1.0}

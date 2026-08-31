@@ -1,8 +1,11 @@
 """ Tests for the array syntax of kingdon. """
+import copy
 import random
+
+import einops
 import numpy as np
 import pytest
-from einops import rearrange, reduce, pack, unpack, einsum
+from einops import rearrange, reduce, repeat, pack, unpack, einsum, asnumpy, parse_shape
 from einops.tests import FLOAT_REDUCTIONS
 from einops.tests.test_layers import rearrangement_patterns, reduction_patterns
 
@@ -48,7 +51,7 @@ def test_rearrangement(pattern):
 @pytest.mark.parametrize("reduction", FLOAT_REDUCTIONS)
 @pytest.mark.parametrize("pattern", reduction_patterns)
 def test_reduction(pattern, reduction):
-    """Reducing a multivector applies the same reduction to every coefficient."""
+    """Reducing a multivector whose coefficients are a list of arrays reduces every coefficient."""
     x = make_mv(pattern.input_shape).map(lambda v: v / v.mean())
     x_alt = x.map(lambda v: v)
     y = reduce(x, pattern.pattern, reduction, **pattern.axes_lengths)
@@ -69,33 +72,158 @@ def test_reduction(pattern, reduction):
     assert np.allclose(y_alt.values(), y_gt.values())
     assert type(x_alt.values()) == type(y_alt.values())
 
+
+@pytest.mark.parametrize("reduction", FLOAT_REDUCTIONS)
+def test_reduction_array_values(reduction):
+    """Reducing a multivector whose coefficients are one stacked array reduces every coefficient,
+    leaving the blade dimension of that array intact."""
+    x = make_mv((3, 4, 5)).map(lambda v: v / v.mean())
+    x_arr = MultiVector.fromkeysvalues(alg, x.keys(), np.stack(x.values()))
+    y = reduce(x_arr, 'a b c -> a c', reduction)
+    y_gt = reduce(x, 'a b c -> a c', reduction)
+
+    assert isinstance(y.values(), np.ndarray)  # The blade dimension survives the reduction.
+    assert y.values().shape == (len(KEYS), 3, 5)
+    assert y.shape == y_gt.shape == (3, 5)
+    assert np.allclose(y.values(), y_gt.values())
+
+
+def test_repeat():
+    """ Repeating a multivector applies the same repeat to every coefficient. """
+    x = make_mv((3, 4))
+    x_alt = x.map(lambda v: v)
+    y = repeat(x, 'a b -> a b c', c=5)
+    y_alt = repeat(x_alt, 'a b -> a b c', c=5)
+    y_gt = x.map(lambda v: repeat(v, 'a b -> a b c', c=5))
+
+    assert isinstance(y, MultiVector)
+    assert y.keys() == x.keys()
+    assert y.shape == (3, 4, 5) == y_gt.shape
+    assert np.allclose(y.values(), y_gt.values())
+    assert type(x.values()) == type(y.values())
+
+    assert y_alt.shape == y_gt.shape
+    assert np.allclose(y_alt.values(), y_gt.values())
+    assert type(x_alt.values()) == type(y_alt.values())
+
+    # Repeating along an existing axis works just as well.
+    z = repeat(x, 'a b -> (rep a) b', rep=2)
+    assert z.shape == (6, 4)
+    assert np.allclose(z.values(), x.map(lambda v: repeat(v, 'a b -> (rep a) b', rep=2)).values())
+
+    # The type of the multivector is preserved.
+    vec = alg.vector(np.random.randn(2, 3))
+    assert type(repeat(vec, 'a -> a b', b=2)) is type(vec)
+
+
+def test_asnumpy():
+    """ asnumpy returns a multivector whose coefficients are numpy arrays. """
+    x = make_mv((3, 4))
+    y = asnumpy(x)
+    assert isinstance(y, MultiVector)  # A multivector is a container of tensors, not a tensor itself.
+    assert y.keys() == x.keys()
+    assert y.shape == x.shape
+    assert isinstance(y.values(), np.ndarray)
+    assert np.allclose(y.values(), x.values())
+
+    y_alt = asnumpy(x.map(lambda v: v))
+    assert y_alt.shape == x.shape
+    assert all(isinstance(v, np.ndarray) for v in y_alt.values())
+
+
+def test_parse_shape():
+    """ parse_shape only sees the array dimensions, not the blades. """
+    x = make_mv((3, 4))
+    assert parse_shape(x, 'a b') == {'a': 3, 'b': 4}
+    assert parse_shape(x, 'a _') == {'a': 3}
+
+
 def test_pack_unpack():
     inputs = [np.zeros([2, 3, 5]), np.zeros([2, 3, 7, 5]), np.zeros([2, 3, 7, 9, 5])]
     mvs = [alg.vector(i) for i in inputs]
-    packed, ps = pack(mvs, 'j * k')
-    assert packed.shape == (2, 3, 71, 5)
+    assert [mv.shape for mv in mvs] == [(3, 5), (3, 7, 5), (3, 7, 9, 5)]
+    packed, ps = pack(mvs, 'i * k')  # i matches 3, k matches 5.
+    assert packed.shape == (3, 71, 5)
     assert type(packed.values()) == np.ndarray
-    inputs_unpacked = unpack(packed, ps, 'j * k')
-    assert [x.shape for x in inputs_unpacked] == [x.shape for x in mvs]
+    inputs_unpacked = unpack(packed, ps, 'i * k')
+    assert [x.shape for x in inputs_unpacked] == [mv.shape for mv in mvs]
+
+
+def test_pack_unpack_list_values():
+    """ pack & unpack also work when the coefficients are a list of arrays. """
+    mvs = [alg.vector(np.zeros([2, 3, 5])).map(lambda v: v),
+           alg.vector(np.zeros([2, 3, 7, 5])).map(lambda v: v)]
+    packed, ps = pack(mvs, 'i * k')
+    assert packed.shape == (3, 8, 5)
+    assert isinstance(packed.values(), list)
+    unpacked = unpack(packed, ps, 'i * k')
+    assert [x.shape for x in unpacked] == [mv.shape for mv in mvs]
+
+def test_pack_unpack_inhomogenous():
+    """ Pack should work for inhomogenous mvs so long as they are the same type. """
+    raise NotImplementedError
 
 def test_einsum():
     vec_of_matrices = np.random.randn(2, 10, 10)
     vec = alg.vector(vec_of_matrices)
-    trace = einsum(vec, "... i i -> ...")
-    assert trace.shape == (2,)
+    trace = einsum(vec, "i i ->")
+    assert trace.shape == ()
     assert isinstance(trace, MultiVector)
     assert isinstance(trace.values(), np.ndarray)
+    assert np.allclose(trace.values(), np.einsum("zii->z", vec_of_matrices))
 
     weight = np.random.randn(10, 20)
-    matmul = einsum(vec, weight, "... i, i j -> ... j")
-    assert matmul.shape == (2, 10, 20)
+    matmul = einsum(vec, weight, "i j, j k -> i k")
+    assert matmul.shape == (10, 20)
     assert isinstance(matmul, MultiVector)
     assert isinstance(matmul.values(), np.ndarray)
+    assert np.allclose(matmul.values(), np.einsum("zij,jk->zik", vec_of_matrices, weight))
+
+    # Patterns which spell out the batch dimensions with an ellipsis keep working,
+    # the ellipsis simply no longer has to swallow the blade axis.
+    assert np.allclose(einsum(vec, "... i i -> ...").values(), trace.values())
+    assert np.allclose(einsum(vec, weight, "... j, j k -> ... k").values(), matmul.values())
+
+
+def test_einsum_types():
+    """ The type of the multivector is preserved, and list-valued multivectors are supported. """
+    vec = alg.vector(np.random.randn(2, 10))
+    weight = np.random.randn(10, 20)
+    matmul = einsum(vec, weight, "i, i j -> j")
+    assert type(matmul) is type(vec)
+    assert matmul.keys() == vec.keys()
+    assert matmul.shape == (20,)
+
+    vec_alt = vec.map(lambda v: v)  # values are a list of arrays instead of one array.
+    matmul_alt = einsum(vec_alt, weight, "i, i j -> j")
+    assert matmul_alt.shape == (20,)
+    assert np.allclose(matmul_alt.values(), matmul.values())
+
+
+def test_einsum_multiple_multivectors():
+    """ Multivectors are combined blade by blade, and scalars multiply every blade. """
+    x = alg.vector(np.random.randn(2, 10))
+    y = alg.vector(np.random.randn(2, 10))
+    prod = einsum(x, y, "i, i ->")
+    assert prod.shape == ()
+    assert prod.keys() == x.keys()
+    assert np.allclose(prod.values(), np.einsum("zi,zi->z", x.values(), y.values()))
+
+    s = alg.scalar(np.random.randn(1, 10))
+    scaled = einsum(x, s, "i, i -> i")
+    assert scaled.keys() == x.keys()
+    assert np.allclose(scaled.values(), x.values() * s.values())
+
+    # Scalars are also fine as the leading operand.
+    assert np.allclose(einsum(s, x, "i, i -> i").values(), scaled.values())
+
+    with pytest.raises(TypeError):
+        einsum(x, alg.bivector(np.random.randn(1, 10)), "i, i -> i")
 
 test_pack_unpack_config = [
-    (np.random.randn, np.ndarray, '*', (2, 3)),
-    (lambda n: np.random.randn(n, 4), np.ndarray, '* n', (2, 3, 4)),
-    (lambda n: np.random.randn(n, 4), np.ndarray, 'n *', (2, 4, 3)),
+    (np.random.randn, np.ndarray, '*', (3,)),
+    (lambda n: np.random.randn(n, 4), np.ndarray, '* n', (3, 4)),
+    (lambda n: np.random.randn(n, 4), np.ndarray, 'n *', (4, 3)),
 ]
 @pytest.mark.parametrize("randn, expected_type, pattern, expected_shape", test_pack_unpack_config)
 def test_pack_unpack_list(randn, expected_type, pattern, expected_shape):
@@ -113,10 +241,10 @@ def test_pack_unpack_list(randn, expected_type, pattern, expected_shape):
         assert np.allclose(x.values(), y.values())
 
 test_stack_config = [
-    (np.random.randn, np.ndarray, np.stack, (2, 3)),
-    (lambda n: [random.gauss() for _ in range(n)], list, list, (2, 3)),
-    (lambda n: np.random.randn(n, 4), np.ndarray, np.stack, (2, 3, 4)),
-    (lambda n: [[random.gauss() for _ in range(4)] for _ in range(n)], list, list, (2, 3, 4)),
+    (np.random.randn, np.ndarray, np.stack, (3,)),
+    (lambda n: [random.gauss() for _ in range(n)], list, list, (3,)),
+    (lambda n: np.random.randn(n, 4), np.ndarray, np.stack, (3, 4)),
+    (lambda n: [[random.gauss() for _ in range(4)] for _ in range(n)], list, list, (3, 4)),
 ]
 @pytest.mark.parametrize("randn, expected_type, stack_func, expected_shape", test_stack_config)
 def test_stack(randn, expected_type, stack_func, expected_shape):
@@ -134,3 +262,117 @@ def test_stack(randn, expected_type, stack_func, expected_shape):
         stack([*mvs, different_mv])
     with pytest.raises(TypeError, match='shape'):
         stack([stacked, alg.vector(randn(2))])
+
+def test_asarray_algebra():
+    # Use np.array everywhere
+    alg = Algebra(2, values_asarray=np.asarray)
+    x = alg.vector(e1=2, e2=3)
+    y = alg.vector([4, 5])
+    assert isinstance(x.values(), np.ndarray)
+    assert isinstance(y.values(), np.ndarray)
+    z = x * y
+    assert isinstance(z.values(), np.ndarray)
+
+    # Use np.ndarray only for custom operator
+    alg = Algebra(2)
+    x = alg.vector(e1=2, e2=3)
+    y = alg.vector([4, 5])
+    assert isinstance(x.values(), list)
+    assert isinstance(y.values(), list)
+    z = x * y
+    assert isinstance(z.values(), list)
+
+    @alg.jit(values_asarray=np.asarray)
+    def my_func(x, y):
+        return x + y
+    w = my_func(x, y)
+    assert isinstance(w.values(), np.ndarray)
+
+    # Inhomogenous data
+    x = alg.vector(np.array([[1., 2.], [3., 4.]]))
+    s = alg.scalar(np.array([1.0]))
+    with pytest.raises(ValueError):
+        my_func(x, s)
+
+    @alg.jit(values_asarray=lambda values: np.asarray(np.broadcast_arrays(*values)))
+    def my_broadcasted_func(x, y):
+        return x + y
+
+    w = my_broadcasted_func(x, s)
+    assert isinstance(w.values(), np.ndarray)
+    assert w.shape == (2,)
+
+
+def test_asarray_raw():
+    """ values_asarray is applied to numeric values, but symbolic values are left alone. """
+    def asarray(values):
+        return np.asarray(np.broadcast_arrays(*values))
+    alg = Algebra(2, values_asarray=asarray)
+
+    # Numeric multivectors are cast to arrays, wherever they are created.
+    assert isinstance(alg.vector([1., 2.]).values(), np.ndarray)
+    assert isinstance((alg.vector([1., 2.]) * alg.vector([3., 4.])).values(), np.ndarray)
+    assert isinstance(alg.blades.e1.values(), np.ndarray)
+
+    # Symbolic multivectors keep their values as a list, because casting sympy
+    # expressions to an array would give an array of dtype object.
+    x = alg.multivector(name='x')
+    assert x.issymbolic
+    assert isinstance(x.values(), list)
+
+    # Copies are exact replicas, so they keep the values as they are.
+    assert copy.copy(x).values() is x.values()
+    assert isinstance(copy.deepcopy(x).values(), list)
+    assert copy.deepcopy(x).values() == x.values()
+
+    # Multivectors without any values are created without complaint.
+    assert len(alg.vector([1., 2.]).filter(lambda v: False).values()) == 0
+
+
+def test_136():
+    """ Multivectors should be compatible with numpy.broadcast. """
+    pga = Algebra.fromname("3DPGA")
+    nb_points = 10
+    xyz = np.random.rand(3, nb_points)
+    point = (pga.evector(xyz) + pga.blades.e0).dual()
+    vector = pga.evector(e1=4.0, e2=8.0, e3=-1.2)
+    some_object = [None] * nb_points
+
+    with pytest.raises(TypeError, match='0-dimensional'):
+        len(vector)
+    with pytest.raises(TypeError, match='0-dimensional'):
+        iter(vector)
+
+    fo = np.broadcast(5.0, some_object)
+    assert fo.shape == (10,)
+    for f, o in fo:
+        print(f"float: {f}, object: {o}")  # broadcasts normally: prints 10x "float: 5.0, object: None"
+
+    pv = np.broadcast(point, vector)
+    assert pv.shape == (10,)
+    for p, v in pv:  # empty iterable, shape = (10, 0)
+        print(f"point: {p}, vector: {v}")
+
+    assert point.shape == (10,)
+    po = np.broadcast(point, some_object)
+    assert po.shape == (10,)
+    for p, o in po:  # ValueError: shape mismatch: objects cannot be broadcast to a single shape.  Mismatch is between arg 0 with shape (10, 0) and arg 1 with shape (10,).
+        print(f"point: {p}, object: {o}")
+
+def test_newaxis_vs_stack():
+    def asarray(values):
+        return np.asarray(np.broadcast_arrays(*values))
+
+    pga = Algebra.fromname("3DPGA", values_asarray=asarray)
+    N, M = 4, 5
+    point_vals = np.random.rand(N, 3)
+    line_vals = np.random.rand(M, 6)
+    points = pga.point(einops.rearrange(point_vals, '... blades -> blades ...'))
+    bivectors = pga.bivector(einops.rearrange(line_vals, '... blades -> blades ...'))
+    lines = bivectors.normalized()
+    # Check if the broadcasting results in the same as brute force.
+    projected_points = points[:, None] @ lines[None, :]
+    assert not (projected_points - stack([p @ lines for p in points])).values().any()  # Not any value should be true-ish.
+    # Check if the values are just a view of the original arrays.
+    assert points.values().base is point_vals
+    assert bivectors.values().base is line_vals

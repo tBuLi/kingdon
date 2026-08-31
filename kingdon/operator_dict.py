@@ -78,7 +78,7 @@ def do_operation(*mvs, codegen, algebra, MVType=MultiVector) -> MultiVector:
     This is used for large algebras, where codegen is too costly.
     The result is the multivector resulting from :code:`codegen(*mvs)`.
     """
-    mvs = [mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(algebra, (0,), (mv,))
+    mvs = [mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(algebra, (0,), [mv,])
            for mv in mvs]
     if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
         raise AlgebraError("Cannot multiply elements of different algebra's.")
@@ -107,14 +107,15 @@ class OperatorDict(Mapping):
     codegen: Callable
     algebra: "Algebra"
     operator_dict: dict = field(default_factory=dict, init=False)
-    codegen_symbolcls: Callable = field(default=RationalPolynomial.fromname, repr=False)
+    codegen_symbolcls: Callable = field(default=None, repr=False)
     printer: LambdaPrinter = field(default=None, repr=False)
     func_printer: KingdonPrinter = field(default=None, repr=False)
     wrapper: Callable = field(default=None, repr=False)
+    values_asarray: Callable = field(default=None, repr=False)
 
     def __post_init__(self):
          # If the user forces a different codegen settings for this operator then give them what they want.
-        if not self.codegen_symbolcls and self.algebra.codegen_symbolcls:
+        if not self.codegen_symbolcls:
             self.codegen_symbolcls = self.algebra.codegen_symbolcls
         if not self.printer and self.algebra.printer:
             self.printer = self.algebra.printer
@@ -122,13 +123,15 @@ class OperatorDict(Mapping):
             self.func_printer = self.algebra.func_printer
         if not self.wrapper and self.algebra.wrapper:
             self.wrapper = self.algebra.wrapper
+        if not self.values_asarray:
+            self.values_asarray = self.algebra.values_asarray
 
     def __len__(self):
         return len(self.operator_dict)
 
     def _make_symbolic_mv(self, name, keys, shape, mvtype, mvtypehint) -> MultiVector:
         depth = mvtypehint[1] if isinstance(mvtypehint, tuple) else 0  # Must come from the type-hint.
-        if depth is None: depth = shape[1]  # If the type hint was MultiVector[None] than the depth should be taken from the input
+        if depth is None: depth = shape[0]  # If the type hint was MultiVector[None] than the depth should be taken from the input
         if not depth:
             return mvtype.fromname(self.algebra, name, keys, symbolcls=self.codegen_symbolcls)
         return stack([mvtype.fromname(self.algebra, f'{name}_{k}', keys, symbolcls=self.codegen_symbolcls)
@@ -146,7 +149,7 @@ class OperatorDict(Mapping):
         if types_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
             archetypes = self.make_symbolic_mvs(types_in, shapes_in)
-            compiled = self.operator_dict[types_in] = self.algebra.compile(self.codegen, *archetypes, printer=self.printer, func_printer=self.func_printer, wrapper=self.wrapper)
+            compiled = self.operator_dict[types_in] = self.algebra.compile(self.codegen, *archetypes, printer=self.printer, func_printer=self.func_printer, wrapper=self.wrapper, values_asarray=self.values_asarray)
             self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
         return self.operator_dict[types_in]
 
@@ -197,12 +200,9 @@ class OperatorDict(Mapping):
             return self._call_binary(*mvs)
 
         compiled_expr = self[mvs]
-        issymbolic = any(mv.issymbolic for mv in mvs)
-        if issymbolic:
-            mv_out = compiled_expr(*mvs)
-        else:
-            mv_out = compiled_expr.wrapped_call(*mvs)
+        mv_out = compiled_expr(*mvs)
 
+        issymbolic = any(mv.issymbolic for mv in mvs)
         if issymbolic and self.algebra.simp_func:
             if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
                 mvs[output_mv_idx].set(mvs[output_mv_idx].filter(self.algebra.simp_func, map=True))
@@ -213,12 +213,9 @@ class OperatorDict(Mapping):
     def _call_binary(self, mv1, mv2):
         """ Specialization for binary operators. """
         compiled_expr = self[mv1, mv2]
-        issymbolic = (mv1.issymbolic or mv2.issymbolic)
-        if issymbolic:
-            mv_out = compiled_expr(mv1, mv2)
-        else:
-            mv_out = compiled_expr.wrapped_call(mv1, mv2)
+        mv_out = compiled_expr(mv1, mv2)
 
+        issymbolic = (mv1.issymbolic or mv2.issymbolic)
         if issymbolic and self.algebra.simp_func:
             if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
                 mvs = [mv1, mv2]
@@ -243,7 +240,7 @@ class UnaryOperatorDict(OperatorDict):
         type_in = (type(mv), mv.keys())
         if type_in not in self.operator_dict:
             archetype = self.make_symbolic_mvs((type_in,), (mv.shape,))[0]
-            compiled = self.operator_dict[type_in] = self.algebra.compile(self.codegen, archetype, printer=self.printer, func_printer=self.func_printer, wrapper=self.wrapper)
+            compiled = self.operator_dict[type_in] = self.algebra.compile(self.codegen, archetype, printer=self.printer, func_printer=self.func_printer, wrapper=self.wrapper, values_asarray=self.values_asarray)
             self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
         return self.operator_dict[type_in]
 
@@ -251,13 +248,9 @@ class UnaryOperatorDict(OperatorDict):
     def __call__(self, mv):
         mv = self._sanitize_mvs((mv,))[0]
         compiled_expr = self[mv]
+        mv_out = compiled_expr(mv)
 
         issymbolic = mv.issymbolic
-        if issymbolic:
-            mv_out = compiled_expr(mv)
-        else:
-            mv_out = compiled_expr.wrapped_call(mv)
-
         if issymbolic and self.algebra.simp_func:
             if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
                 mv[output_mv_idx].set(mv.filter(self.algebra.simp_func, map=True))
@@ -276,7 +269,7 @@ class Registry(OperatorDict):
             # tapes = [TapeRecorder(algebra=self.algebra, expr=name, mvtype=MVType, keys=keys)
             #          for name, (MVType, keys) in zip(string.ascii_lowercase, types_in)]
             tapes = self.make_symbolic_mvs(types_in, shapes_in)
-            compiled = self.operator_dict[types_in] = self.algebra.compile(self.codegen, *tapes, symbolic=False)
+            compiled = self.operator_dict[types_in] = self.algebra.compile(self.codegen, *tapes, symbolic=False, wrapper=self.wrapper, values_asarray=self.values_asarray)
             self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
         return self.operator_dict[types_in]
 
@@ -295,7 +288,7 @@ class Registry(OperatorDict):
             raise AlgebraError("Cannot multiply elements of different algebra's.")
 
         compiled_expr = self[mvs]
-        return compiled_expr.wrapped_call(*mvs)
+        return compiled_expr(*mvs)
 
     def _make_symbolic_mv(self, name, keys, shape, mvtype, mvtypehint) -> TapeRecorder:
         depth = mvtypehint[1] if isinstance(mvtypehint, tuple) else 0  # Must come from the type-hint.

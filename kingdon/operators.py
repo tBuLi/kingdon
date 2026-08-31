@@ -10,8 +10,20 @@ import operator
 from typing import Callable
 from functools import reduce, wraps
 from fractions import Fraction as PyFraction
+import sys
 
 from kingdon.powers import power_supply
+
+
+if sys.version_info >= (3, 10):
+    _bit_count = int.bit_count
+else:
+    def _bit_count(n):
+        count = 0
+        while n:
+            n &= n - 1
+            count += 1
+        return count
 
 
 def dict_to_multivector(res: dict, algebra) -> "MultiVector":
@@ -20,7 +32,7 @@ def dict_to_multivector(res: dict, algebra) -> "MultiVector":
     nonzero = {k: v for k, v in res.items() if v}
     items = [(k, nonzero[k]) for k in algebra.canon2bin.values() if k in nonzero]
     keys, values = zip(*items) if items else ((), [])
-    return MultiVector.fromkeysvalues(algebra, keys, list(values))
+    return MultiVector.fromkeysvalues(algebra, keys, list(values), raw=True)
 
 
 def product(
@@ -86,11 +98,11 @@ def sw(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     if len(set((g % 2 for g in x.grades))) != 1:
         raise TypeError("x must be a versor (k-reflection) and thus either even or odd.")
     xr = reverse(x)
-    condition = sub(xr.algebra.multivector(e=1), gp(x, xr).grade(0))  # The scalar part of x * ~x is assumed to be 1.
+    condition = sub(xr.algebra.multivector(e=1), grade(gp(x, xr), 0))  # The scalar part of x * ~x is assumed to be 1.
     empty_mv = type(x)(x.algebra)
     if max(x.grades) % 2 == 1:
-        return sum(((add(gp(x, gp((yg_involute := involute(y.grade(g))), xr)), gp(yg_involute, condition))).grade(g) for g in y.grades), start=empty_mv)
-    return sum(((add(gp(x, gp(y.grade(g), xr)), gp(y.grade(g), condition))).grade(g) for g in y.grades), start=empty_mv)
+        return sum((grade((add(gp(x, gp((yg_involute := involute(grade(y, g))), xr)), gp(yg_involute, condition))), g) for g in y.grades), start=empty_mv)
+    return sum((grade((add(gp(x, gp(grade(y, g), xr)), gp(grade(y, g), condition))), g) for g in y.grades), start=empty_mv)
 
 
 def cp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
@@ -167,8 +179,8 @@ def proj(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     if len(set((g % 2 for g in y.grades))) != 1:
         raise TypeError("y must be a versor (k-reflection) and thus either even or odd.")
-    condition = sub(y.algebra.multivector(e=1), normsq(y).grade(0))  # The scalar part of x * ~x is assumed to be 1.
-    return add(gp(ip(x, y), reverse(y)), gp(x, condition)).grade(x.grades)
+    condition = sub(y.algebra.multivector(e=1), grade(normsq(y), 0))  # The scalar part of x * ~x is assumed to be 1.
+    return grade(add(gp(ip(x, y), reverse(y)), gp(x, condition)), x.grades)
 
 
 def op(x: "MultiVector", y: "MultiVector") -> "MultiVector":
@@ -211,6 +223,13 @@ def rp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
         keyout_func=keyout_func,
         sign_func=sign_func,
     )
+
+def grade(x: "MultiVector", *grades) -> "MultiVector":
+    """ Select grade g part of x. """
+    if len(grades) == 1 and isinstance(grades[0], tuple):
+        grades = grades[0]
+    res = {k: v for k, v in x.items() if _bit_count(k) in grades}
+    return dict_to_multivector(res, x.algebra)
 
 
 Fraction = namedtuple('Fraction', ['numer', 'denom'])
@@ -261,13 +280,13 @@ def hitzer_inv(x: "MultiVector", symbolic: bool = False) -> "MultiVector":
     elif d == 4:
         xconj = conjugate(x)
         x_xconj = gp(x, xconj)
-        num = gp(xconj, sub(x_xconj, gp(two, x_xconj.grade(3, 4))))
+        num = gp(xconj, sub(x_xconj, gp(two, grade(x_xconj, 3, 4))))
     elif d == 5:
         xconj = conjugate(x)
         x_xconj = gp(x, xconj)
         combo = gp(xconj, reverse(x_xconj))
         x_combo = gp(x, combo)
-        num = gp(combo, sub(x_combo, gp(two, x_combo.grade(1, 4))))
+        num = gp(combo, sub(x_combo, gp(two, grade(x_combo, 1, 4))))
     else:
         raise NotImplementedError(f"Closed form inverses are not known in {d=} dimensions.")
     denom = sp(x, num)
@@ -428,7 +447,7 @@ def sqrt(x: "MultiVector") -> "MultiVector":
     alg = x.algebra
     if x.grades == (0,):
         return x.map(lambda v: v**0.5)
-    a, bI = x.grade(0), sub(x, x.grade(0))
+    a, bI = grade(x, 0), sub(x, grade(x, 0))
     has_solution = len(x.grades) <= 2 and 0 in x.grades
     if not has_solution:
         warnings.warn("Cannot verify that we really are taking the sqrt of a Study number.", RuntimeWarning)

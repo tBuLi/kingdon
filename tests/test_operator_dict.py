@@ -82,7 +82,7 @@ def test_codegen_weights(codegen_symbolcls):
     go = alg.multivector(name='go')
     grads = weighted_gp_grad(x, y, weights, go)
     assert grads.keys() == (0,)  # scalar
-    assert grads.shape == (1, 18)
+    assert grads.shape == (18,)
     go_wgp = go.sp(weighted_gp_output)
     for s, grad in zip([*x.values(), *y.values(), *weights.e], grads.e):
         assert not (grad - go_wgp.map(lambda v: v.diff(s)).e).expand()

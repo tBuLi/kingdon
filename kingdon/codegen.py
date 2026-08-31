@@ -36,18 +36,16 @@ class CompiledExpression(NamedTuple):
     mvtype: MultiVectorType = MultiVector
     output_mv_idx: int | None = None
     wrapped_func: Callable | None = None
+    values_asarray: Callable | None = None
 
     def __call__(self, *mvs):
+        issymbolic = any(mv.issymbolic for mv in mvs)
         values_in = tuple(mv.values() for mv in mvs)
-        values_out = self.func(*values_in)
+        values_out = self.func(*values_in) if issymbolic else self.wrapped_func(*values_in)
         if self.output_mv_idx is not None: return None  # The function uses .set
-        return self.mvtype.fromkeysvalues(self.algebra, self.keys_out, values_out)
-
-    def wrapped_call(self, *mvs):
-        values_in = tuple(mv.values() for mv in mvs)
-        values_out = self.wrapped_func(*values_in)
-        if self.output_mv_idx is not None: return None  # The function uses .set
-        return self.mvtype.fromkeysvalues(self.algebra, self.keys_out, values_out)
+        return self.mvtype.fromkeysvalues(
+            self.algebra, self.keys_out, values_out, values_asarray=self.values_asarray, raw=issymbolic
+        )
 
 
 def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None):
@@ -109,7 +107,7 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None):
     return best_MVType, best_layout
 
 
-def do_compile_symbolic(codegen, *mvs, printer=None, func_printer=None, wrapper=None) -> CompiledExpression:
+def do_compile_symbolic(codegen, *mvs, printer=None, func_printer=None, wrapper=None, values_asarray=None) -> CompiledExpression:
     """
     :param codegen: callable that performs codegen for the given :code:`mvs`. This can be any callable
         that returns a :class:`~kingdon.multivector.MultiVector`.
@@ -155,10 +153,10 @@ def do_compile_symbolic(codegen, *mvs, printer=None, func_printer=None, wrapper=
                     output_mv_idx=output_mv_idx
                     )
     return CompiledExpression(
-        algebra, keys, func, MVType or MultiVector, output_mv_idx, wrapper(func) if wrapper else func
+        algebra, keys, func, MVType or MultiVector, output_mv_idx, wrapper(func) if wrapper else func, values_asarray=values_asarray
     )
 
-def do_compile(codegen, *tapes, wrapper=None) -> CompiledExpression:
+def do_compile(codegen, *tapes, wrapper=None, values_asarray=None) -> CompiledExpression:
     """ Non-symbolic compile. """
     algebra = tapes[0].algebra
     namespace = algebra.numspace
@@ -180,7 +178,7 @@ def do_compile(codegen, *tapes, wrapper=None) -> CompiledExpression:
 
     func = funclocals[funcname]
     return CompiledExpression(
-        algebra, res.keys() if not isinstance(res, str) else (0,), func, res.mvtype, wrapped_func=wrapper(func) if wrapper else func
+        algebra, res.keys() if not isinstance(res, str) else (0,), func, res.mvtype, wrapped_func=wrapper(func) if wrapper else func, values_asarray=values_asarray
     )
 
 

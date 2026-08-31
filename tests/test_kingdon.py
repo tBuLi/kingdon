@@ -558,7 +558,7 @@ def test_fromkeysvalues():
     xkeys = tuple(range(4))
     x = alg.multivector(keys=xkeys, values=xvals)
 
-    assert x._values is xvals
+    assert x._values == list(xvals)
     assert x._keys is xkeys
 
     # We use sympify, so string that look like equations are also allowed
@@ -570,7 +570,7 @@ def test_fromkeysvalues():
     with pytest.raises(TypeError):
         y = alg.multivector(yvals, xkeys[:3])
     y = alg.multivector(yvals)
-    assert y._values is yvals
+    assert y._values == list(yvals)
     assert y._keys == xkeys
 
     xy = x * y
@@ -736,7 +736,7 @@ def test_normalization(ga301):
     assert Bnormalized.normsq().e1234 == pytest.approx(0.0)
 
 
-def test_itermv():
+def test_iteration():
     alg = Algebra(4)
     nrows = 3
     shape = (len(tuple(alg.indices_for_grade(2))), nrows)
@@ -745,9 +745,6 @@ def test_itermv():
     for i, b in enumerate(B):
         np.testing.assert_allclose(b.values(), bvals[:, i])
     assert i + 1 == nrows
-
-    with pytest.deprecated_call():
-        B.itermv()
 
 
 def test_fromsignature():
@@ -798,6 +795,7 @@ def test_type():
 @pytest.mark.parametrize("alg", [
     Algebra(2, 0, 1, graded=True),
     Algebra(3, graded=True),
+    Algebra.fromname("2DPGA", graded=True),
 ])
 def test_graded(alg):
     for b in alg.blades.values():
@@ -1288,7 +1286,7 @@ def test_115_116():
     z = np.random.random_sample(N)
     points = alg.vector(e0=np.ones(N), e1=x, e2=y, e3=z).dual()
 
-    assert points.shape == (4, N)
+    assert points.shape == (N,)
     assert len(points) == N
 
     i = 0
@@ -1297,20 +1295,13 @@ def test_115_116():
     assert i == N
 
     point = points[0]
-    assert point.shape == (4,)
-    assert len(point) == 0
+    assert point.shape == ()
+    with pytest.raises(TypeError): len(point)
     assert bool(point) == True
-
-    for p in point:
-        raise AssertionError("This should not be reached since the length of the point is 0.")
-
-    point = point.map(float)  # Cast to float because numpy floats are still slicable.
-    for p in point:
-        raise AssertionError("This should not be reached since the length of the point is 0.")
+    with pytest.raises(TypeError): iter(point)
 
     empty = alg.multivector()
-    assert empty.shape == (0,)
-    assert len(empty) == 0
+    assert empty.shape == ()
+    with pytest.raises(TypeError): len(empty)
     assert bool(empty) == False
-    for p in empty:
-        raise AssertionError("This should not be reached since the length of the empty mv is 0.")
+    with pytest.raises(TypeError): iter(empty)

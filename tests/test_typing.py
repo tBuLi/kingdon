@@ -77,7 +77,7 @@ def test_pga_archetypes(alg_name, MVType, layout, grades, bases):
     x = MVType.archetype(alg, 'x')
     assert type(x) is MultiVector
     assert x.grades == pos_grades(alg, grades)
-    assert x.shape == (len(x.keys()),)
+    assert x.shape == ()
     assert x.keys() == tuple(alg_layout)
     assert all([isinstance(a, RationalPolynomial) for a in x.values()])
     assert all(float(str(a)) == b for a, b in zip(x.values(), layout.values()) if b != ...)
@@ -86,7 +86,7 @@ def test_pga_archetypes(alg_name, MVType, layout, grades, bases):
     X = MVType.fromname(alg, 'x')
     assert isinstance(X, MVType)
     assert X.grades == pos_grades(alg, grades)
-    assert X.shape == (len(X.keys()),)
+    assert X.shape == ()
     assert X.keys() == tuple(k for k, v in alg_layout.items() if v == ...)
     # Every multivector knows the layout of its own type.
     assert X.type_layout == alg_layout
@@ -95,7 +95,7 @@ def test_pga_archetypes(alg_name, MVType, layout, grades, bases):
     mv = getattr(alg, MVType.__name__.lower())(name='x')
     assert isinstance(mv, MVType)
     assert mv.grades == pos_grades(alg, grades)
-    assert mv.shape == (len(mv.keys()),)
+    assert mv.shape == ()
     assert mv.keys() == tuple(k for k, v in alg_layout.items() if v == ...)
     assert mv == X
 
@@ -115,7 +115,7 @@ def test_layout(pga3d):
     origin = pga3d.point(name='x', keys=())
     assert origin.keys() == ()
     assert origin.values() == []
-    assert origin.shape == (0,)
+    assert origin.shape == ()
     assert str(origin) == '1.0 𝐞₁₂₃'
 
     # Let's also test a point with a subset of keys.
@@ -123,12 +123,14 @@ def test_layout(pga3d):
     assert isinstance(pz, Point)
     assert pz.keys() == (11,)  # e021 = 8 + 2 + 1
     assert pz.values() == [-3]  # e021 = -e012.
-    assert pz.shape == (1,)
+    assert pz.shape == ()
     assert str(pz) == '-3 𝐞₀₂₁ + 1.0 𝐞₁₂₃'
 
     xyz = ['x', 'y', 'z']
     pxyz = pga3d.point(xyz)  # Verify that the constructor is in the expected xyz order.
     assert str(pxyz) == 'x 𝐞₀₃₂ + y 𝐞₀₁₃ + z 𝐞₀₂₁ + 1.0 𝐞₁₂₃'
+    # Grade selection should be type preserving where possible.
+    assert type(pxyz.grade(3)) == Point
 
 
 
@@ -162,13 +164,13 @@ def test_translations(alg_name):
     q = alg.point(name='q')
     q_reversed = q.reverse()
     assert q_reversed.grades == (alg.d - 1,)
-    assert q_reversed.shape == (alg.d,)  # x y (z) w are free variables for a PseudoVector.
+    assert len(q_reversed.keys()) == alg.d  # x y (z) w are free variables for a PseudoVector.
 
     # The product of a point and a pseudovector is a bireflection, because this path cannot determine the constraint on the scalar part.
     t = p * q_reversed
     assert isinstance(t, Bireflection)
     assert t.grades == (0, 2)
-    assert t.shape == (alg.d,)  # x y (z) w are free variables for a Bireflection.
+    assert len(t.keys()) == alg.d  # x y (z) w are free variables for a Bireflection.
 
     # However, we know it should really be a translation, which can be achieved by compiling the same scenario.
     @alg.jit(symbolic=True)
@@ -177,7 +179,7 @@ def test_translations(alg_name):
     t = translate(p, q)
     assert isinstance(t, Translation)
     assert t.grades == (0, 2)
-    assert t.shape == (alg.d - 1,)  # Only x y (z) are free variables.
+    assert len(t.keys()) == alg.d - 1  # Only x y (z) are free variables.
     layout = t.type_layout
     assert layout == alg._type_layouts[Translation]
     assert all(layout[k] == ... for k in t.keys())
@@ -185,7 +187,7 @@ def test_translations(alg_name):
 
     diff = (p - q).undual()
     assert isinstance(p - q, Direction) and isinstance(diff, EVector)
-    assert not (t - diff*alg.blades.e0)
+    assert (t - diff*alg.blades.e0) == alg.blades.e  # Should be purely scalar 1.
 
 @pytest.mark.parametrize(
     "res_layout, layouts, expected",

@@ -653,7 +653,8 @@ def test_inv_div(pga2d, pga2d_no_cse):
     assert divs == 0
     assert adds == 0
     assert isinstance(func_u_uinv(u), Translation)
-    assert func_u_uinv(u).shape == (0,)
+    assert func_u_uinv(u).keys() == ()
+    assert func_u_uinv(u).shape == ()
 
     def udivu(u): return u / u
     func_udivu = pga2d.compile(udivu, u)
@@ -662,7 +663,8 @@ def test_inv_div(pga2d, pga2d_no_cse):
     assert divs == 0
     assert adds == 0
     assert isinstance(func_udivu(u), Translation)
-    assert func_udivu(u).shape == (0,)
+    assert func_udivu(u).keys() == ()
+    assert func_udivu(u).shape == ()
 
     # Now without CSE. Inversion works too well it seems, even here it is already symbolically 1 before CSE comes into the picture.
     u = pga2d_no_cse.multivector(name='u', symbolcls=RationalPolynomial.fromname)
@@ -672,5 +674,5 @@ def test_inv_div(pga2d, pga2d_no_cse):
     assert divs_nc == 0
     assert adds_nc == 0
     assert isinstance(func_udivu(u), Translation)
-    assert func_udivu(u).shape == (0,)
-
+    assert func_udivu(u).keys() == ()
+    assert func_udivu(u).shape == ()

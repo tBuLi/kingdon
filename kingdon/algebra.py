@@ -28,7 +28,7 @@ from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry, do_
 from kingdon.polynomial import RationalPolynomial
 from kingdon.matrixreps import matrix_rep
 from kingdon.multivector import (
-    MultiVector, MultiVectorType, _bit_count,
+    MultiVector, MultiVectorType,
     KVector, Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector, # k-vectors
     Bireflection, # compositions
     Direction, EVector, UPoint, Point, Translation,  # PGA Types.
@@ -60,14 +60,17 @@ class Algebra:
     :param graded: If :code:`True` (default is :code:`False`), perform binary and unary operations on a graded basis.
         This will still be more sparse than computing with a full multivector, but not as sparse as possible.
         It does however, vastly reduce the number of possible expressions that have to be symbolically optimized.
-    :param extra_types: multivector types to use in addition to the standard ones already provided by kingdon.
-    :param types: Complete list of multivector types to use. This will replace the standard ones.
+    :param extra_types: multivector types to use in addition to the standard ones already provided by kingdon. See :ref:`multivector types <Multivector Types>`.
+    :param types: Complete list of multivector types to use. This will replace the standard ones. See :ref:`multivector types <Multivector Types>`.
     :param simplify: If :code:`True` (default), we attempt to simplify as much as possible. Setting this to
         :code:`False` will reduce the number of calls to simplify. However, it seems that :code:`True` is still faster,
         because it keeps sympy expressions from growing too large, which makes both symbolic computations and
         printing into a python function slower.
     :param wrapper: A function that is always applied to the generated functions as a decorator. For example,
         using :code:`numba.njit` as a wrapper will ensure that all kingdon code is jitted using numba.
+    :param values_asarray: An array construction function that is always applied to values of a multivector upon
+        creation of a new mv. For example, this could be :code:`numpy.array` or :code:`torch.asarray` to ensure
+        that mv's are always your favorite arrays.
     :param symbolcls: The symbol class used for symbolic multivectors. By default, this :class:`sympy.Symbol`.
     :param codegen_symbolcls: The symbol class used during codegen. By default, this is our own fast
         :class:`~kingdon.polynomial.RationalPolynomial` class.
@@ -145,6 +148,8 @@ class Algebra:
     func_printer: KingdonPrinter = field(default=None, repr=False, compare=False)
     # Wrapper function applied to the codegen generated functions.
     wrapper: Callable = field(default=None, repr=False, compare=False)
+    # Constructor to be called on the values upon mv creation.
+    values_asarray: Callable = field(default=list, repr=False, compare=False)
 
     # This simplify func is applied to every component after a symbolic expression is called, to simplify and filter by.
     simp_func: Callable = field(default=lambda v: v if not isinstance(v, sympy.Expr) else sympy.simplify(sympy.expand(v)), repr=False, compare=False)
@@ -204,12 +209,12 @@ class Algebra:
             self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
             self.basis = list(self.canon2bin)
 
-        self.signs = DefaultKeyDict(self.compute_sign)
+        self.signs = DefaultKeyDict(self._compute_sign)
 
         if self.large is None:
             self.large = self.d > 6
 
-        if self.large:
+        if self.large:  # Do direct computation instead of codegen
             self.registry = {f.name: self.wrapper(resolve_and_expand(partial(do_operation, codegen=codegen, algebra=self)))
                                      if self.wrapper else resolve_and_expand(partial(do_operation, codegen=codegen, algebra=self))
                              for f in fields(self) if (codegen := f.metadata.get('codegen'))}
@@ -226,14 +231,14 @@ class Algebra:
             self._kvectors = kvectors[:self.d+1]
             self.types = [*self._kvectors]
             if self.d >= 2: self.types.extend([Bireflection])
-        if extra_types:
-            self.types.extend(extra_types)
+            if extra_types: self.types.extend(extra_types)
         # Dynamically generate classes for types if they are not already.
         self.types = [type(t['name'], (MultiVector,), {'layout': t['layout']}) if isinstance(t, dict) else t
                       for t in self.types]
         self._type_layouts = {cls: layout for cls in self.types
-                              if (layout := self.bind_layout(cls, name='x'))}  # an empty layout matches an empty result at zero cost in resolve_layout, and would beat every other type.
+                              if (layout := self._bind_layout(cls, name='x'))}  # an empty layout matches an empty result at zero cost in resolve_layout, and would beat every other type.
 
+        # Add mv constructors to the algebra
         for cls in self._type_layouts: setattr(self, cls.__name__.lower(), partial(cls, self))
         for k, cls in enumerate(self._kvectors):
             if self.d - k < len(self._kvectors):
@@ -283,7 +288,7 @@ class Algebra:
 
         The indices are returned in the same order as the basis blades.
         """
-        return (k for k in self.canon2bin.values() if _bit_count(k) == grade)
+        return (k for k in self.canon2bin.values() if ops._bit_count(k) == grade)
 
     def indices_for_grades(self, grades: Tuple[int]):
         """
@@ -295,9 +300,11 @@ class Algebra:
             >>> alg = Algebra(2)
             >>> tuple(alg.indices_for_grades((1, 2)))
             (1, 2, 3)
+
+        The indices are returned in the same order as the basis blades.
         """
         grades = tuple(sorted(grades))
-        return (k for k in self.canon2bin.values() if _bit_count(k) in grades)
+        return (k for k in self.canon2bin.values() if ops._bit_count(k) in grades)
 
     @cached_property
     def matrix_basis(self):
@@ -319,10 +326,10 @@ class Algebra:
         """
         return [v.inv() for v in self.frame]
 
-    def compute_sign(self, bin_pair: tuple[int, int]):
+    def _compute_sign(self, bin_pair: tuple[int, int]):
+        """ Computes the sign between two basis blades in binary rep. """
         I, J = bin_pair
-        canon_pair = self.bin2canon[I], self.bin2canon[J]
-        eI, eJ = canon_pair
+        eI, eJ = self.bin2canon[I], self.bin2canon[J]
         # Compute the number of swaps of orthogonal vectors needed to order the basis vectors.
         swaps, prod, eliminated = _swap_blades(eI[1:], eJ[1:], self.bin2canon[I ^ J][1:])
 
@@ -346,12 +353,12 @@ class Algebra:
 
     def register(self, expr=None, /, *, name=None, symbolic=False):
         """
-        Compile a function with the algebra to optimize its execution times. Deprecated in favor of :meth:`~kingdon.algebra.Algebra.jit`.
+        Register a function with the algebra to optimize its execution times. Deprecated in favor of :meth:`~kingdon.algebra.Algebra.jit`.
         """
         warnings.warn("Use @alg.jit instead of @alg.register", FutureWarning)
         return self.jit(expr, name=name, symbolic=symbolic)
 
-    def jit(self, expr=None, /, *, name=None, symbolic=False, codegen_symbolcls=None, printer=None, func_printer=None, wrapper=None):
+    def jit(self, expr=None, /, *, name=None, symbolic=False, codegen_symbolcls=None, printer=None, func_printer=None, wrapper=None, values_asarray=None):
         """
         Mark a function for Just-in-time (JIT) compilation to optimize its execution times.
         The function must accept multivectors as input arguments and is assumed to either
@@ -400,19 +407,21 @@ class Algebra:
             By default the func_printer from Algebra is used.
         :param wrapper: (optional) The wrapper function used to wrap the compiled function.
             By default the wrapper from Algebra is used.
+        :param values_asarray: (optional) The values_asarray function used to cast the values to the correct array type.
+            By default values_asarray from Algebra is used.
         """
         def wrap(expr, name=None, symbolic=False):
             if name is None:
                 name = expr.__name__
 
             if not symbolic:
-                self.registry[expr] = Registry(name, codegen=expr, algebra=self, wrapper=wrapper)
+                self.registry[name] = Registry(name, codegen=expr, algebra=self, wrapper=wrapper, values_asarray=values_asarray)
             else:
-                self.registry[expr] = OperatorDict(
+                self.registry[name] = OperatorDict(
                     name, codegen=expr, algebra=self,
-                    codegen_symbolcls=codegen_symbolcls or OperatorDict.codegen_symbolcls,
-                    printer=printer, func_printer=func_printer, wrapper=wrapper)
-            return self.registry[expr]
+                    codegen_symbolcls=codegen_symbolcls or self.codegen_symbolcls,
+                    printer=printer, func_printer=func_printer, wrapper=wrapper, values_asarray=values_asarray)
+            return self.registry[name]
 
         # See if we are being called as @jit or @jit()
         if expr is None:  # Called as @jit()
@@ -421,11 +430,11 @@ class Algebra:
         # Called as @jit
         return wrap(expr, name=name, symbolic=symbolic)
 
-    def compile(self, expr=None, /, *archetypes, symbolic=True, printer=None, func_printer=None, wrapper=None) -> CompiledExpression:
+    def compile(self, expr=None, /, *mvs, symbolic=True, printer=None, func_printer=None, wrapper=None, values_asarray=None) -> CompiledExpression:
         """
-        Compile a GA :code:`expr` with specific :code:`archetypes`.
+        Compile a GA :code:`expr` with specific symbolic multivectors.
         For typical use cases you'll probably want to use :code:`Algebra.jit` instead, since that does not require you
-        to provide the symbolical archetypes yourself, and it caches the resulting compiled functions so you don't have to track them yourself.
+        to provide the symbolical multivectors yourself, and it caches the resulting compiled functions so you don't have to track them yourself.
         However, the finer level of control of :code:`compile` is extremely powerful in certain use cases.
         For example, consider that we need to repeatedly rotate the unit vectors of our algebra in order to compute the evolution of the frame vectors::
 
@@ -457,26 +466,17 @@ class Algebra:
         """
         wrapper = wrapper or self.wrapper
         printer = printer or self.printer
+        values_asarray = values_asarray or self.values_asarray
         func_printer = func_printer or self.func_printer
         if symbolic:
-            compiled_expr = do_compile_symbolic(expr, *archetypes, printer=printer, func_printer=func_printer, wrapper=wrapper)
+            compiled_expr = do_compile_symbolic(expr, *mvs, printer=printer, func_printer=func_printer, wrapper=wrapper, values_asarray=values_asarray)
         else:
-            compiled_expr = do_compile(expr, *archetypes, wrapper=wrapper)
+            compiled_expr = do_compile(expr, *mvs, wrapper=wrapper, values_asarray=values_asarray)
         return compiled_expr
 
     def multivector(self, *args, **kwargs) -> MultiVector:
         """ Create a new :class:`~kingdon.multivector.MultiVector`. """
         return MultiVector(self, *args, **kwargs)
-
-    def purevector(self, *args, grade, **kwargs) -> KVector:
-        """
-        Create a new k-vector of the desired grade.
-
-        :param grade: Grade of the multivector to create.
-        """
-        if grade > len(self._kvectors):
-            raise MultiVector(self, *args, grades=(grade,), **kwargs)
-        return self._kvectors[grade](self, *args, **kwargs)
 
     def evenmv(self, *args, **kwargs) -> MultiVector:
         """ Create a new :class:`~kingdon.multivector.MultiVector` in the even subalgebra. """
@@ -489,6 +489,16 @@ class Algebra:
         """
         grades = tuple(filter(lambda x: x % 2 == 1, range(self.d + 1)))
         return MultiVector(self, *args, grades=grades, **kwargs)
+
+    def purevector(self, *args, grade, **kwargs) -> KVector:
+        """
+        Create a new k-vector of the desired grade.
+
+        :param grade: Grade of the multivector to create.
+        """
+        if grade > len(self._kvectors):
+            raise MultiVector(self, *args, grades=(grade,), **kwargs)
+        return self._kvectors[grade](self, *args, **kwargs)
 
     def graph(self, *subjects, graph_widget=GraphWidget, **options):
         """
@@ -643,7 +653,7 @@ class Algebra:
         t ^= t >> 4
         return [res, 1 - 2 * (27030 >> (t & 15) & 1)]
 
-    def bind_layout(self, MVType: type[MultiVector], name: str) -> dict:
+    def _bind_layout(self, MVType: type[MultiVector], name: str) -> dict:
         r"""
         Bind a layout to this algebra. If MVType defines a layout then this is straightforward,
         otherwise it has to be generated from the archetype.
@@ -760,8 +770,9 @@ class BladeDict(Mapping):
             bin_blade = self.algebra.canon2bin[basis_blade]
             MVType, layout = resolve_layout(self.algebra._type_layouts, {bin_blade: 1})
             if self.algebra.graded:
-                keys, values = zip(*((idx, int(bin_blade == idx)) if idx >= 0 else (-idx, -int(bin_blade == -idx))
-                                     for idx, value in layout.items() if value == ...))
+                keysvalues = tuple((idx, int(bin_blade == idx)) if idx >= 0 else (-idx, -int(bin_blade == -idx))
+                                     for idx, value in layout.items() if value == ...)
+                keys, values = zip(*keysvalues) if keysvalues else ((), [])
                 values = list(values)
             else:
                 if layout.get(bin_blade) == ...:    keys, values = ((bin_blade,), [1])
