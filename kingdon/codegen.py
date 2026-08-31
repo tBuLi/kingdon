@@ -3,8 +3,7 @@ from __future__ import annotations
 import re
 import string
 from itertools import chain
-from collections import defaultdict
-from typing import NamedTuple, Callable, Tuple, Dict, Optional, List, Type
+from typing import NamedTuple, Callable, Tuple, Dict, Optional, List
 import linecache
 import inspect
 import builtins
@@ -142,9 +141,6 @@ def do_compile_symbolic(codegen, *mvs, printer=None, func_printer=None, wrapper=
     args = {arg_name: [tuple(chain(*(x.values() for x in arg)))] if isinstance(arg, list) else arg.values()
             for arg_name, arg in zip(string.ascii_uppercase, mvs)}
 
-    if res and all(isinstance(v, str) for v in res.values()):
-        return func_builder(algebra, res, *mvs, args=args, funcname=funcname, MVType=MVType)  # TODO: add output_mv_idx support
-
     keys, exprs = tuple(res.keys()), list(res.values())
     if output_mv_idx is not None:
         keys = ()
@@ -163,20 +159,10 @@ def do_compile(codegen, *tapes, wrapper=None, values_asarray=None) -> CompiledEx
 
     res = codegen(*tapes)
     funcname = f'{codegen.__name__}_' + '_x_'.join(f"{tape.type_number}" for tape in tapes)
-    funcstr = f"def {funcname}({', '.join(t.expr for t in tapes)}):"
-    if not isinstance(res, str):
-        funcstr += f"    return {res.expr}"
-    else:
-        funcstr += f"    return ({res},)"
+    header = f"def {funcname}({', '.join(t.expr for t in tapes)}):"
+    body_lines = [f"    return {res.expr}" if not isinstance(res, str) else f"    return ({res},)"]
 
-    funclocals = {}
-    filename = f'<{funcname}>'
-    c = compile(funcstr, filename, 'exec')
-    exec(c, namespace, funclocals)
-    # mtime has to be None or else linecache.checkcache will remove it
-    linecache.cache[filename] = (len(funcstr), None, funcstr.splitlines(True), filename) # type: ignore
-
-    func = funclocals[funcname]
+    func = _build_and_cache_func(header, body_lines, funcname, namespace=namespace, count_ops=False)
     return CompiledExpression(
         algebra, res.keys() if not isinstance(res, str) else (0,), func, res.mvtype, wrapped_func=wrapper(func) if wrapper else func, values_asarray=values_asarray
     )
@@ -201,48 +187,48 @@ def _count_muls_adds(funcstr: str) -> tuple:
     return muls, divs, adds
 
 
-def _build_and_cache_func(header, body_lines, funcname, namespace=None, doc_lines=None):
+def _op_count_str(funcstr: str) -> str:
+    """Return the ``n muls / n divs / n adds`` summary for generated source. """
+    muls, divs, adds = _count_muls_adds(funcstr)
+    return f'{muls} muls / {divs} divs / {adds} adds'
+
+
+def _compile_and_cache(func_source: str, funcname: str, namespace=None):
+    """Compile complete function source, exec it, and register it with :mod:`linecache`.
+    Registering the source makes it visible to :func:`inspect.getsource` and to tracebacks,
+    which would otherwise have no file to read the generated code from.
+
+    :param func_source: Complete source string of a single function.
+    :param funcname: Name of the function, also used as the linecache key.
+    :param namespace: Execution namespace dict. Defaults to {'builtins': builtins, 'range': range}.
+    :return: The compiled function object.
+    """
+    if namespace is None:
+        namespace = {'builtins': builtins, 'range': range}
+    func_locals = {}
+    exec(compile(func_source, funcname, 'exec'), namespace, func_locals)
+    # mtime has to be None or else linecache.checkcache will remove it
+    linecache.cache[funcname] = (len(func_source), None, func_source.splitlines(True), funcname)  # type: ignore
+    return func_locals[funcname]
+
+
+def _build_and_cache_func(header, body_lines, funcname, namespace=None, count_ops=True):
     """Build a function from header + body lines, insert docstring, compile, exec, cache.
 
     :param header: The `def funcname(...):` line.
     :param body_lines: List of indented body lines (without the docstring).
     :param funcname: Name used as the linecache key.
     :param namespace: Execution namespace dict. Defaults to {'builtins': builtins, 'range': range}.
-    :param doc_lines: Optional list of extra lines to place in th docstring.
+    :param count_ops: Whether to add the `n muls / n divs / n adds` line to the docstring. Set this to
+        :code:`False` when the body merely calls other generated functions, since the arithmetic then
+        lives in the callees and a count of the body alone would be misleading.
     :return: The compiled function object.
     """
-    if namespace is None:
-        namespace = {'builtins': builtins, 'range': range}
-    func_source_no_doc = header + '\n' + '\n'.join(body_lines)
-    muls, divs, adds = _count_muls_adds(func_source_no_doc)
-    all_lines = [header, f'    """', *(doc_lines or []), f'    {muls} muls / {divs} divs / {adds} adds', f'    """'] + body_lines
-    func_source = '\n'.join(all_lines)
-    func_locals = {}
-    exec(compile(func_source, funcname, 'exec'), namespace, func_locals)
-    linecache.cache[funcname] = (len(func_source), None, func_source.splitlines(True), funcname)
-    return func_locals[funcname]
-
-
-def func_builder(algebra, res_vals: defaultdict, *mvs, args: dict, funcname: str, MVType: Type = MultiVector) -> CompiledExpression:
-    """
-    Build a Python function for the product between given multivectors.
-
-    :param res_vals: Dict to be converted into a function. The keys correspond to the basis blades in binary,
-        while the values are strings to be converted into source code.
-    :param mvs: all the multivectors that the resulting function is a product of.
-    :param funcname: Name of the function. Be aware: if a function by that name already existed, it will be overwritten.
-    :return: tuple of output keys of the callable, and the callable.
-    """
-    header = f'def {funcname}({", ".join(args.keys())}):'
-    body_lines = []
-    if res_vals:
-        for name, arg in args.items():
-            body_lines.append(f'    [{", ".join(str(v) for v in arg)}] = {name}')
-        body_lines.append(f'    return [{", ".join(res_vals.values())},]')
-    else:
-        body_lines.append(f'    return list()')
-    func = _build_and_cache_func(header, body_lines, funcname, doc_lines=[str(mv) for mv in mvs], namespace={})
-    return CompiledExpression(algebra, tuple(res_vals.keys()), func, MVType)
+    count_line = []
+    if count_ops:
+        count_line = ['    ' + _op_count_str('\n'.join([header, *body_lines]))]
+    all_lines = [header, f'    """', *count_line, f'    """'] + body_lines
+    return _compile_and_cache('\n'.join(all_lines), funcname, namespace)
 
 
 def _poly_cse_compute(exprs: List[RationalPolynomial], common_denom: Optional[Polynomial] = None):
@@ -452,14 +438,7 @@ def lambdify(
     # Provide lambda expression with builtins, and compatible implementation of range
     namespace = {'builtins': builtins, 'range': range, **(printer.namespace if hasattr(printer, 'namespace') else {})}
 
-    funclocals = {}
-    filename = f'<{funcname}>'
-    c = compile(funcstr, filename, 'exec')
-    exec(c, namespace, funclocals)
-    # mtime has to be None or else linecache.checkcache will remove it
-    linecache.cache[filename] = (len(funcstr), None, funcstr.splitlines(True), filename) # type: ignore
-
-    func = funclocals[funcname]
+    func = _compile_and_cache(funcstr, funcname, namespace)
     func.__module__ = __name__
     return func
 
@@ -548,9 +527,8 @@ class KingdonPrinter:
 
         funclines = [funcsig]
         funclines.extend(['    ' + line for line in funcbody])
-        funcstr = '\n'.join(funclines) + '\n'
-        muls, divs, adds = _count_muls_adds(funcstr)
-        funclines.insert(1, f'    """{muls} muls / {divs} divs / {adds} adds"""')
+        op_counts = _op_count_str('\n'.join(funclines) + '\n')
+        funclines.insert(1, f'    """{op_counts}"""')
 
         return '\n'.join(funclines) + '\n'
 
