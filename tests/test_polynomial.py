@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 from kingdon.polynomial import Polynomial, RationalPolynomial, compare
 
@@ -158,3 +159,12 @@ def test_diff_polynomial(poly, var, expected):
 ])
 def test_diff_rational_polynomial(rp, var, expected):
     assert rp.diff(var) == expected
+
+
+@pytest.mark.parametrize("cls", [Polynomial, RationalPolynomial])
+def test_no_arrays(cls):
+    with pytest.raises(TypeError, match='ndarray'):
+        cls(np.asarray(0.5))
+
+    # Numbers are still fine, including the numpy scalars that are float subclasses.
+    assert cls(0.5) == cls(np.float64(0.5))

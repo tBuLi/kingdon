@@ -15,12 +15,17 @@ from kingdon.powers import power_supply
 
 
 def dict_to_multivector(res: dict, algebra) -> "MultiVector":
-    from kingdon.multivector import MultiVector  # TODO: Could perhaps be avoided by passing as items?
+    from kingdon.multivector import MultiVector  # TODO: should be available from algebra as algebra.mvtype
     # Drop zeros and put the remaining keys back in canon2bin order.
     nonzero = {k: v for k, v in res.items() if v}
     items = [(k, nonzero[k]) for k in algebra.canon2bin.values() if k in nonzero]
     keys, values = zip(*items) if items else ((), [])
     return MultiVector.fromkeysvalues(algebra, keys, list(values), raw=True)
+
+
+def scalar(algebra, value) -> "MultiVector":
+    from kingdon.multivector import MultiVector  # TODO: should be available from algebra as algebra.mvtype
+    return MultiVector.fromkeysvalues(algebra, (0,), [value], raw=True)
 
 
 def product(
@@ -86,7 +91,7 @@ def sw(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     if len(set((g % 2 for g in x.grades))) != 1:
         raise TypeError("x must be a versor (k-reflection) and thus either even or odd.")
     xr = reverse(x)
-    condition = sub(xr.algebra.multivector(e=1), grade(gp(x, xr), 0))  # The scalar part of x * ~x is assumed to be 1.
+    condition = sub(scalar(xr.algebra, 1), grade(gp(x, xr), 0))  # The scalar part of x * ~x is assumed to be 1.
     empty_mv = type(x)(x.algebra)
     if max(x.grades) % 2 == 1:
         return sum((grade((add(gp(x, gp((yg_involute := involute(grade(y, g))), xr)), gp(yg_involute, condition))), g) for g in y.grades), start=empty_mv)
@@ -167,7 +172,7 @@ def proj(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     if len(set((g % 2 for g in y.grades))) != 1:
         raise TypeError("y must be a versor (k-reflection) and thus either even or odd.")
-    condition = sub(y.algebra.multivector(e=1), grade(normsq(y), 0))  # The scalar part of x * ~x is assumed to be 1.
+    condition = sub(scalar(y.algebra, 1), grade(normsq(y), 0))  # The scalar part of x * ~x is assumed to be 1.
     return grade(add(gp(ip(x, y), reverse(y)), gp(x, condition)), x.grades)
 
 
@@ -255,9 +260,9 @@ def hitzer_inv(x: "MultiVector", symbolic: bool = False) -> "MultiVector":
     """
     alg = x.algebra
     d = alg.d
-    two = alg.multivector(e=2)
+    two = scalar(alg, 2)
     if d == 0:
-        num = alg.blades.e
+        num = scalar(alg, 1)
     elif d == 1:
         num = involute(x)
     elif d == 2:
@@ -309,7 +314,7 @@ def shirokov_inv(x: "MultiVector", symbolic: bool = False) -> "MultiVector":
         cs.append(s if (s := xi.e) == 0 else n * s / i)
 
     if i == 1:
-        adj = alg.blades.e
+        adj = scalar(alg, 1)
     else:
         adj = sub(xs[-1], cs[-1])
 
@@ -446,12 +451,14 @@ def sqrt(x: "MultiVector") -> "MultiVector":
     else:
         normS = (sub(gp(a, a), bI_sq)).e
         cp = (0.5 * (a.e + normS**0.5))**0.5
-    cp = alg.multivector(e=cp)
-    return add(div(gp(alg.multivector(e=0.5), bI), cp), cp)
+    cp = scalar(alg, cp)
+    return add(div(gp(scalar(alg, 0.5), bI), cp), cp)
 
 
 def polarity(x: "MultiVector", undual: bool = False) -> "MultiVector":
-    pss = x.algebra.multivector({len(x.algebra) - 1: 1})
+    from kingdon.multivector import MultiVector
+    # The pseudoscalar, kept raw for the same reason as the constants in :func:`scalar`.
+    pss = MultiVector.fromkeysvalues(x.algebra, (len(x.algebra) - 1,), [1], raw=True)
     if undual:
         return gp(x, pss)
     key_pss = len(x.algebra) - 1

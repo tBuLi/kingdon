@@ -515,6 +515,8 @@ class Polynomial:
             self.args = ((coeff,),)
         elif isinstance(coeff, str):
             self.args = ((1, coeff),) if coeff[0] != "-" else ((-1, coeff[1:]),)
+        else:
+            raise TypeError(f'Cannot build a {type(self).__name__} out of a {type(coeff).__name__}.')
 
     @classmethod
     def fromname(cls, name):
@@ -679,6 +681,10 @@ class RationalPolynomial:
             denom = Polynomial([[1]])
         elif isinstance(denom, (list, tuple)):
             denom = Polynomial(denom)
+
+        for role, part in (('numerator', numer), ('denominator', denom)):
+            if not isinstance(part, Polynomial):
+                raise TypeError(f'Cannot build a {type(self).__name__} with a {type(part).__name__} as its {role}.')
         self.numer = numer
         self.denom = denom
 
