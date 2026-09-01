@@ -22,10 +22,10 @@ hand one over directly:
 
 .. code-block::
 
-    >>> alg = Algebra.fromname('3DPGA', extra_types=[
-    ...     {'name': 'MyPoint', 'layout': {'e032': ..., 'e013': ..., 'e021': ..., 'e123': 1}}])
+    >>> alg = Algebra(3, 0, 1, extra_types=[
+    ...     {'name': 'MyPoint', 'layout': {'e023': ..., 'e013': ..., 'e012': ..., 'e123': 1}}])
     >>> alg.mypoint(name='p')
-    p032 𝐞₀₃₂ + p013 𝐞₀₁₃ + p021 𝐞₀₂₁ + 1 𝐞₁₂₃
+    p023 𝐞₀₂₃ + p013 𝐞₀₁₃ + p012 𝐞₀₁₂ + 1 𝐞₁₂₃
 
 Only three values are stored here; the :math:`\mathbf{e}_{123}` comes with the type.
 
@@ -41,7 +41,7 @@ the algebra. E.g. for quaternions on :math:`\mathbf{e}_{23}, \mathbf{e}_{31}, \m
     >>> class Quat(MultiVector):
     ...     layout = {'e': ..., 'e23': ..., 'e31': ..., 'e12': ...}
     >>> alg = Algebra(3, basis=["e", "e1", "e2", "e3", "e12", "e31", "e23", "e123"],
-    ...               extra_types=[Quat])
+    ...               types=[Quat])
     >>> q = alg.quat([1., 2., 3., 4.])
     >>> q.e31
     3.0
