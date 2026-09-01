@@ -23,7 +23,7 @@ functions on purely symbolic :class:`~kingdon.multivector.MultiVector` objects.
 E.g. :func:`~kingdon.operators.gp` computes the geometric product between two
 multivectors for the specific non-zero basis blades present in the input.
 These functions are also what the multivector types use to define their
-archetypes, see :doc:`workings`.
+archetypes, see :doc:`types`.
 
 .. automodule:: kingdon.operators
    :members:

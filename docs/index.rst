@@ -100,6 +100,7 @@ A small selection of our items:
    installation
    usage
    arrays
+   types
    workings
    examples/index
    contributing

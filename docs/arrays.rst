@@ -500,8 +500,8 @@ and :code:`unpack` reverses the operation:
 
     >>> from einops import pack, unpack
     >>>
-    >>> a = alg.vector(np.zeros([2, 3, 5]))
-    >>> b = alg.vector(np.zeros([2, 3, 7, 5]))
+    >>> a = alg.vector(np.ones([2, 3, 5]))
+    >>> b = alg.vector(np.ones([2, 3, 7, 5]))
     >>> packed, ps = pack([a, b], 'j * k')
     >>> packed.shape
     (3, 8, 5)
@@ -511,6 +511,30 @@ and :code:`unpack` reverses the operation:
 
 Again, notice how the einops patterns :code:`'j * k'` only make reference to the non-blade
 dimensions of the multivectors as these need to match the blades of the multivector and can therefore not be modified.
+
+The multivectors that are packed together must all be of the same type. Their keys however may differ:
+the result gets the union of the keys of its inputs, and a blade that an input does not have simply contributes zeros.
+So packing a general vector together with one that only lives on :math:`\mathbf{e}_1` gives the
+latter an explicit zero on :math:`\mathbf{e}_2`:
+
+.. code-block::
+
+    >>> c = alg.vector(e1=np.ones([3, 7, 5]))
+    >>> c.keys()
+    (1,)
+    >>> packed, ps = pack([a, c], 'j * k')
+    >>> packed.keys()
+    (1, 2)
+    >>> packed.shape
+    (3, 8, 5)
+    >>> a2, c2 = unpack(packed, ps, 'j * k')
+    >>> c2.keys(), c2.shape
+    ((1, 2), (3, 7, 5))
+    >>> bool(np.all(c2.e2 == 0))
+    True
+
+Those zeros are made from the coefficients that the sparse multivector does have, in such a way that they carry
+the same dtype and live on the same device, whichever array type you are working over.
 
 Einsum
 ~~~~~~

@@ -184,7 +184,7 @@ Every algebra comes with a list of
 multivector types, each available as a constructor on the algebra. The k-vectors
 (:code:`scalar`, :code:`vector`, :code:`bivector`, ...) are always there, :code:`bireflection` from
 :math:`d \geq 2`, and the PGA types :code:`direction`, :code:`evector`, :code:`upoint`, :code:`point`
-and :code:`translation` when :math:`r = 1`:
+and :code:`translation` when a PGA is created from name:
 
 .. code-block::
 
@@ -229,7 +229,7 @@ they can be made in a dimension agnostic way:
     x 𝐞₀₃₂ + 1.0 𝐞₁₂₃
 
 You can add your own types with the :code:`extra_types` argument to :class:`~kingdon.algebra.Algebra`,
-or replace the standard list entirely with :code:`types`. See :doc:`workings` for how to define one.
+or replace the standard list entirely with :code:`types`. See :doc:`types` for how to define one.
 
 Operators
 ---------
