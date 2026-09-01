@@ -483,10 +483,13 @@ def test_custom_types_with_layout(graded):
     that will work in the unnamed equivalent of 2DPGA.
     """
     class MyPoint(MultiVector):
-        layout = {'e21': -1, 'e20': ..., 'e01': ...}  # Not all lexographical + different order than in the 2,0,1 basis
+        layout = {'e21': -1, 'e02': ..., 'e01': ...}
 
     class MyDirection(MultiVector):
-        layout = {'e01': ..., 'e20': ...}  # Different order from the dir part of MyPoint
+        layout = {'e01': ..., 'e02': ...}  # Different order from the dir part of MyPoint
+
+    class MyIllegalDirection(MultiVector):
+        layout = {'e01': ..., 'e20': ...}  # e20 is not lexicographical, that is not allowed because it deviates from the (lexicographical) basis
 
     class MyUPoint(MultiVector):
         layout = {'e1': ..., 'e2': ..., 'e0': 1}  # Custom order.
@@ -495,6 +498,8 @@ def test_custom_types_with_layout(graded):
         layout = {'e2': ..., 'e1': ...}  # Yet another custom order.
 
     extra_pga_types = [MyDirection, MyEVector, MyUPoint, MyPoint]
+    with pytest.raises(ValueError):
+        Algebra(2, 0, 1, extra_types=[MyIllegalDirection, *extra_pga_types[1:]], graded=graded)
     alg = Algebra(2, 0, 1, extra_types=extra_pga_types, graded=graded)
     e0, e1, e2 = alg.blades.grade(1).values()
 
@@ -523,10 +528,10 @@ def test_custom_types_with_layout(graded):
     test_custom_type(up1, MyUPoint, keys=(2, 4), values=[2, 3], mv_keys=(1, 2, 4), mv_values=[1, 2, 3])
 
     p1 = up1.dual()  # The layout has different order compared to the lexical basis and also corrects for the sign swap.
-    test_custom_type(p1, MyPoint, keys=(5, 3), values=[2, 3], mv_keys=(3, 5, 6), mv_values=[3, -2, 1])
+    test_custom_type(p1, MyPoint, keys=(5, 3), values=[-2, 3], mv_keys=(3, 5, 6), mv_values=[3, -2, 1])
 
     direction = evec.dual()
-    test_custom_type(direction, MyDirection, keys=(3, 5), values=[3, 2], mv_keys=(3, 5), mv_values=[3, -2])
+    test_custom_type(direction, MyDirection, keys=(3, 5), values=[3, -2], mv_keys=(3, 5), mv_values=[3, -2])
     origin = e0.dual()
     assert type(origin) is MyPoint
     p2 = origin + direction
@@ -544,7 +549,10 @@ def test_custom_types_from_layout():
         {'name': 'MyUPoint', 'layout': {'e1': ..., 'e2': ..., 'e0': 1}},
         {'name': 'MyEVector', 'layout': {'e2': ..., 'e1': ...}},
     ]
-    alg = Algebra(2, 0, 1, extra_types=extra_pga_types)
+    # A layout can only use the basis blades of its algebra, so 'e20' asks for the 2DPGA basis.
+    with pytest.raises(ValueError):
+        alg = Algebra(2, 0, 1, extra_types=extra_pga_types)
+    alg = Algebra(2, 0, 1, basis=["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"], extra_types=extra_pga_types)
     assert all(issubclass(cls, MultiVector) for cls in alg.types)
     reduced_form = {tdict['name']: tdict['layout'] for tdict in extra_pga_types}
     for t in alg.types:
@@ -552,4 +560,29 @@ def test_custom_types_from_layout():
             assert t.layout == layout
 
     up = alg.mypoint(['x', 'y'])
-    assert {6: 1, -5: ..., 3: ...} == up.type_layout  # Check if this property is correctly populated.
+    assert {3: 1, 6: ..., 5: ...} == up.type_layout  # Check if this property is correctly populated.
+
+
+def test_layout_must_use_the_basis_blades():
+    """
+    The keys of a multivector are the binary reps of the basis blades, so a layout may only use
+    those blades. Which of the two orientations of a blade we work in is a property of the basis
+    of the algebra and not of a single type, since a free component holds the values of the user
+    by reference and thus offers nothing to absorb the sign of a swap into.
+    """
+    layout = {'e21': -1, 'e20': ..., 'e01': ...}
+    with pytest.raises(ValueError, match='basis'):
+        Algebra(2, 0, 1, extra_types=[{'name': 'MyPoint', 'layout': layout}])
+
+    # Permuting the basis blades is fine, it is only their orientation that the basis fixes.
+    alg = Algebra(2, extra_types=[{'name': 'Flipped', 'layout': {'e2': ..., 'e1': ...}}])
+    assert alg.flipped([2., 1.]).keys() == (2, 1)
+
+    # Give the algebra the basis that the layout asks for, and the same type is accepted.
+    alg = Algebra(2, 0, 1, basis=["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"],
+                  extra_types=[{'name': 'MyPoint', 'layout': layout}])
+    coeffs = [2., 3.]
+    p = alg.mypoint(coeffs)
+    assert p.keys() == (6, 5)  # In the order of the layout, and never negative.
+    assert p.values() is coeffs  # Held by reference, no sign swaps.
+    assert p.e12 == 1 and p.e21 == -1  # A fixed component may swap, its sign goes into the value.

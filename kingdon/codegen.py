@@ -88,9 +88,9 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None):
     for cls, L in layouts.items():
         if MVType is not None and not issubclass(cls, MVType):
             continue
-        free = {abs(k) for k, v in L.items() if v is Ellipsis}
+        free = {k for k, v in L.items() if v is Ellipsis}
         fixed_items = {(k, v) for k, v in L.items() if v is not Ellipsis}
-        all_keys = [abs(k) for k in L.keys()]
+        all_keys = list(L.keys())
         if not res_free.issubset(free):
             continue
         if not fixed_items.issubset(res_fixed_items):
@@ -135,7 +135,7 @@ def do_compile_symbolic(codegen, *mvs, printer=None, func_printer=None, wrapper=
 
         if layout:
             res = dict(res.items())
-            res = {abs(k): res[k] if k >= 0 else -res[abs(k)] for k, v in layout.items() if v == ... and abs(k) in res}
+            res = {k: res[k] for k, v in layout.items() if v == ... and k in res}
 
     funcname = f'{codegen.__name__}_' + '_x_'.join(f"{format(mv[0].type_number if isinstance(mv, list) else mv.type_number, 'X')}" for mv in mvs)
     args = {arg_name: [tuple(chain(*(x.values() for x in arg)))] if isinstance(arg, list) else arg.values()

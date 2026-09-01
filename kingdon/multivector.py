@@ -155,7 +155,7 @@ class MultiVector(metaclass=MultiVectorType):
 
         # Validate keys against layout if one is provided.
         if layout:
-            if not all(layout.get(k) == ... or layout.get(-k) == ... for k in keys):
+            if not all(layout.get(k) == ... for k in keys):
                 raise TypeError(f'The provided keys {keys} are not free variables for {cls.__name__} with layout {layout}.')
             if grades is None:
                 grades = tuple(sorted({ops._bit_count(k) for k in keys + tuple(k for k, v in layout.items() if v != ...)}))
@@ -443,14 +443,15 @@ class MultiVector(metaclass=MultiVectorType):
         basis_blade, swaps = self.algebra._blade2canon(basis_blade)
         if basis_blade not in self.algebra.canon2bin:
             return 0
+        k, val = self.algebra.canon2bin[basis_blade], 0
         try:
-            idx = self.keys().index(k := self.algebra.canon2bin[basis_blade])
+            idx = self.keys().index(k)
+            val = self._values[idx]
         except ValueError:
             if layout := self.type_layout:
                 val = layout.get(k, 0)
-                return 0 if val == ... else val
-            return 0
-        return self._values[idx] if swaps % 2 == 0 else - self._values[idx]
+                val = 0 if val == ... else val
+        return val if swaps % 2 == 0 else - val
 
     def __setattr__(self, basis_blade, value):
         if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
@@ -537,13 +538,10 @@ class MultiVector(metaclass=MultiVectorType):
         if type(self) == MVType:
             return self
         if layout := self.type_layout:
-            # Sort the layout to canonical order, since
-            def _keyinlayout(k, layout):
-                if k in layout: return k
-                elif -k in layout: return -k
-            layout = {key: layout[key] for k in self.algebra.canon2bin.values() if (key := _keyinlayout(k, layout)) is not None}
-            keysvalues = tuple((kabs, v if v != ... else (-1 if k < 0 else 1) * getattr(self, self.algebra.bin2canon[kabs]))
-                               for k, v in layout.items() if (kabs := abs(k)) in self.keys() or v != ...)
+            # Sort the layout to canonical order, since a layout may be in whatever order its type likes.
+            layout = {k: layout[k] for k in self.algebra.canon2bin.values() if k in layout}
+            keysvalues = tuple((k, v if v != ... else getattr(self, self.algebra.bin2canon[k]))
+                               for k, v in layout.items() if k in self.keys() or v != ...)
             keys, values = zip(*keysvalues) if keysvalues else (tuple(), list())
             values = list(values)  # Values are always a list, e.g. so they can be updated inplace.
         else:

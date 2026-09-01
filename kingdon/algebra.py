@@ -666,17 +666,23 @@ class Algebra:
         if hasattr(MVType, 'layout') and isinstance(MVType.layout, dict):
             layout = {}
             for blade, val in MVType.layout.items():
-                if isinstance(blade, int): layout[blade] = val
+                if isinstance(blade, int):
+                    if blade < 0:
+                        raise ValueError(f'The layout of {MVType.__name__} uses the key {blade}, but the keys of a '
+                                         f'multivector are the binary reps of the basis blades, and thus positive.')
+                    layout[blade] = val
                 else:
-                    # For fixed values we apply sign swaps to the value, for free values we store it in the key.
                     canon, swaps = self._blade2canon(blade)
-                    sign = (-1 if swaps % 2 != 0 else 1)
-                    if val == ...:
-                        k = sign * self.canon2bin[canon]
-                    else:
-                        k = self.canon2bin[canon]
-                        val = sign * val
-                    layout[k] = val
+                    if swaps % 2 and val == ...:
+                        suggestion = [blade if eJ == canon else eJ for eJ in self.basis]
+                        raise ValueError(
+                            f"The layout of {MVType.__name__} declares the free component {blade!r}, but the basis "
+                            f"of this algebra has {canon!r}. A layout can only use the basis blades of its algebra. "
+                            f"To work in your own convention, give the algebra that basis:\n"
+                            f"    Algebra({self.p}, {self.q}, {self.r}, basis={suggestion})"
+                        )
+                    # A fixed value is a constant of the type, so there the sign of the swap goes into the value.
+                    layout[self.canon2bin[canon]] = val if not swaps % 2 else - val
             return layout
 
         archetype = MVType.archetype(self, name)
@@ -770,14 +776,13 @@ class BladeDict(Mapping):
             bin_blade = self.algebra.canon2bin[basis_blade]
             MVType, layout = resolve_layout(self.algebra._type_layouts, {bin_blade: 1})
             if self.algebra.graded:
-                keysvalues = tuple((idx, int(bin_blade == idx)) if idx >= 0 else (-idx, -int(bin_blade == -idx))
+                keysvalues = tuple((idx, int(bin_blade == idx))
                                      for idx, value in layout.items() if value == ...)
                 keys, values = zip(*keysvalues) if keysvalues else ((), [])
                 values = list(values)
             else:
-                if layout.get(bin_blade) == ...:    keys, values = ((bin_blade,), [1])
-                elif layout.get(-bin_blade) == ...: keys, values = ((bin_blade,), [-1])
-                else:                               keys, values = ((), [])
+                if layout.get(bin_blade) == ...: keys, values = ((bin_blade,), [1])
+                else:                            keys, values = ((), [])
             self.blades[basis_blade] = MVType.fromkeysvalues(self.algebra, keys=keys, values=values)
         return self.blades[basis_blade] if swaps % 2 == 0 else - self.blades[basis_blade]
 
