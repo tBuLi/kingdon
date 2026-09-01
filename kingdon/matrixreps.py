@@ -10,7 +10,7 @@ import itertools
 import string
 from functools import reduce
 from itertools import combinations
-from typing import Callable
+from collections.abc import Callable
 import numpy as np
 import sympy
 

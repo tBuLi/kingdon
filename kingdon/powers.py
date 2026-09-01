@@ -3,7 +3,7 @@ from __future__ import annotations
 import operator
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Callable, Dict, Tuple
+from collections.abc import Callable
 
 
 @dataclass
@@ -11,7 +11,7 @@ class AdditionChains:
     limit: int
 
     @cached_property
-    def minimal_chains(self) -> Dict[int, Tuple[int, ...]]:
+    def minimal_chains(self) -> dict[int, tuple[int, ...]]:
         chains = {1: (1,)}
         while any(i not in chains for i in range(1, self.limit + 1)):
             for chain in chains.copy().values():
@@ -22,14 +22,14 @@ class AdditionChains:
                         chains[value] = (*chain, value)
         return chains
 
-    def __getitem__(self, n: int) -> Tuple[int, ...]:
+    def __getitem__(self, n: int) -> tuple[int, ...]:
         return self.minimal_chains[n]
 
     def __contains__(self, item):
         return self[item]
 
 
-def power_supply(x, exponents: Tuple[int, ...], operation: Callable = operator.mul):
+def power_supply(x, exponents: tuple[int, ...], operation: Callable = operator.mul):
     """
     Generates powers of a given multivector using the least amount of multiplications.
     For example, to raise a multivector :math:`x` to the power :math:`a = 15`, only 5

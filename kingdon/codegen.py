@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 import string
 from itertools import chain
-from typing import NamedTuple, Callable, Tuple, Dict, Optional, List
+from typing import NamedTuple
+from collections.abc import Callable
 import linecache
 import inspect
 import builtins
@@ -30,7 +31,7 @@ class CompiledExpression(NamedTuple):
     :param mvtype: type of the output multivector. Defaults to :code:`MultiVector`.
     """
     algebra: "Algebra"
-    keys_out: Tuple[int]
+    keys_out: tuple[int]
     func: Callable
     mvtype: MultiVectorType = MultiVector
     output_mv_idx: int | None = None
@@ -231,7 +232,7 @@ def _build_and_cache_func(header, body_lines, funcname, namespace=None, count_op
     return _compile_and_cache('\n'.join(all_lines), funcname, namespace)
 
 
-def _poly_cse_compute(exprs: List[RationalPolynomial], common_denom: Optional[Polynomial] = None):
+def _poly_cse_compute(exprs: list[RationalPolynomial], common_denom: Polynomial | None = None):
     """
     Run CSE on a list of :class:`~kingdon.polynomial.RationalPolynomial` expressions.
 

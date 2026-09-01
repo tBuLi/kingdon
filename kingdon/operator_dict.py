@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from collections.abc import Mapping
-from typing import Callable, Tuple, NamedTuple, Type, List
+from collections.abc import Mapping, Callable
+from typing import NamedTuple
 from functools import wraps, cached_property
 import inspect
 import string
@@ -137,13 +137,13 @@ class OperatorDict(Mapping):
         return stack([mvtype.fromname(self.algebra, f'{name}_{k}', keys, symbolcls=self.codegen_symbolcls)
                       for k in range(depth)])
 
-    def make_symbolic_mvs(self, types_in: Tuple[Tuple[Type, Tuple[int]]], shapes_in: Tuple[Tuple[int]]) -> tuple[MultiVector]:
+    def make_symbolic_mvs(self, types_in: tuple[tuple[type, tuple[int]]], shapes_in: tuple[tuple[int]]) -> tuple[MultiVector]:
         return tuple(
             self._make_symbolic_mv(name, keys, shape, MVtype, MVTypeHint)
             for (name, MVTypeHint), (MVtype, keys), shape in zip(self.codegen_input_types.items(), types_in, shapes_in)
         )
 
-    def __getitem__(self, mvs: Tuple[MultiVector]):
+    def __getitem__(self, mvs: tuple[MultiVector]):
         types_in = tuple((type(mv), mv.keys()) for mv in mvs)
         shapes_in = tuple(mv.shape for mv in mvs)
         if types_in not in self.operator_dict:
@@ -153,7 +153,7 @@ class OperatorDict(Mapping):
             self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
         return self.operator_dict[types_in]
 
-    def __contains__(self, mvs: Tuple[MultiVector]):
+    def __contains__(self, mvs: tuple[MultiVector]):
         types_in = tuple((type(mv), mv.keys()) for mv in mvs)
         return types_in in self.operator_dict
 
@@ -261,7 +261,7 @@ class UnaryOperatorDict(OperatorDict):
 
 
 class Registry(OperatorDict):
-    def __getitem__(self, mvs: Tuple[MultiVector]):
+    def __getitem__(self, mvs: tuple[MultiVector]):
         types_in = tuple((type(mv), mv.keys()) for mv in mvs)
         shapes_in = tuple(mv.shape for mv in mvs)
         if types_in not in self.operator_dict:
@@ -297,7 +297,7 @@ class Registry(OperatorDict):
             return TapeRecorder.fromname(self.algebra, name, keys, mvtype=mvtype)
         return TapeRecorder.fromname(self.algebra, name, keys, mvtype=mvtype, shape=(depth,))
 
-    def make_symbolic_mvs(self, types_in: Tuple[Tuple[Type, Tuple[int]]], shapes_in: Tuple[Tuple[int]]) -> tuple[TapeRecorder]:
+    def make_symbolic_mvs(self, types_in: tuple[tuple[type, tuple[int]]], shapes_in: tuple[tuple[int]]) -> tuple[TapeRecorder]:
         return tuple(
             self._make_symbolic_mv(name, keys, shape, MVType, MVTypeHint)
             for (name, MVTypeHint), (MVType, keys), shape in zip(self.codegen_input_types.items(), types_in, shapes_in)

@@ -7,23 +7,11 @@ import itertools
 from collections import namedtuple
 import warnings
 import operator
-from typing import Callable
+from collections.abc import Callable
 from functools import reduce, wraps
 from fractions import Fraction as PyFraction
-import sys
 
 from kingdon.powers import power_supply
-
-
-if sys.version_info >= (3, 10):
-    _bit_count = int.bit_count
-else:
-    def _bit_count(n):
-        count = 0
-        while n:
-            n &= n - 1
-            count += 1
-        return count
 
 
 def dict_to_multivector(res: dict, algebra) -> "MultiVector":
@@ -228,7 +216,7 @@ def grade(x: "MultiVector", *grades) -> "MultiVector":
     """ Select grade g part of x. """
     if len(grades) == 1 and isinstance(grades[0], tuple):
         grades = grades[0]
-    res = {k: v for k, v in x.items() if _bit_count(k) in grades}
+    res = {k: v for k, v in x.items() if k.bit_count() in grades}
     return dict_to_multivector(res, x.algebra)
 
 

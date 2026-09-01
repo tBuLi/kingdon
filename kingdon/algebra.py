@@ -1,20 +1,11 @@
 import operator
 import re
 from itertools import product
-from functools import partial, reduce
+from functools import partial, reduce, cached_property
 from collections import Counter
 from dataclasses import dataclass, field, fields, InitVar
 from collections.abc import Mapping, Callable
-from typing import List, Tuple
 import warnings
-
-try:
-    from functools import cached_property
-except ImportError:
-    from functools import lru_cache
-
-    def cached_property(func):
-        return property(lru_cache()(func))
 
 import sympy
 
@@ -87,9 +78,9 @@ class Algebra:
     q: int = field(default=0, repr=False, compare=False)
     r: int = field(default=0, repr=False, compare=False)
     d: int = field(init=False, repr=False, compare=False)  # Total number of dimensions
-    signature: List[int] = field(default=None)
+    signature: list[int] = field(default=None)
     start_index: int = field(default=None, repr=False, compare=False)
-    basis: List[str] = field(default_factory=list)
+    basis: list[str] = field(default_factory=list)
 
     # Clever dictionaries that cache previously symbolically optimized lambda functions between elements.
     gp: OperatorDict = operation_field(metadata={'codegen': ops.gp,})  # geometric product
@@ -288,9 +279,9 @@ class Algebra:
 
         The indices are returned in the same order as the basis blades.
         """
-        return (k for k in self.canon2bin.values() if ops._bit_count(k) == grade)
+        return (k for k in self.canon2bin.values() if k.bit_count() == grade)
 
-    def indices_for_grades(self, grades: Tuple[int]):
+    def indices_for_grades(self, grades: tuple[int, ...]):
         """
         Function that returns a generator for all the indices from a sequence of grades.
         E.g. in 2D VGA, this returns
@@ -304,7 +295,7 @@ class Algebra:
         The indices are returned in the same order as the basis blades.
         """
         grades = tuple(sorted(grades))
-        return (k for k in self.canon2bin.values() if ops._bit_count(k) in grades)
+        return (k for k in self.canon2bin.values() if k.bit_count() in grades)
 
     @cached_property
     def matrix_basis(self):

@@ -1,10 +1,10 @@
 import operator
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import reduce, cached_property, wraps
-from typing import ClassVar, Sequence
+from typing import ClassVar
 from types import EllipsisType
 from itertools import product
 import re
@@ -143,7 +143,7 @@ class MultiVector(metaclass=MultiVectorType):
                 if grades is None:
                     keys = tuple(k for k, v in layout.items() if v == ...)
                 else:
-                    keys = tuple(k for k, v in layout.items() if v == ... and ops._bit_count(k) in grades)
+                    keys = tuple(k for k, v in layout.items() if v == ... and k.bit_count() in grades)
                 return keys
 
             if grades is None:
@@ -158,7 +158,7 @@ class MultiVector(metaclass=MultiVectorType):
             if not all(layout.get(k) == ... for k in keys):
                 raise TypeError(f'The provided keys {keys} are not free variables for {cls.__name__} with layout {layout}.')
             if grades is None:
-                grades = tuple(sorted({ops._bit_count(k) for k in keys + tuple(k for k, v in layout.items() if v != ...)}))
+                grades = tuple(sorted({k.bit_count() for k in keys + tuple(k for k, v in layout.items() if v != ...)}))
 
         if algebra.graded and algebra._type_layouts:  # The second condition is false before archetypes have been bound.
             if layout and len(keys) != len([v for v in layout.values() if v == ...]):
@@ -248,8 +248,8 @@ class MultiVector(metaclass=MultiVectorType):
     @cached_property
     def grades(self):
         """ Tuple of the grades present in `self`. """
-        grades_in_keys = {ops._bit_count(k) for k in self.keys()}
-        grades_in_fixed_layout = {ops._bit_count(k) for k, v in self.type_layout.items() if v != ...}
+        grades_in_keys = {k.bit_count() for k in self.keys()}
+        grades_in_fixed_layout = {k.bit_count() for k, v in self.type_layout.items() if v != ...}
         return tuple(sorted(grades_in_keys | grades_in_fixed_layout))
 
     def grade(self, *grades):
@@ -262,8 +262,8 @@ class MultiVector(metaclass=MultiVectorType):
         if len(grades) == 1 and isinstance(grades[0], tuple):
             grades = grades[0]
 
-        items = {k: v for k, v in self.items() if ops._bit_count(k) in grades}
-        res_layout = {k: v for k, v in self.type_layout.items() if ops._bit_count(k) in grades}
+        items = {k: v for k, v in self.items() if k.bit_count() in grades}
+        res_layout = {k: v for k, v in self.type_layout.items() if k.bit_count() in grades}
         res_layout.update({k: ... for k in items})
         if res_layout:
             from .codegen import resolve_layout

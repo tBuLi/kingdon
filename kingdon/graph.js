@@ -24,6 +24,7 @@ function render({ model, el }) {
             var draggable_points_idxs = model.get('draggable_points_idxs');
             var options = model.get('options');
 
+            // Define helper functions.
             function grade(key) {
                 var count = 0;
                 while (key) {
