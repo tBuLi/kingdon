@@ -161,7 +161,43 @@ def test_pack_unpack_list_values():
 
 def test_pack_unpack_inhomogenous():
     """ Pack should work for inhomogenous mvs so long as they are the same type. """
-    raise NotImplementedError
+    mvs = [alg.vector(np.ones([2, 3, 5])).map(lambda v: v),
+           alg.vector(e1=np.ones([3, 7, 5]))]
+    packed, ps = pack(mvs, 'i * k')
+    assert packed.shape == (3, 8, 5)
+    assert isinstance(packed.values(), list)
+    unpacked = unpack(packed, ps, 'i * k')
+    assert [x.shape for x in unpacked] == [mv.shape for mv in mvs]
+
+    # The keys are relaxed to those of the mv with the most keys, the mv that had all of them
+    # comes back unharmed, and the blade the other one lacked is zero.
+    assert type(packed) is type(mvs[0]) and packed.keys() == mvs[0].keys()
+    assert all(x.keys() == packed.keys() for x in unpacked)
+    assert np.allclose(unpacked[0].values(), mvs[0].values())
+    assert np.allclose(unpacked[1].e1, mvs[1].e1) and not unpacked[1].e2.any()
+
+    # Those zeros are made from the coefficients of the mv that is missing a blade, so they
+    # follow its dtype and are unaffected by any NaNs it happens to carry.
+    nan = alg.vector(e1=np.full([3, 7, 5], np.nan, dtype='float32'))
+    packed, ps = pack([mvs[0].map(lambda v: v.astype('float32')), nan], 'i * k')
+    assert all(v.dtype == np.dtype('float32') for v in packed.values())
+    assert not unpack(packed, ps, 'i * k')[1].e2.any()
+
+
+def test_pack_unpack_inhomogenous_asarray():
+    """ Inhomogenous mvs that all hold their coefficients as one array give a result that does too. """
+    sparse = alg.vector(e1=np.ones([3, 7, 5]))
+    sparse = type(sparse).fromkeysvalues(alg, sparse.keys(), np.stack(sparse.values()))
+    packed, ps = pack([alg.vector(np.ones([2, 3, 5])), sparse], 'i * k')
+    assert isinstance(packed.values(), np.ndarray)
+    assert packed.values().shape == (2, 3, 8, 5)  # The blade axis survives the zero filling.
+    assert not unpack(packed, ps, 'i * k')[1].e2.any()
+
+
+def test_pack_different_types():
+    """ Relaxing the keys is only allowed within one type, since the type fixes their meaning. """
+    with pytest.raises(TypeError):
+        pack([alg.vector(np.ones([2, 3, 5])), alg.bivector(np.ones([1, 3, 5]))], 'i * k')
 
 def test_einsum():
     vec_of_matrices = np.random.randn(2, 10, 10)
@@ -258,10 +294,19 @@ def test_stack(randn, expected_type, stack_func, expected_shape):
     assert np.allclose(stacked[1].values(), mvs[1].values())
     assert np.allclose(stacked[2].values(), mvs[2].values())
     different_mv = alg.evenmv(randn(2))
-    with pytest.raises(TypeError, match='keys'):
+    with pytest.raises(TypeError, match='type'):
         stack([*mvs, different_mv])
     with pytest.raises(TypeError, match='shape'):
         stack([stacked, alg.vector(randn(2))])
+
+    # Within one type the keys are relaxed to their union, where the blades an input does
+    # not have contribute zeros.
+    sparse = alg.vector(e1=randn(2)[0])
+    relaxed = stack([*mvs, sparse], stack_func=stack_func)
+    assert relaxed.keys() == mvs[0].keys()
+    assert relaxed.shape == (len(mvs) + 1, *expected_shape[1:])  # The zeros are shaped correctly.
+    assert np.allclose(relaxed[len(mvs)].e1, sparse.e1)
+    assert not np.any(relaxed[len(mvs)].e2)
 
 def test_asarray_algebra():
     # Use np.array everywhere

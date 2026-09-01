@@ -864,10 +864,61 @@ class Translation(Bireflection):
         return ops.gp(p, qr)
 
 
+def _zeros_like(x):
+    """
+    Zeros with the same shape, dtype and device as the coefficient `x`.
+
+    Array types offer no common constructor, so we make one out of `x` itself: give it an
+    axis of length zero and then sum over that axis. Summing nothing is exactly zero, and
+    since the values of `x` are never read this holds even if they are :code:`NaN`.
+    :class:`~kingdon.einops_backend.KingdonBackend` does the same through the einops
+    primitives, which reach the array types that do not expose the python array API.
+    """
+    if isinstance(x, (list, tuple)):
+        return type(x)(_zeros_like(v) for v in x)  # Coefficients kept as nested python sequences.
+    if not hasattr(x, 'shape'):
+        return 0  # A python number or a symbol has no shape to match.
+    return x[None][:0].sum(axis=0)
+
+
+def _union_keys(mvs: list[MultiVector]) -> tuple[int, ...]:
+    """
+    The keys of a multivector able to hold all of `mvs`: the union of their keys, ordered
+    like the layout of their common type, or canonically for types without a layout.
+
+    :param mvs: multivectors, all of the same type.
+    """
+    keys = mvs[0].keys()
+    if all(mv.keys() == keys for mv in mvs[1:]):
+        return keys
+    union = set().union(*(mv.keys() for mv in mvs))
+    # A layout is already in the order that its type uses.
+    order = list(mvs[0].type_layout) or mvs[0].algebra.canon2bin.values()
+    return tuple(k for k in order if k in union)
+
+
+def _coefficients(mv: MultiVector, keys: tuple[int, ...], zeros_like=_zeros_like) -> list:
+    """
+    The coefficients of `mv` for each of `keys`, one per key. The blades that `mv` lacks
+    contribute zeros, shaped like the coefficients that it does have.
+
+    :param zeros_like: how to make those zeros from a coefficient of `mv`.
+    """
+    if mv.keys() == keys:
+        return list(mv.values())
+    coefficients = dict(mv.items())
+    if not coefficients:
+        raise TypeError(f'Cannot give a {type(mv).__name__} without coefficients the keys {keys}, '
+                        'since there is nothing to infer the shape of its zeros from.')
+    template = next(iter(coefficients.values()))
+    return [coefficients[k] if k in coefficients else zeros_like(template) for k in keys]
+
+
 def stack(mvs: list[MultiVector], stack_func=None) -> MultiVector[None]:
     """
     Stack a list of multivectors along a new "first" dimension.
-    All multivectors must have the same type, keys, and shape.
+    All multivectors must have the same type and shape. Their keys may differ: the result
+    gets the union of the keys of `mvs`, and a blade an input does not have contributes zeros.
     Remember that the first dimension of a multivector is always reserved for kingdon's multivector coefficients, so the new dimension will be the one after that.
     As a result, this function returns a multivector with shape :code:`(mvs[0].shape[0], len(mvs), *mvs[0].shape[1:])`.
     To be compatible with :code:`numpy` or :code:`torch` you can provide a custom `stack_func` that will be used to
@@ -899,13 +950,12 @@ def stack(mvs: list[MultiVector], stack_func=None) -> MultiVector[None]:
     :param stack_func: Function to stack the values of the multivectors, like :code:`numpy.stack` or :code:`torch.stack`. Defaults to :code:`list`.
     :return: A new multivector with shape :code:`(len(mvs), *mvs[0].shape)`.
     """
-    if not all(mv.keys() == mvs[0].keys() for mv in mvs[1:]):
-        raise TypeError('All multivectors must have the same keys.')
     if not all(mv.shape == mvs[0].shape for mv in mvs[1:]):
         raise TypeError('All multivectors must have the same shape.')
     if not len(set(type(mv) for mv in mvs)) == 1:
         raise TypeError('All multivectors must have the same type.')
     if stack_func is None:
         stack_func = mvs[0].algebra.values_asarray
-    per_key = zip(*(mv.values() for mv in mvs))
-    return type(mvs[0]).fromkeysvalues(mvs[0].algebra, mvs[0].keys(), stack_func([stack_func(vals) for vals in per_key]))
+    keys = _union_keys(mvs)
+    per_key = zip(*(_coefficients(mv, keys) for mv in mvs))
+    return type(mvs[0]).fromkeysvalues(mvs[0].algebra, keys, stack_func([stack_func(vals) for vals in per_key]))

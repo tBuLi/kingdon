@@ -5,7 +5,7 @@ from functools import lru_cache
 
 from einops._backends import AbstractBackend, get_backend
 
-from kingdon.multivector import MultiVector
+from kingdon.multivector import MultiVector, _coefficients, _union_keys
 
 
 @lru_cache(256)
@@ -33,6 +33,21 @@ def _add_blade_axis(pattern: str, is_mv: tuple[bool, ...]) -> str:
 
     lefts = [f'{blade}{left}' if mv else left for left, mv in zip(lefts, is_mv)]
     return f"{','.join(lefts)}->{blade if any(is_mv) else ''}{right}"
+
+
+def _zeros_like(x):
+    """
+    Zeros with the same shape, dtype and device as the coefficient `x`.
+
+    The einops backends offer no way to create a tensor, so we make one out of `x` itself:
+    give it an axis of length zero and then sum over that axis. Summing nothing is exactly
+    zero, and since the values of `x` are never read this holds even if they are :code:`NaN`.
+    Unlike :func:`~kingdon.multivector._zeros_like` this goes through the einops primitives,
+    which also reach the array types that do not expose the python array API.
+    """
+    backend = get_backend(x)
+    empty = backend.tile(backend.add_axis(x, 0), (0, *(1,) * len(backend.shape(x))))
+    return backend.reduce(empty, 'sum', (0,))
 
 
 class KingdonBackend(AbstractBackend):
@@ -109,15 +124,29 @@ class KingdonBackend(AbstractBackend):
         return x.fromkeysvalues(x.algebra, x._keys, values)
 
     def concat(self, mvs: list[MultiVector], axis: int) -> MultiVector:
-        keys = mvs[0]._keys
-        if not all(mv._keys == keys for mv in mvs[1:]):
-            raise TypeError('To concat all multivectors must have the same keys (i.e. basis blades).')
-        values = [mv._values for mv in mvs]
-        if isinstance(values[0], (list, tuple)):
-            backend = get_backend(values[0][0])
-            values = [backend.concat([v[i] for v in values], axis) for i in range(len(keys))]
+        """
+        Concatenate `mvs` along `axis`, used by :func:`einops.pack`.
+
+        All multivectors must be of the same type, since it is the type that gives the blades
+        their meaning, but they need not have the same keys: the result has the union of the
+        keys of `mvs`, and a blade that an input does not have contributes zeros. So a sparse
+        input is densified to the keys of the result, e.g. packing an :code:`alg.vector(e1=...)`
+        with an :code:`alg.vector(...)` gives the former an explicit zero on :code:`e2`.
+        """
+        if len({type(mv) for mv in mvs}) != 1:
+            raise TypeError('To concat all multivectors must have the same type.')
+        keys = _union_keys(mvs)
+        # The result holds its coefficients in a single array only if all the inputs do.
+        asarray = all(not isinstance(mv._values, (list, tuple)) for mv in mvs)
+
+        if asarray and all(mv._keys == keys for mv in mvs):
+            values = get_backend(mvs[0]._values).concat([mv._values for mv in mvs], axis + 1)
         else:
-            values = get_backend(values[0]).concat(values, axis + 1)
+            coefficients = [_coefficients(mv, keys, _zeros_like) for mv in mvs]
+            backend = get_backend(coefficients[0][0])
+            values = [backend.concat([c[i] for c in coefficients], axis) for i in range(len(keys))]
+            if asarray:
+                values = backend.stack_on_zeroth_dimension(values)
         return mvs[0].fromkeysvalues(mvs[0].algebra, keys, values)
 
     def einsum(self, pattern, *operands):
