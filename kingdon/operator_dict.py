@@ -8,8 +8,7 @@ import inspect
 import string
 from types import GenericAlias
 
-from sympy import Symbol, Expr, simplify
-from sympy.printing.lambdarepr import LambdaPrinter
+import sympy
 
 from kingdon.multivector import MultiVector, MultiVectorType, Scalar, stack
 from kingdon.codegen import do_compile_symbolic, do_compile, KingdonPrinter
@@ -100,15 +99,15 @@ class OperatorDict(Mapping):
         alg = Algebra(3, 0, 1)
         gp = OperatorDict('gp', codegen=ops.gp, algebra=alg)
 
-    Here, :code:`ops.gp` is a function that takes two symbolic :class:`MultiVector` as input
-    and outputs a single :class:`MultiVector`.
+    Here, :code:`ops.gp` is a function that takes two symbolic :class:`~kingdon.multivector.MultiVector` as input
+    and outputs a single :class:`~kingdon.multivector.MultiVector`.
     """
     name: str
     codegen: Callable
     algebra: "Algebra"
     operator_dict: dict = field(default_factory=dict, init=False)
     codegen_symbolcls: Callable = field(default=None, repr=False)
-    printer: LambdaPrinter = field(default=None, repr=False)
+    printer: sympy.printing.lambdarepr.LambdaPrinter = field(default=None, repr=False)
     func_printer: KingdonPrinter = field(default=None, repr=False)
     wrapper: Callable = field(default=None, repr=False)
     values_asarray: Callable = field(default=None, repr=False)

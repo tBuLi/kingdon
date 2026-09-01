@@ -57,14 +57,3 @@ A small selection of our items:
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=OPNS%2F3DCCGA.ipynb
 
        3DCCGA
-
-
-Other
------
-
-.. toctree::
-    :maxdepth: 1
-
-    ex_symbolic.ipynb
-    ex_high_performance.ipynb
-

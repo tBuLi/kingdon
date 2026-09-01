@@ -16,7 +16,7 @@ Binding layouts
 The single representation of a type is its *layout*: a dict from blade key (the binary rep of a basis
 blade) to either :code:`...` for a free component, or a number for a structural constant. Every
 registered type is bound to a layout once, when the algebra is created, by
-:meth:`~kingdon.algebra.Algebra._bind_layout`, and the result is cached on
+:code:`Algebra._bind_layout`, and the result is cached on
 :code:`Algebra._type_layouts`.
 
 A type that defines a :code:`layout` needs no more than a translation from canonical blade names to

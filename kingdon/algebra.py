@@ -62,7 +62,7 @@ class Algebra:
     :param values_asarray: An array construction function that is always applied to values of a multivector upon
         creation of a new mv. For example, this could be :code:`numpy.array` or :code:`torch.asarray` to ensure
         that mv's are always your favorite arrays.
-    :param symbolcls: The symbol class used for symbolic multivectors. By default, this :class:`sympy.Symbol`.
+    :param symbolcls: The symbol class used for symbolic multivectors. By default, this :class:`sympy.core.symbol.Symbol`.
     :param codegen_symbolcls: The symbol class used during codegen. By default, this is our own fast
         :class:`~kingdon.polynomial.RationalPolynomial` class.
     :param printer: Sympy code printer used for codegen, see `https://docs.sympy.org/latest/modules/printing.html`.

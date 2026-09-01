@@ -373,7 +373,7 @@ def lambdify(
         As a `kingdon` end user, you should probably not need to call this functon directly,
         be sure to check out :meth:`~kingdon.algebra.Algebra.register` first.
         And even for experienced users or `kingdon` developers it is recommended
-        to use :func:`do_codegen` which provides a clean API around this function.
+        to use :func:`~kingdon.codegen.do_compile_symbolic` which provides a clean API around this function.
 
     :param args: dictionary of type dict[str | Symbol, tuple[Symbol]].
     :param exprs: tuple[Expr]

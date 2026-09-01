@@ -104,10 +104,10 @@ class MultiVector(metaclass=MultiVectorType):
         Initiate a multivector from a sequence of keys and a sequence of values.
         All array construction ultimately funnels through this function.
 
-        :param algebra: :class:`Algebra`
+        :param algebra: :class:`~kingdon.algebra.Algebra`
         :param keys: Keys corresponding to the basis blades in binary rep.
         :param values: Values of the multivector.
-        :param values_asarray: asarray function to be applied to values. E.g. numpy.asarray or torch.asarray. Defaults to :meth:`Algebra.values_asarray`.
+        :param values_asarray: asarray function to be applied to values. E.g. numpy.asarray or torch.asarray. Defaults to :code:`Algebra.values_asarray`.
         :param raw: values_asarray application is skipped.
         """
         if not raw and isinstance(values, (list, tuple)):
@@ -239,7 +239,7 @@ class MultiVector(metaclass=MultiVectorType):
         Layout of :code:`type(self)`: a mapping from blade binary key (int) to either
         :code:`...` for a free component or to the numerical value of a structural constant.
         For example, a point in :code:`Algebra.fromname("2DPGA")` has layout
-         :code:`{'e20': ..., 'e01': ..., 'e21': 1.0}`.
+        :code:`{'e20': ..., 'e01': ..., 'e21': 1.0}`.
         E.g. the :code:`1.0` a normalized point has on :math:`\mathbf{e}_0^*`.
         Types without a layout return an empty dict.
         """
