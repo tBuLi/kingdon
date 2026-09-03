@@ -148,8 +148,8 @@ class OperatorDict(Mapping):
         shapes_in = tuple(mv.shape for mv in mvs)
         if types_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
-            archetypes = self.make_symbolic_mvs(types_in, shapes_in)
-            compiled = self.operator_dict[types_in] = self.algebra.compile(self.codegen, *archetypes, printer=self.printer, func_printer=self.func_printer, wrapper=self.wrapper, values_asarray=self.values_asarray)
+            symbolic_mvs = self.make_symbolic_mvs(types_in, shapes_in)
+            compiled = self.operator_dict[types_in] = self.algebra.compile(self.codegen, *symbolic_mvs, printer=self.printer, func_printer=self.func_printer, wrapper=self.wrapper, values_asarray=self.values_asarray)
             self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
         return self.operator_dict[types_in]
 
@@ -239,8 +239,8 @@ class UnaryOperatorDict(OperatorDict):
     def __getitem__(self, mv: MultiVector):
         type_in = (type(mv), mv.keys())
         if type_in not in self.operator_dict:
-            archetype = self.make_symbolic_mvs((type_in,), (mv.shape,))[0]
-            compiled = self.operator_dict[type_in] = self.algebra.compile(self.codegen, archetype, printer=self.printer, func_printer=self.func_printer, wrapper=self.wrapper, values_asarray=self.values_asarray)
+            symbolic_mv = self.make_symbolic_mvs((type_in,), (mv.shape,))[0]
+            compiled = self.operator_dict[type_in] = self.algebra.compile(self.codegen, symbolic_mv, printer=self.printer, func_printer=self.func_printer, wrapper=self.wrapper, values_asarray=self.values_asarray)
             self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
         return self.operator_dict[type_in]
 

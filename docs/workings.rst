@@ -19,11 +19,11 @@ registered type is bound to a layout once, when the algebra is created, by
 :code:`Algebra._bind_layout`, and the result is cached on
 :code:`Algebra._type_layouts`.
 
-A type that defines a :code:`layout` needs no more than a translation from canonical blade names to
-(binary) keys. A type that defines an :code:`archetype` gets that archetype evaluated: the expression is run
+A type that defines :code:`layout` as a dict needs no more than a translation from canonical blade names
+to (binary) keys. A type that defines :code:`layout` as a classmethod gets it evaluated: the expression is run
 with symbolic coefficients and the result is read off blade by blade. A coefficient that came out
 numerical is a structural constant of the type, anything still symbolic is a free component. This is
-also why archetypes must be written with :mod:`kingdon.operators` directly: they run during
+also why such layouts must be written with :mod:`kingdon.operators` directly: they run during
 :code:`Algebra.__post_init__`, before the operators have been registered on
 :class:`~kingdon.multivector.MultiVector`.
 

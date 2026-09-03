@@ -160,7 +160,7 @@ class MultiVector(metaclass=MultiVectorType):
             if grades is None:
                 grades = tuple(sorted({k.bit_count() for k in keys + tuple(k for k, v in layout.items() if v != ...)}))
 
-        if algebra.graded and algebra._type_layouts:  # The second condition is false before archetypes have been bound.
+        if algebra.graded and algebra._type_layouts:  # The second condition is false before layouts have been bound.
             if layout and len(keys) != len([v for v in layout.values() if v == ...]):
                 raise ValueError(f"In graded mode, the number of keys should be equal to "
                                  f"those expected for a {cls} with layout {layout=}.")
@@ -765,28 +765,28 @@ class MultiVector(metaclass=MultiVectorType):
             raise ValueError(f'No undual found for kind={kind}.')
 
     @classmethod
-    def archetype(cls, algebra, name):
+    def layout(cls, algebra, name):
         return algebra.mvtype.fromname(algebra, name, symbolcls=algebra.codegen_symbolcls or RationalPolynomial.fromname)
 
 
 ### Below are common multivector types.
 class KVector(MultiVector):
     """ Baseclass for k-vectors. """
-    archetypal_grades: ClassVar[tuple[int] | None] = None
+    layout_grades: ClassVar[tuple[int] | None] = None
 
     @classmethod
-    def archetype(cls, algebra, name):
-        return algebra.mvtype.fromname(algebra, name, grades=cls.archetypal_grades,
+    def layout(cls, algebra, name):
+        return algebra.mvtype.fromname(algebra, name, grades=cls.layout_grades,
                                        symbolcls=algebra.codegen_symbolcls or RationalPolynomial.fromname)
-class Scalar(KVector): archetypal_grades = (0,)
-class Vector(KVector): archetypal_grades = (1,)
-class Bivector(KVector): archetypal_grades = (2,)
-class Trivector(KVector): archetypal_grades = (3,)
-class Quadvector(KVector): archetypal_grades = (4,)
-class Pentavector(KVector): archetypal_grades = (5,)
-class Hexavector(KVector): archetypal_grades = (6,)
-class Heptavector(KVector): archetypal_grades = (7,)
-class Octovector(KVector): archetypal_grades = (8,)
+class Scalar(KVector): layout_grades = (0,)
+class Vector(KVector): layout_grades = (1,)
+class Bivector(KVector): layout_grades = (2,)
+class Trivector(KVector): layout_grades = (3,)
+class Quadvector(KVector): layout_grades = (4,)
+class Pentavector(KVector): layout_grades = (5,)
+class Hexavector(KVector): layout_grades = (6,)
+class Heptavector(KVector): layout_grades = (7,)
+class Octovector(KVector): layout_grades = (8,)
 
 # k-reflections
 class Bireflection(MultiVector):
@@ -795,9 +795,9 @@ class Bireflection(MultiVector):
     with :math:`p` and :math:`q` normalized vectors, such that :math:`R \widetilde{R} = 1`.
     """
     @classmethod
-    def archetype(cls, algebra, name):
-        p = Vector.archetype(algebra, f'{name}_1')
-        q = Vector.archetype(algebra, f'{name}_2')
+    def layout(cls, algebra, name):
+        p = Vector.layout(algebra, f'{name}_1')
+        q = Vector.layout(algebra, f'{name}_2')
         qr = ops.reverse(q)
         return ops.gp(p, qr)
 
@@ -809,8 +809,8 @@ class Direction(MultiVector):
     As such it is an ideal point and a pseudovector.
     """
     @classmethod
-    def archetype(cls, algebra, name):
-        return ops.polarity(Vector.archetype(algebra, name))
+    def layout(cls, algebra, name):
+        return ops.polarity(Vector.layout(algebra, name))
 
 
 class EVector(Vector):
@@ -819,8 +819,8 @@ class EVector(Vector):
     Its dual is a direction.
     """
     @classmethod
-    def archetype(cls, algebra, name):
-        return ops.unhodge(Direction.archetype(algebra, name))
+    def layout(cls, algebra, name):
+        return ops.unhodge(Direction.layout(algebra, name))
 
 
 class UPoint(Vector):
@@ -829,8 +829,8 @@ class UPoint(Vector):
     Defined such that the hodge dual of this type is of type :class:`Point`.
     """
     @classmethod
-    def archetype(cls, algebra, name):
-        ev = EVector.archetype(algebra, name)
+    def layout(cls, algebra, name):
+        ev = EVector.layout(algebra, name)
         idx = algebra.signature.index(0) + algebra.start_index  # Find the correct index of 'e0'
         key = algebra.canon2bin[f'e{idx}']
         origin = algebra.mvtype.fromkeysvalues(algebra, (key,), [algebra.codegen_symbolcls('x') * 0 + 1], raw=True)
@@ -847,8 +847,8 @@ class Point(MultiVector):
         p = alg.upoint(e1='x').dual()
     """
     @classmethod
-    def archetype(cls, algebra, name):
-        return ops.hodge(UPoint.archetype(algebra, name))
+    def layout(cls, algebra, name):
+        return ops.hodge(UPoint.layout(algebra, name))
 
 
 class Translation(Bireflection):
@@ -857,9 +857,9 @@ class Translation(Bireflection):
     with :math:`p` and :math:`q` points, such that :math:`\langle R \widetilde{R} \rangle_0 = 1`.
     """
     @classmethod
-    def archetype(cls, algebra, name):
-        p = Point.archetype(algebra, f'{name}_1')
-        q = Point.archetype(algebra, f'{name}_2')
+    def layout(cls, algebra, name):
+        p = Point.layout(algebra, f'{name}_1')
+        q = Point.layout(algebra, f'{name}_2')
         qr = ops.reverse(q)
         return ops.gp(p, qr)
 

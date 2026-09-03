@@ -517,10 +517,10 @@ Moreover, one can use :code:`@alg.jit(symbolic=True)` to symbolically optimize t
 `kingdon`'s default binary operators work. As we have seen above in the CSE section, this can result in significant
 performance improvements. Afterall, the fastest computation is one you do not have to do.
 
-:func:`~kingdon.algebra.Algebra.jit` figures out the symbolic archetypes from the multivectors you call
-it with, and caches a compiled function per combination of input types. If you would rather pick the
-archetypes yourself, use :func:`~kingdon.algebra.Algebra.compile` directly. It takes the expression
-followed by the archetypes and hands you back a :class:`~kingdon.codegen.CompiledExpression`:
+:func:`~kingdon.algebra.Algebra.jit` figures out the symbolic multivectors from the multivectors you call
+it with, and caches a compiled function per combination of input types. If you would rather pick those
+symbolic multivectors yourself, use :func:`~kingdon.algebra.Algebra.compile` directly. It takes the expression
+followed by the symbolic multivectors and hands you back a :class:`~kingdon.codegen.CompiledExpression`:
 
 .. code-block::
 

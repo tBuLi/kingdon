@@ -647,10 +647,10 @@ class Algebra:
 
     def _bind_layout(self, MVType: type[MultiVector], name: str) -> dict:
         r"""
-        Bind a layout to this algebra. If MVType defines a layout then this is straightforward,
-        otherwise it has to be generated from the archetype.
+        Bind a layout to this algebra. If MVType defines its layout as a dict then this is
+        straightforward, otherwise the layout is a classmethod and has to be evaluated.
 
-        The archetype is a symbolic multivector, obtained by evaluating the GA expression
+        Evaluating the layout gives a symbolic multivector, obtained by running the GA expression
         that defines the type. Its coefficients are what we are after: a coefficient that
         came out numerical is a structural constant of the type, e.g. the :code:`1.0` a
         normalized point has on :math:`\mathbf{e}_0^*`, while anything else is a free component.
@@ -677,14 +677,14 @@ class Algebra:
                     layout[self.canon2bin[canon]] = val if not swaps % 2 else - val
             return layout
 
-        archetype = MVType.archetype(self, name)
+        symbolic_mv = MVType.layout(self, name)
         def is_number(x):
             try:
                 float(x); return True
             except (ValueError, TypeError):
                 return False
         return {k: float(f) if is_number(f := str(v)) else ...
-                for k, v in archetype.items()}
+                for k, v in symbolic_mv.items()}
 
 def _swap_blades(blade1: str, blade2: str, target: str = '') -> (int, str, str):
     """
