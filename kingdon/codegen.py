@@ -33,7 +33,7 @@ class CompiledExpression(NamedTuple):
     algebra: "Algebra"
     keys_out: tuple[int]
     func: Callable
-    mvtype: MultiVectorType = MultiVector
+    mvtype: MultiVectorType
     output_mv_idx: int | None = None
     wrapped_func: Callable | None = None
     values_asarray: Callable | None = None
@@ -48,7 +48,7 @@ class CompiledExpression(NamedTuple):
         )
 
 
-def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None):
+def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None, default: type = MultiVector):
     """
     Look up the best-matching MVType for a given result layout from a set of registered types.
 
@@ -58,10 +58,7 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None):
         of a point).
     :param res_layout: the layout dict of the result whose type we are trying to
         identify, in the same ``{key: ... | number}`` form.
-    :param MVType: optional class used to restrict the search to that type and
-        its subclasses (e.g. to prefer a more specific ``NormalizedPoint`` over
-        a generic ``Point`` when the type of the result is already partially
-        known). Requires the keys of ``layouts`` to be classes.
+    :param MVType: optional class used to restrict the search to that type and its subclasses.
     :return: ``(cls, layout)`` for the best match, or ``(None, None)`` if no
         registered type matches.
 
@@ -85,7 +82,7 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None):
     res_fixed_items = {(k, v) for k, v in res_layout.items() if v is not Ellipsis}
     res_keys = res_free | res_fixed_keys
 
-    best_MVType, best_layout, best_cost = MultiVector, {}, None
+    best_MVType, best_layout, best_cost = default, {}, None
     for cls, L in layouts.items():
         if MVType is not None and not issubclass(cls, MVType):
             continue
@@ -121,7 +118,7 @@ def do_compile_symbolic(codegen, *mvs, printer=None, func_printer=None, wrapper=
 
     res = codegen(*(mv.asmvtype() for mv in mvs))
 
-    MVType = MultiVector
+    MVType = algebra.mvtype
     output_mv_idx = None  # If codegen modified one of the mvs using set, this will be the index of the modified mv.
     if res is None:
         output_mv_idx = next(i for i, mv in enumerate(mvs) if mv != mvs_orig[i])
@@ -132,7 +129,7 @@ def do_compile_symbolic(codegen, *mvs, printer=None, func_printer=None, wrapper=
             try: float(x); return True
             except (ValueError, TypeError): return False
         res_layout = {k: float(f) if is_number(f := str(v)) else ... for k, v in res.items()}
-        MVType, layout = resolve_layout(algebra._type_layouts, res_layout)
+        MVType, layout = resolve_layout(algebra._type_layouts, res_layout, default=algebra.mvtype)
 
         if layout:
             res = dict(res.items())
@@ -150,7 +147,7 @@ def do_compile_symbolic(codegen, *mvs, printer=None, func_printer=None, wrapper=
                     output_mv_idx=output_mv_idx
                     )
     return CompiledExpression(
-        algebra, keys, func, MVType or MultiVector, output_mv_idx, wrapper(func) if wrapper else func, values_asarray=values_asarray
+        algebra, keys, func, MVType or algebra.mvtype, output_mv_idx, wrapper(func) if wrapper else func, values_asarray=values_asarray
     )
 
 def do_compile(codegen, *tapes, wrapper=None, values_asarray=None) -> CompiledExpression:

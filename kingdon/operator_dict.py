@@ -71,13 +71,14 @@ def resolve_and_expand(func):
     return wrapper
 
 
-def do_operation(*mvs, codegen, algebra, MVType=MultiVector) -> MultiVector:
+def do_operation(*mvs, codegen, algebra, MVType=None) -> MultiVector:
     """
     This function just does the operation directly on the MV's, no codegen is performed.
     This is used for large algebras, where codegen is too costly.
     The result is the multivector resulting from :code:`codegen(*mvs)`.
     """
-    mvs = [mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(algebra, (0,), [mv,])
+    MVType = MVType or algebra.mvtype
+    mvs = [mv if isinstance(mv, MultiVector) else algebra.mvtype.fromkeysvalues(algebra, (0,), [mv,])
            for mv in mvs]
     if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
         raise AlgebraError("Cannot multiply elements of different algebra's.")
@@ -161,13 +162,13 @@ class OperatorDict(Mapping):
 
     @cached_property
     def codegen_input_types(self):
-        return {name: MultiVector if p.annotation in (inspect.Parameter.empty, "MultiVector") else p.annotation
+        return {name: self.algebra.mvtype if p.annotation in (inspect.Parameter.empty, "MultiVector") else p.annotation
                 for name, p in inspect.signature(self.codegen).parameters.items()}
 
     @cached_property
     def codegen_output_type(self):
         return_annotation = inspect.signature(self.codegen).return_annotation
-        return MultiVector if return_annotation in (inspect.Parameter.empty, "MultiVector") else return_annotation
+        return self.algebra.mvtype if return_annotation in (inspect.Parameter.empty, "MultiVector") else return_annotation
 
     def _sanitize_mvs(self, mvs: tuple[MultiVector]):
         """
@@ -281,7 +282,7 @@ class Registry(OperatorDict):
             return TapeRecorder(self.algebra, mvtype=compiled_expr.mvtype, keys=compiled_expr.keys_out, expr=expr)
 
         # Make sure all inputs are multivectors. If an input is not, assume its scalar.
-        mvs = [mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), (mv,))
+        mvs = [mv if isinstance(mv, MultiVector) else self.algebra.mvtype.fromkeysvalues(self.algebra, (0,), (mv,))
                for mv in mvs]
         if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
             raise AlgebraError("Cannot multiply elements of different algebra's.")

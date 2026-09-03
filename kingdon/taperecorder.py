@@ -10,20 +10,20 @@ class TapeRecorder:
     algebra: "Algebra"
     expr: str
     _keys: tuple = field(default_factory=tuple)
-    mvtype: MultiVectorType = MultiVector
+    mvtype: MultiVectorType = None  # Defaults to algebra.mvtype, see __new__.
     _shape: tuple = ()
 
-    def __new__(cls, algebra, expr, keys, mvtype=MultiVector, shape=()):
+    def __new__(cls, algebra, expr, keys, mvtype=None, shape=()):
         obj = object.__new__(cls)
         obj.algebra = algebra
         obj.expr = expr
         obj._keys = keys
-        obj.mvtype = mvtype
+        obj.mvtype = mvtype if mvtype is not None else algebra.mvtype
         obj._shape = shape
         return obj
 
     @classmethod
-    def fromname(cls, algebra, name, keys, mvtype=MultiVector, shape=()):
+    def fromname(cls, algebra, name, keys, mvtype=None, shape=()):
         return cls(algebra, name, keys, mvtype, shape=shape)
 
     def keys(self):

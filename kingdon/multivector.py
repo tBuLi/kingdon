@@ -267,9 +267,9 @@ class MultiVector(metaclass=MultiVectorType):
         res_layout.update({k: ... for k in items})
         if res_layout:
             from .codegen import resolve_layout
-            MVType, _ = resolve_layout(self.algebra._type_layouts, res_layout)
+            MVType, _ = resolve_layout(self.algebra._type_layouts, res_layout, default=self.algebra.mvtype)
         else:
-            MVType = MultiVector
+            MVType = self.algebra.mvtype
         return MVType.fromkeysvalues(self.algebra, tuple(items.keys()), list(items.values()), raw=self.issymbolic)
 
     @staticmethod
@@ -533,8 +533,8 @@ class MultiVector(metaclass=MultiVectorType):
         return self.fromkeysvalues(self.algebra, keys=keys, values=values)
 
     def asmvtype(self, MVType=None):
-        """ Cast to a specific multivector type. If no type is provided, return a MultiVector. """
-        MVType = MVType or MultiVector
+        """ Cast to a specific multivector type. If no type is provided, use the algebra's own. """
+        MVType = MVType or self.algebra.mvtype
         if type(self) == MVType:
             return self
         if layout := self.type_layout:
@@ -546,7 +546,7 @@ class MultiVector(metaclass=MultiVectorType):
             values = list(values)  # Values are always a list, e.g. so they can be updated inplace.
         else:
             keys, values = self.keys(), self.values()
-        if MVType == MultiVector:
+        if MVType == self.algebra.mvtype:
             return MVType.fromkeysvalues(self.algebra, keys, values, raw=self.issymbolic)  # Faster than the generic constructor because it doesn't validate the input.
         return MVType(self.algebra, keys=keys, values=values)
 
@@ -766,7 +766,7 @@ class MultiVector(metaclass=MultiVectorType):
 
     @classmethod
     def archetype(cls, algebra, name):
-        return MultiVector.fromname(algebra, name, symbolcls=algebra.codegen_symbolcls or RationalPolynomial.fromname)
+        return algebra.mvtype.fromname(algebra, name, symbolcls=algebra.codegen_symbolcls or RationalPolynomial.fromname)
 
 
 ### Below are common multivector types.
@@ -776,8 +776,8 @@ class KVector(MultiVector):
 
     @classmethod
     def archetype(cls, algebra, name):
-        return MultiVector.fromname(algebra, name, grades=cls.archetypal_grades,
-                                    symbolcls=algebra.codegen_symbolcls or RationalPolynomial.fromname)
+        return algebra.mvtype.fromname(algebra, name, grades=cls.archetypal_grades,
+                                       symbolcls=algebra.codegen_symbolcls or RationalPolynomial.fromname)
 class Scalar(KVector): archetypal_grades = (0,)
 class Vector(KVector): archetypal_grades = (1,)
 class Bivector(KVector): archetypal_grades = (2,)
@@ -833,7 +833,7 @@ class UPoint(Vector):
         ev = EVector.archetype(algebra, name)
         idx = algebra.signature.index(0) + algebra.start_index  # Find the correct index of 'e0'
         key = algebra.canon2bin[f'e{idx}']
-        origin = MultiVector.fromkeysvalues(algebra, (key,), [algebra.codegen_symbolcls('x') * 0 + 1], raw=True)
+        origin = algebra.mvtype.fromkeysvalues(algebra, (key,), [algebra.codegen_symbolcls('x') * 0 + 1], raw=True)
         return ops.add(ev, origin)
 
 

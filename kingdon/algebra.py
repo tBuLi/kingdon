@@ -129,6 +129,7 @@ class Algebra:
     extra_types: InitVar[list | None] = None
     types: list = field(default_factory=list, repr=False, compare=False)
     _type_layouts: dict = field(default_factory=dict, init=False, repr=False, compare=False)
+    mvtype: MultiVectorType = field(default=MultiVector, init=False, repr=False, compare=False)  # Multivector baseclass
 
     # Codegen & call customization.
     symbolcls: object = field(default=None, repr=False, compare=False)
@@ -224,7 +225,7 @@ class Algebra:
             if self.d >= 2: self.types.extend([Bireflection])
             if extra_types: self.types.extend(extra_types)
         # Dynamically generate classes for types if they are not already.
-        self.types = [type(t['name'], (MultiVector,), {'layout': t['layout']}) if isinstance(t, dict) else t
+        self.types = [type(t['name'], (self.mvtype,), {'layout': t['layout']}) if isinstance(t, dict) else t
                       for t in self.types]
         self._type_layouts = {cls: layout for cls in self.types
                               if (layout := self._bind_layout(cls, name='x'))}  # an empty layout matches an empty result at zero cost in resolve_layout, and would beat every other type.
@@ -467,19 +468,19 @@ class Algebra:
 
     def multivector(self, *args, **kwargs) -> MultiVector:
         """ Create a new :class:`~kingdon.multivector.MultiVector`. """
-        return MultiVector(self, *args, **kwargs)
+        return self.mvtype(self, *args, **kwargs)
 
     def evenmv(self, *args, **kwargs) -> MultiVector:
         """ Create a new :class:`~kingdon.multivector.MultiVector` in the even subalgebra. """
         grades = tuple(filter(lambda x: x % 2 == 0, range(self.d + 1)))
-        return MultiVector(self, *args, grades=grades, **kwargs)
+        return self.mvtype(self, *args, grades=grades, **kwargs)
 
     def oddmv(self, *args, **kwargs) -> MultiVector:
         """
         Create a new :class:`~kingdon.multivector.MultiVector` of odd grades.
         """
         grades = tuple(filter(lambda x: x % 2 == 1, range(self.d + 1)))
-        return MultiVector(self, *args, grades=grades, **kwargs)
+        return self.mvtype(self, *args, grades=grades, **kwargs)
 
     def purevector(self, *args, grade, **kwargs) -> KVector:
         """
@@ -488,7 +489,7 @@ class Algebra:
         :param grade: Grade of the multivector to create.
         """
         if grade > len(self._kvectors):
-            raise MultiVector(self, *args, grades=(grade,), **kwargs)
+            return self.mvtype(self, *args, grades=(grade,), **kwargs)
         return self._kvectors[grade](self, *args, **kwargs)
 
     def graph(self, *subjects, graph_widget=GraphWidget, **options):
@@ -765,7 +766,7 @@ class BladeDict(Mapping):
         basis_blade, swaps = self.algebra._blade2canon(basis_blade)
         if basis_blade not in self.blades:
             bin_blade = self.algebra.canon2bin[basis_blade]
-            MVType, layout = resolve_layout(self.algebra._type_layouts, {bin_blade: 1})
+            MVType, layout = resolve_layout(self.algebra._type_layouts, {bin_blade: 1}, default=self.algebra.mvtype)
             if self.algebra.graded:
                 keysvalues = tuple((idx, int(bin_blade == idx))
                                      for idx, value in layout.items() if value == ...)

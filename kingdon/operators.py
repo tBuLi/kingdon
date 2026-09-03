@@ -15,17 +15,15 @@ from kingdon.powers import power_supply
 
 
 def dict_to_multivector(res: dict, algebra) -> "MultiVector":
-    from kingdon.multivector import MultiVector  # TODO: should be available from algebra as algebra.mvtype
     # Drop zeros and put the remaining keys back in canon2bin order.
     nonzero = {k: v for k, v in res.items() if v}
     items = [(k, nonzero[k]) for k in algebra.canon2bin.values() if k in nonzero]
     keys, values = zip(*items) if items else ((), [])
-    return MultiVector.fromkeysvalues(algebra, keys, list(values), raw=True)
+    return algebra.mvtype.fromkeysvalues(algebra, keys, list(values), raw=True)
 
 
 def scalar(algebra, value) -> "MultiVector":
-    from kingdon.multivector import MultiVector  # TODO: should be available from algebra as algebra.mvtype
-    return MultiVector.fromkeysvalues(algebra, (0,), [value], raw=True)
+    return algebra.mvtype.fromkeysvalues(algebra, (0,), [value], raw=True)
 
 
 def product(
@@ -456,9 +454,8 @@ def sqrt(x: "MultiVector") -> "MultiVector":
 
 
 def polarity(x: "MultiVector", undual: bool = False) -> "MultiVector":
-    from kingdon.multivector import MultiVector
     # The pseudoscalar, kept raw for the same reason as the constants in :func:`scalar`.
-    pss = MultiVector.fromkeysvalues(x.algebra, (len(x.algebra) - 1,), [1], raw=True)
+    pss = x.algebra.mvtype.fromkeysvalues(x.algebra, (len(x.algebra) - 1,), [1], raw=True)
     if undual:
         return gp(x, pss)
     key_pss = len(x.algebra) - 1
