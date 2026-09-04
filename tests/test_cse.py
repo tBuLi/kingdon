@@ -324,7 +324,7 @@ def test_rp_three_points(pga3d, pga3d_no_cse):
     def _codegen_join3(a, b, c):
         return a.rp(b).rp(c)
 
-    rp_three_points = pga3d.jit(symbolic=True)(_codegen_join3)
+    rp_three_points = pga3d.add_operator(symbolic=True)(_codegen_join3)
     a = pga3d.point(name='a')
     b = pga3d.point(name='b')
     c = pga3d.point(name='c')
@@ -335,7 +335,7 @@ def test_rp_three_points(pga3d, pga3d_no_cse):
     assert divs == 0
     assert adds == 12
 
-    rp_three_points_nc = pga3d_no_cse.jit(symbolic=True)(_codegen_join3)
+    rp_three_points_nc = pga3d_no_cse.add_operator(symbolic=True)(_codegen_join3)
     a_nc = pga3d_no_cse.point(name='a')
     b_nc = pga3d_no_cse.point(name='b')
     c_nc = pga3d_no_cse.point(name='c')
@@ -363,7 +363,7 @@ def test_project_point_on_plane(pga3d, pga3d_no_cse):
     def _codegen_proj_point_plane(a, b):
         return a.ip(b) * b.inv()
 
-    proj_point_plane = pga3d.jit(symbolic=True)(_codegen_proj_point_plane)
+    proj_point_plane = pga3d.add_operator(symbolic=True)(_codegen_proj_point_plane)
     a = pga3d.point(name='a')
     b = pga3d.vector(name='b')
     c = proj_point_plane(a, b)
@@ -373,7 +373,7 @@ def test_project_point_on_plane(pga3d, pga3d_no_cse):
     assert divs == 3
     assert adds == 12
 
-    proj_point_plane_nc = pga3d_no_cse.jit(symbolic=True)(_codegen_proj_point_plane)
+    proj_point_plane_nc = pga3d_no_cse.add_operator(symbolic=True)(_codegen_proj_point_plane)
     a_nc = pga3d_no_cse.point(name='a')
     b_nc = pga3d_no_cse.vector(name='b')
     c_nc = proj_point_plane_nc(a_nc, b_nc)
@@ -504,7 +504,7 @@ def test_norm_sq_join_two_points(pga3d, pga3d_no_cse):
     def _codegen_norm_sq_join2(a, b):
         return (a & b) * ~(a & b)
 
-    norm_sq_join2 = pga3d.jit(symbolic=True)(_codegen_norm_sq_join2)
+    norm_sq_join2 = pga3d.add_operator(symbolic=True)(_codegen_norm_sq_join2)
     a = pga3d.point(name='a')
     b = pga3d.point(name='b')
     c = norm_sq_join2(a, b)
@@ -514,7 +514,7 @@ def test_norm_sq_join_two_points(pga3d, pga3d_no_cse):
     assert divs == 0
     assert adds == 5
 
-    norm_sq_join2_nc = pga3d_no_cse.jit(symbolic=True)(_codegen_norm_sq_join2)
+    norm_sq_join2_nc = pga3d_no_cse.add_operator(symbolic=True)(_codegen_norm_sq_join2)
     a_nc = pga3d_no_cse.point(name='a')
     b_nc = pga3d_no_cse.point(name='b')
     c_nc = norm_sq_join2_nc(a_nc, b_nc)
@@ -537,7 +537,7 @@ def test_norm_sq_join_three_points(pga3d, pga3d_no_cse):
     def _codegen_norm_sq_join3(a, b, c):
         return (a & b & c) * ~(a & b & c)
 
-    norm_sq_join3 = pga3d.jit(symbolic=True)(_codegen_norm_sq_join3)
+    norm_sq_join3 = pga3d.add_operator(symbolic=True)(_codegen_norm_sq_join3)
     a = pga3d.point(name='a')
     b = pga3d.point(name='b')
     c = pga3d.point(name='c')
@@ -548,7 +548,7 @@ def test_norm_sq_join_three_points(pga3d, pga3d_no_cse):
     assert divs == 0
     assert adds == 11
 
-    norm_sq_join3_nc = pga3d_no_cse.jit(symbolic=True)(_codegen_norm_sq_join3)
+    norm_sq_join3_nc = pga3d_no_cse.add_operator(symbolic=True)(_codegen_norm_sq_join3)
     a_nc = pga3d_no_cse.point(name='a')
     b_nc = pga3d_no_cse.point(name='b')
     c_nc = pga3d_no_cse.point(name='c')
@@ -573,7 +573,7 @@ def test_join_four_points(pga3d, pga3d_no_cse):
     def _codegen_join4(a, b, c, d):
         return a & b & c & d
 
-    join4 = pga3d.jit(symbolic=True)(_codegen_join4)
+    join4 = pga3d.add_operator(symbolic=True)(_codegen_join4)
     a = pga3d.point(name='a')
     b = pga3d.point(name='b')
     c = pga3d.point(name='c')
@@ -585,7 +585,7 @@ def test_join_four_points(pga3d, pga3d_no_cse):
     assert divs == 0
     assert adds == 14
 
-    join4_nc = pga3d_no_cse.jit(symbolic=True)(_codegen_join4)
+    join4_nc = pga3d_no_cse.add_operator(symbolic=True)(_codegen_join4)
     a_nc = pga3d_no_cse.point(name='a')
     b_nc = pga3d_no_cse.point(name='b')
     c_nc = pga3d_no_cse.point(name='c')

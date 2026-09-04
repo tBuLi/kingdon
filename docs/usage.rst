@@ -95,7 +95,7 @@ we see that the result is again a vector, as it should be.
     for the common scenario where :math:`u \in \text{Pin}(p,q,r)`.
     However, ensuring that :code:`u` is actually normalized is up to you.
     If you do not want to rely on this assumption, you can also define
-    your own :ref:`operators <JIT Expressions>`.
+    your own :ref:`operators <Adding Operators>`.
 
 These examples should show that the symbolic multivectors of :code:`kingdon`
 make it easy to do symbolic computations. Moreover, we can also use :mod:`sympy` expressions
@@ -423,10 +423,8 @@ Note however that even the first execution that includes the symbolic optimizati
 takes on the order of milliseconds, so you probably won't even notice it.
 
 Since `kingdon` v2.2.x the symbolic code generation features a port of `GAMphetamine.js <https://github.com/enkimute/GAmphetamine.js>`_'s
-very powerful Common Subexpression Elimination (CSE) algorithm, which results in the most
-optimal code known to man. As in, for those cases in which a hand optimized optimum is known,
-the CSE optimized code is exactly the same. Moreover, it is *quick* to run.
-Praise `Enki <https://github.com/enkimute>`_.
+very powerful Common Subexpression Elimination (CSE) algorithm, which is able to reproduce the hand optimized optimum in several cases.
+(More will follow in the future when the latest changes of `GAMphetamine.js` are ported.)
 
 The table below lists multiplications and additions counted in the emitted Python for representative **3DPGA** expressions
 when CSE is enabled vs not. Count columns use :code:`muls/adds`.
@@ -493,16 +491,17 @@ tensors instead, as shown in :doc:`arrays`.
 This ensures the high level overhead of kingdon is paid only once, and we instead delegate
 the computation to the underlying datastructures.
 
-JIT Expressions
-~~~~~~~~~~~~~~~
-To make it easy to optimize larger expressions, :code:`kingdon` offers the :func:`~kingdon.algebra.Algebra.jit`
-decorator.
+Adding Operators
+~~~~~~~~~~~~~~~~
+To make it easy to optimize larger expressions, :code:`kingdon` offers the
+:func:`~kingdon.algebra.Algebra.add_operator` decorator, which adds the expression to the algebra
+as an operator of its own.
 
 .. code-block::
 
     >>> alg = Algebra(3, 0, 1)
     >>>
-    >>> @alg.jit
+    >>> @alg.add_operator
     >>> def myfunc(u, v):
     >>>      return u * (u + v)
     >>>
@@ -513,11 +512,11 @@ decorator.
 Calling the decorated :code:`myfunc` has the benefit that all the numerical computation is done in one single call,
 instead of doing each binary operation individually. This has the benefit that all the (expensive) python boilerplate
 code is called only once.
-Moreover, one can use :code:`@alg.jit(symbolic=True)` to symbolically optimize the expression, similar to how
+Moreover, one can use :code:`@alg.add_operator(symbolic=True)` to symbolically optimize the expression, similar to how
 `kingdon`'s default binary operators work. As we have seen above in the CSE section, this can result in significant
 performance improvements. Afterall, the fastest computation is one you do not have to do.
 
-:func:`~kingdon.algebra.Algebra.jit` figures out the symbolic multivectors from the multivectors you call
+:func:`~kingdon.algebra.Algebra.add_operator` figures out the symbolic multivectors from the multivectors you call
 it with, and caches a compiled function per combination of input types. If you would rather pick those
 symbolic multivectors yourself, use :func:`~kingdon.algebra.Algebra.compile` directly. It takes the expression
 followed by the symbolic multivectors and hands you back a :class:`~kingdon.codegen.CompiledExpression`:

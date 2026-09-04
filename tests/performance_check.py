@@ -60,7 +60,7 @@ if __name__ == "__main__":
                 v = alg.multivector(vvals)
                 if operation == 'R.sqrt()':
                     R = alg.evenmv(bvals[::2])
-                # prepare, does cse and jit.
+                # prepare, does cse and codegen.
                 init = timeit.timeit(operation, number=1, globals=globals())
                 t = timeit.timeit(operation, number=num_iter, globals=globals())
                 print(f'setup with {cse=} & {numba=} took {init:.2E}. Performed {num_iter} iterations, per iteration: {t/num_iter:.2E} sec')

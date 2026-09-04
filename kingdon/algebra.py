@@ -115,7 +115,7 @@ class Algebra:
     outersin: UnaryOperatorDict = operation_field(metadata={'codegen': ops.outersin})
     outercos: UnaryOperatorDict = operation_field(metadata={'codegen': ops.outercos})
     outertan: UnaryOperatorDict = operation_field(metadata={'codegen': ops.outertan})
-    registry: dict = field(default_factory=dict, repr=False, compare=False)  # Dict of all operator dicts. Should be extended using Algebra.jit
+    registry: dict = field(default_factory=dict, repr=False, compare=False)  # Dict of all operator dicts. Should be extended using Algebra.add_operator
     numspace: dict = field(default_factory=dict, repr=False, compare=False)  # Namespace for numerical functions
 
     # Mappings from binary to canonical reps. e.g. 0b01 = 1 <-> 'e1', 0b11 = 3 <-> 'e12'.
@@ -353,14 +353,14 @@ class Algebra:
 
     def register(self, expr=None, /, *, name=None, symbolic=False):
         """
-        Register a function with the algebra to optimize its execution times. Deprecated in favor of :meth:`~kingdon.algebra.Algebra.jit`.
+        Register a function with the algebra to optimize its execution times. Deprecated in favor of :meth:`~kingdon.algebra.Algebra.add_operator`.
         """
-        warnings.warn("Use @alg.jit instead of @alg.register", FutureWarning)
-        return self.jit(expr, name=name, symbolic=symbolic)
+        warnings.warn("Use @alg.add_operator instead of @alg.register", FutureWarning)
+        return self.add_operator(expr, name=name, symbolic=symbolic)
 
-    def jit(self, expr=None, /, *, name=None, symbolic=False, codegen_symbolcls=None, lambdifier=None, wrapper=None, values_asarray=None, **lambdifier_kwargs):
+    def add_operator(self, expr=None, /, *, name=None, symbolic=False, codegen_symbolcls=None, lambdifier=None, wrapper=None, values_asarray=None, **lambdifier_kwargs):
         """
-        Mark a function for Just-in-time (JIT) compilation to optimize its execution times.
+        Add a new operator to the algebra, compiled to optimize its execution times.
         The function must accept multivectors as input arguments and is assumed to either
         return a single multivector or to :code:`set` one of the input multivectors.
 
@@ -368,15 +368,15 @@ class Algebra:
 
         .. code-block ::
 
-            @alg.jit(symbolic=True)
+            @alg.add_operator(symbolic=True)
             def proj(a, b):
                 return (a | b) / b
 
-            @alg.jit(symbolic=True)
+            @alg.add_operator(symbolic=True)
             def proj_allocated(a, b, c):
                 c.set((a | b) / b)
 
-            @alg.jit(symbolic=True)
+            @alg.add_operator(symbolic=True)
             def proj(mvs: MultiVector[2]):
                 a, b = mvs
                 return (a | b) / b
@@ -424,17 +424,17 @@ class Algebra:
                     lambdifier=lambdifier, wrapper=wrapper, values_asarray=values_asarray, lambdifier_kwargs=lambdifier_kwargs)
             return self.registry[name]
 
-        # See if we are being called as @jit or @jit()
-        if expr is None:  # Called as @jit()
+        # See if we are being called as @add_operator or @add_operator()
+        if expr is None:  # Called as @add_operator()
             return partial(wrap, name=name, symbolic=symbolic)
 
-        # Called as @jit
+        # Called as @add_operator
         return wrap(expr, name=name, symbolic=symbolic)
 
     def compile(self, expr=None, /, *mvs, symbolic=True, lambdifier=None, wrapper=None, values_asarray=None, **lambdifier_kwargs) -> CompiledExpression:
         """
         Compile a GA :code:`expr` with specific symbolic multivectors.
-        For typical use cases you'll probably want to use :code:`Algebra.jit` instead, since that does not require you
+        For typical use cases you'll probably want to use :code:`Algebra.add_operator` instead, since that does not require you
         to provide the symbolical multivectors yourself, and it caches the resulting compiled functions so you don't have to track them yourself.
         However, the finer level of control of :code:`compile` is extremely powerful in certain use cases.
         For example, consider that we need to repeatedly rotate the unit vectors of our algebra in order to compute the evolution of the frame vectors::
@@ -451,7 +451,7 @@ class Algebra:
         :code:`alg.sw[R, e1].func.__doc__`, we find that the generated code uses 14 muls and 5 adds.
         (Mind you that the built-in :code:`sw` operator already benefits from CSE; without it the same
         expression needs 18 muls and 7 adds.)
-        However :code:`Algebra.jit` can never use the runtime values of the multivector coefficients,
+        However :code:`Algebra.add_operator` can never use the runtime values of the multivector coefficients,
         whereas we know that we only want to rotate unit vectors.
         So we can use :code:`Algebra.compile` to generate an even more specialized function::
 

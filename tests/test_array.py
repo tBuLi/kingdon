@@ -390,7 +390,7 @@ def test_asarray_algebra(xp):
     z = x * y
     assert isinstance(z.values(), list)
 
-    @alg.jit(values_asarray=partial(values_asarray, xp))
+    @alg.add_operator(values_asarray=partial(values_asarray, xp))
     def my_func(x, y):
         return x + y
     w = my_func(x, y)
@@ -402,7 +402,7 @@ def test_asarray_algebra(xp):
     with pytest.raises(STACK_ERRORS):
         my_func(x, s)
 
-    @alg.jit(values_asarray=partial(values_asarray, xp, broadcast=True))
+    @alg.add_operator(values_asarray=partial(values_asarray, xp, broadcast=True))
     def my_broadcasted_func(x, y):
         return x + y
     # Inhomogenous data does work when combined with broadcast.

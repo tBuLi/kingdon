@@ -856,13 +856,13 @@ def test_compile_operator_existence(symbolic):
             def myfunc(x):
                 return getattr(x, op_name)()
 
-            myfunc_compiled = alg.jit(myfunc, symbolic=symbolic)
+            myfunc_compiled = alg.add_operator(myfunc, symbolic=symbolic)
             assert not (myfunc_compiled(u).filter(alg.simp_func) - myfunc(u))  # OperatorDict.__call__ does a symbolic simplfication on the result, causing expressions not to be structurely identical. Hence we have to check the difference and not equality.
 
         else:
             def myfunc(x, y):
                 return getattr(x, op_name)(y)
-            myfunc_compiled = alg.jit(myfunc, symbolic=symbolic)
+            myfunc_compiled = alg.add_operator(myfunc, symbolic=symbolic)
             assert not myfunc_compiled(u, v) - myfunc(u, v)
 
 
@@ -872,24 +872,24 @@ def test_compile_basics(symbolic):
     u = alg.multivector(name='u')
     v = alg.multivector(name='v')
 
-    @alg.jit(symbolic=symbolic)
+    @alg.add_operator(symbolic=symbolic)
     def square(x):
         return x * x
 
-    @alg.jit(symbolic=symbolic)
+    @alg.add_operator(symbolic=symbolic)
     def double(x):
         return 2 * x
 
-    @alg.jit(symbolic=symbolic)
+    @alg.add_operator(symbolic=symbolic)
     def add(x, y):
         return x + y
 
-    @alg.jit(symbolic=symbolic)
+    @alg.add_operator(symbolic=symbolic)
     def grade_select(x):
         return x.grade(1, 2)
 
     # Test if we can nest compiled expressions.
-    @alg.jit(symbolic=symbolic)
+    @alg.add_operator(symbolic=symbolic)
     def coupled(u, v):
         uv = add(u, v)
         return square(uv) + double(u)

@@ -47,8 +47,8 @@ def pos_grades(alg, grds):
     ],
 )
 @pytest.mark.parametrize("alg_name", ['2DPGA', '3DPGA'])
-def test_pga_archetypes(alg_name, MVType, layout, grades, bases):
-    """ Test if the archetypes correctly generate the expected layout. Done for different PGA's to ensure the validity. """
+def test_pga_layouts(alg_name, MVType, layout, grades, bases):
+    """ Test if the layout classmethods correctly generate the expected layout. Done for different PGA's to ensure the validity. """
     alg = Algebra.fromname(alg_name)
     if alg_name == '2DPGA':
         # 3DPGA key bits: {0=e1, 1=e2, 2=e3, 3=e0}. 2DPGA key bits: {0=e1, 1=e2, 2=e0}.
@@ -72,9 +72,9 @@ def test_pga_archetypes(alg_name, MVType, layout, grades, bases):
     assert OrderedDict(alg_layout) == OrderedDict(layout)
     assert issubclass(MVType, bases)
 
-    # Alternative: directly create the archetype. This is the symbolic multivector the
-    # layout is derived from, and is untyped.
-    x = MVType.archetype(alg, 'x')
+    # Alternative: directly evaluate the layout. This is the symbolic multivector the
+    # bound layout is derived from, and is untyped.
+    x = MVType.layout(alg, 'x')
     assert type(x) is MultiVector
     assert x.grades == pos_grades(alg, grades)
     assert x.shape == ()
@@ -173,7 +173,7 @@ def test_translations(alg_name):
     assert len(t.keys()) == alg.d  # x y (z) w are free variables for a Bireflection.
 
     # However, we know it should really be a translation, which can be achieved by compiling the same scenario.
-    @alg.jit(symbolic=True)
+    @alg.add_operator(symbolic=True)
     def translate(p, q):
         return p * q.reverse()
     t = translate(p, q)
