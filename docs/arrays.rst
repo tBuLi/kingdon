@@ -100,7 +100,7 @@ on which we can do operations:
     Vector[(M,)]
     >>> areas = 0.5 * planes.norm()  # The areas of the triangles is half that of the planes
     >>> area = areas.map(np.sum)
-    >>> volume = np.sum(planes.e0)
+    >>> volume = np.sum(planes.e0) / 6
 
 
 Lastly, :code:`kingdon` is also compatible with :code:`einops`.
@@ -300,18 +300,24 @@ from which we can then compute the area:
 
 .. code-block::
 
-    >>> areas = planes.norm()
+    >>> areas = 0.5 * planes.norm()  # The area of a triangle is half that of its plane.
     >>> area = areas.map(np.sum)
 
 and the volume:
 
 .. code-block::
 
-    >>> volume = np.sum(planes.e0)
+    >>> volume = np.sum(planes.e0) / 6
 
 Yes, we just computed the signed volume directly from the coefficient of :math:`\mathbf{e}_0`!
-This coefficient is the signed volume a plane makes with the origin, and by adding this up for all
-planes we find the signed volume of the mesh. For more info, see `this paper <https://arxiv.org/abs/2511.08058>`_.
+This coefficient is (six times) the signed volume of the tetrahedron the triangle makes with the
+origin, and by adding this up for all planes we find the signed volume of the mesh.
+
+Both factors are instances of the same rule: the :math:`k`-magnitude of a :math:`k`-simplex follows
+from its boundary complex up to a factor :math:`1/k!`, so the triangle areas carry :math:`1/2!` and
+the volume :math:`1/3!`. See `CLEANUP <https://bivector.net/CLEANUP.html>`_ for the general statement.
+The overall sign of the volume follows the orientation of your faces, so reversing the winding of
+:code:`faces` flips it. For more info, see `this paper <https://arxiv.org/abs/2511.08058>`_.
 
 How to stay in hyper-space
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
