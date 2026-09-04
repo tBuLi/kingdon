@@ -563,7 +563,7 @@ class Algebra:
         - :class:`~kingdon.multivector.MultiVector`: rendered according to its grade and the
           algebra's signature, e.g. as a point, line, plane, circle, sphere, etc.
           A multivector with array-valued coefficients (e.g. :code:`numpy` arrays) is unpacked
-          into the individual multivectors it represents.
+          into the individual multivectors it represents, see :ref:`Meshes and point clouds`.
         - :code:`int`: a hexadecimal color such as :code:`0x224488`, which sets the color of all
           subsequent subjects until the next color.
         - :code:`str`: a label, drawn at the position of the last drawn subject. Strings starting
@@ -579,7 +579,30 @@ class Algebra:
         Multivectors passed directly as positional arguments (i.e. not nested inside a list) may be
         draggable: dragging them in the canvas writes the new coefficients back into the Python
         object in-place. In PGA only points (grade :math:`d-1`) are draggable, in conformal
-        algebras (:code:`conformal=True`) only grade 1 elements are draggable.
+        algebras (:code:`conformal=True`) only grade 1 elements are draggable. Shaped multivectors
+        are never draggable.
+
+        .. rubric:: Meshes and point clouds
+
+        A multivector of shape :code:`(N, ...)` is spliced into the list of subjects instead of
+        being drawn as a single element, so a mesh or point cloud is a single subject rather than
+        thousands. Just like a python list, the trailing axis decides what is drawn: shape
+        :code:`(N,)` gives :math:`N` separate elements (a point cloud), :code:`(N, 2)` gives
+        :math:`N` line segments (edges), and :code:`(N, 3)` gives :math:`N` filled triangles (faces).
+        Given a :code:`vertices` array of shape :math:`(N, 3)` and an integer :code:`faces` array
+        of shape :math:`(M, 3)` indexing into it:
+
+        .. code-block ::
+
+            v = alg.upoint(vertices.T).dual()  # Point[(N,)]
+            facets = v[faces]                  # Point[(M, 3)]
+            alg.graph(0xEE8888, facets, 0x000000, v, pointRadius=0.2)
+
+        Build the points as :code:`upoint(...).dual()` rather than :code:`point(vertices.T)`: the
+        positional values of a type are its free coefficients in layout order, which for a
+        :class:`~kingdon.multivector.Point` in :code:`Algebra(3, 0, 1)` is :math:`(-z, y, -x)`, not
+        :math:`(x, y, z)`. Note also that :code:`ganja.js` only renders the lexicographical basis,
+        so use :code:`Algebra(3, 0, 1, extra_types=[...])` and not :code:`Algebra.fromname('3DPGA')`.
 
         .. rubric:: Options
 

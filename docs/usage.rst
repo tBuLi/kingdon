@@ -397,6 +397,70 @@ See :meth:`~kingdon.algebra.Algebra.graph` for more details.
     kingdon supports :code:`ganja.js`'s animation and interactivity in jupyter notebooks,
     `try kingdon in your browser <https://tbuli.github.io/teahouse/>`_ to give it a go!
 
+Meshes and point clouds
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Passing a few thousand multivectors one by one is neither pleasant to write nor fast to draw.
+Instead, pass a *single* multivector whose coefficients are arrays (see :doc:`arrays`): its
+:code:`shape` is spliced into the list of subjects, so one subject becomes many elements. The
+trailing axis decides what is drawn, exactly like a python list would:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - Shape
+     - Drawn as
+   * - :code:`()`
+     - a single element, as usual.
+   * - :code:`(N,)`
+     - :math:`N` separate elements, e.g. a point cloud.
+   * - :code:`(N, 2)`
+     - :math:`N` line segments, e.g. the edges of a mesh.
+   * - :code:`(N, 3)`
+     - :math:`N` filled triangles, e.g. the faces of a mesh.
+
+So for a mesh given by a :code:`vertices` array of shape :math:`(N, 3)` and an integer
+:code:`faces` array of shape :math:`(M, 3)` indexing into it, the whole scene is two subjects:
+
+.. code-block::
+
+    >>> from kingdon.multivector import EVector, UPoint, Point, Translation
+    >>> alg = Algebra(3, 0, 1, extra_types=[EVector, UPoint, Point, Translation])
+    >>> v = alg.upoint(vertices.T).dual()      # The point cloud.
+    >>> facets = v[faces]                      # A point per corner per face.
+    >>> facets.shape, v.shape
+    (Point[(M, 3)], Point[(N,)])
+    >>> alg.graph(
+    ...     0xEE8888, facets,
+    ...     0x000000, v,
+    ...     pointRadius=0.2,
+    ... )
+
+Two things are worth keeping in mind when building the points:
+
+- Always build them as :code:`alg.upoint(...).dual()` (or :code:`(alg.blades.e0 + alg.evector(...)).dual()`),
+  and hand :code:`upoint` the transpose of the vertices, such that the :math:`x, y, z` axis comes
+  first and the :math:`N` axis last. It is tempting to write :code:`alg.point(vertices.T)` instead,
+  but the positional values of a type are its *free coefficients in layout order*, which for
+  :class:`~kingdon.multivector.Point` is :math:`(\mathbf{e}_{012}, \mathbf{e}_{013}, \mathbf{e}_{023})`,
+  i.e. :math:`(-z, y, -x)` and not :math:`(x, y, z)`. Going through the undual point is
+  independent of the ordering and signs of the basis blades, and hence of the dimension.
+- :code:`ganja.js` only renders algebras in the lexicographical basis, so create the algebra as
+  :code:`Algebra(3, 0, 1, extra_types=[...])` rather than :code:`Algebra.fromname('3DPGA')`;
+  the latter reorders the basis and :meth:`~kingdon.algebra.Algebra.graph` will refuse it.
+
+Everything that makes shaped multivectors convenient applies to the subjects as well: boolean
+masks and fancy indexing select what to draw, e.g. :code:`v[(plane & v).e > 0]` graphs only the
+points in front of a :code:`plane`, and operators act on the whole mesh at once, so
+:code:`facets[:, 0] & facets[:, 1] & facets[:, 2]` gives a :code:`Vector[(M,)]` of face planes
+that can be graphed just as well. Since the mesh travels to :code:`ganja.js` as a single binary
+buffer, this is also much faster than graphing the elements individually.
+
+.. note::
+    Only unshaped multivectors passed as direct positional arguments are draggable; a shaped
+    subject is drawn but cannot be picked up.
+
 Large Algebra's
 ---------------
 In theory :code:`kingdon` supports algebra's up to 36D, but your computer might go up in smoke
@@ -527,17 +591,18 @@ followed by the symbolic multivectors and hands you back a :class:`~kingdon.code
     >>> e1 = alg.vector(e1=1)
     >>> rotate_e1 = alg.compile(myfunc, R, e1)
 
-This is worth the extra effort when you know something about the values that :code:`jit` cannot know,
+This is worth the extra effort when you know something about the values that :code:`add_operator` cannot know,
 such as the fact that you only ever rotate unit vectors. See
 :func:`~kingdon.algebra.Algebra.compile` for a worked example.
 
-Graded
-~~~~~~
+Full layout
+~~~~~~~~~~~
 The first time :code:`kingdon` is asked to perform an operation it hasn't seen before, it performs code generation
 for that particular request. Because codegen is a relatively expensive step, it can be beneficial to reduce the number of
-times it is needed. An easy way to achieve this is to initiate the :class:`~kingdon.algebra.Algebra` with `graded=True`.
-This enforces that :code:`kingdon` does not specialize codegen down to the individual basis blades, but rather only
-per grade. This means there are far less combinations that have to be considered and generated.
+times it is needed. An easy way to achieve this is to initiate the :class:`~kingdon.algebra.Algebra` with
+`full_layout=True`. This enforces that every multivector carries the full :doc:`layout <types>` of its type, so
+:code:`kingdon` does not specialize codegen down to the individual basis blades, but rather only per type.
+This means there are far less combinations that have to be considered and generated.
 
 Numba JIT
 ~~~~~~~~~

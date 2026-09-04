@@ -77,7 +77,7 @@ Rational Polynomial
 Taperecorder
 ------------
 
-Used by `Algebra.jit` to generate code without symbolic optimization.
+Used by `Algebra.add_operator` to generate code without symbolic optimization.
 
 .. automodule:: kingdon.taperecorder
    :members:
