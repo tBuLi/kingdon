@@ -326,10 +326,12 @@ def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, 
     if output_mv_idx is not None:
         output_name = names[output_mv_idx]
         for i, part in enumerate(ret_parts):
-            body_lines.append(f'    {output_name}[{i}] = {str(part).replace("'", "")}')
+            part_str = str(part).replace("'", "")
+            body_lines.append(f'    {output_name}[{i}] = {part_str}')
         body_lines.append('    return ()')
     else:
-        body_lines.append(f'    return {str(ret_parts).replace("'", "")}')
+        ret_str = str(ret_parts).replace("'", "")
+        body_lines.append(f'    return {ret_str}')
 
     header = f'def {funcname}({", ".join(names)}):'
     return _build_and_cache_func(header, body_lines, funcname)
