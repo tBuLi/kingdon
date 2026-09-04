@@ -8,16 +8,6 @@ jobs:
     strategy:
       matrix:
         python-version: ['3.11', '3.12', '3.13']
-        array-lib: [none]
-        include:
-          # The array tests are parametrized over the array libraries that einops and
-          # array-api-compat both support, and skip those that are not installed. Each gets a
-          # job of its own rather than a place in the whole matrix, since their wheels are
-          # large. jax needs 3.12, and cupy is absent altogether because it needs a GPU.
-          - python-version: '3.13'
-            array-lib: torch
-          - python-version: '3.13'
-            array-lib: jax
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
@@ -30,14 +20,17 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -e ".[test]"
-    - name: Install torch
-      if: matrix.array-lib == 'torch'
-      # The CPU-only index keeps this to a ~200 MB wheel, instead of the several GB of CUDA
+    # The array tests are parametrized over the array libraries that einops and
+    # array-api-compat both support, and skip those that are not installed. They are only
+    # installed on the newest python, since their wheels are large. cupy is absent
+    # altogether because it needs a GPU.
+    - name: Install torch and jax
+      if: matrix.python-version == '3.13'
+      # The CPU-only index keeps torch to a ~200 MB wheel, instead of the several GB of CUDA
       # wheels that the default PyPI build pulls in and that the tests have no use for.
-      run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-    - name: Install jax
-      if: matrix.array-lib == 'jax'
-      run: pip install jax
+      run: |
+        pip install torch --index-url https://download.pytorch.org/whl/cpu
+        pip install jax
     - name: Test with pytest
       run:
         pytest
