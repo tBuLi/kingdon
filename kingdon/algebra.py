@@ -12,7 +12,6 @@ import sympy
 from kingdon.codegen import (
     do_compile_symbolic,
     do_compile,
-    KingdonPrinter,
 )
 import kingdon.operators as ops
 from kingdon.operator_dict import OperatorDict, UnaryOperatorDict, Registry, do_operation, resolve_and_expand
@@ -25,7 +24,7 @@ from kingdon.multivector import (
     Direction, EVector, UPoint, Point, Translation,  # PGA Types.
 )
 from kingdon.graph import GraphWidget
-from kingdon.codegen import resolve_layout, CompiledExpression
+from kingdon.codegen import resolve_layout, CompiledExpression, lambdify
 
 operation_field = partial(field, default_factory=dict, init=False, repr=False, compare=False)
 
@@ -67,7 +66,8 @@ class Algebra:
     :param symbolcls: The symbol class used for symbolic multivectors. By default, this :class:`sympy.core.symbol.Symbol`.
     :param codegen_symbolcls: The symbol class used during codegen. By default, this is our own fast
         :class:`~kingdon.polynomial.RationalPolynomial` class.
-    :param printer: Sympy code printer used for codegen, see `https://docs.sympy.org/latest/modules/printing.html`.
+    :param lambdifier: The function that turns the symbolic expressions of an operation into a python function.
+        Defaults to :func:`~kingdon.codegen.lambdify`; provide your own to take over code generation entirely.
     :param simp_func: This function is applied as a filter function to every multivector coefficient.
     :param pretty_blade: character to use for basis blades when pretty printing to string. Default is 𝐞.
     :param large: if true this is considered a large algebra. This means various cashing options are removed to save
@@ -138,9 +138,8 @@ class Algebra:
     symbolcls: object = field(default=None, repr=False, compare=False)
     # The symbol class used in codegen. By default, use our own fast RationalPolynomial class.
     codegen_symbolcls: object = field(default=RationalPolynomial.fromname, repr=False, compare=False)
-    # The sympy style printer and evaluator printer used to generate the code with sympy-style printing.
-    printer: sympy.printing.lambdarepr.LambdaPrinter = field(default=None, repr=False, compare=False)
-    func_printer: KingdonPrinter = field(default=None, repr=False, compare=False)
+    # The function used to generate the code. Defaults to kingdon.codegen.lambdify, see __post_init__.
+    lambdifier: Callable = field(default=None, repr=False, compare=False)
     # Wrapper function applied to the codegen generated functions.
     wrapper: Callable = field(default=None, repr=False, compare=False)
     # Constructor to be called on the values upon mv creation.
@@ -157,6 +156,9 @@ class Algebra:
         if graded is not None:
             warnings.warn("The graded argument has been renamed to full_layout.", FutureWarning, stacklevel=2)
             self.full_layout = graded
+
+        if self.lambdifier is None:
+            self.lambdifier = lambdify
 
         if self.signature is not None:
             counts = Counter(self.signature)
@@ -357,7 +359,7 @@ class Algebra:
         warnings.warn("Use @alg.jit instead of @alg.register", FutureWarning)
         return self.jit(expr, name=name, symbolic=symbolic)
 
-    def jit(self, expr=None, /, *, name=None, symbolic=False, codegen_symbolcls=None, printer=None, func_printer=None, wrapper=None, values_asarray=None):
+    def jit(self, expr=None, /, *, name=None, symbolic=False, codegen_symbolcls=None, lambdifier=None, wrapper=None, values_asarray=None, **lambdifier_kwargs):
         """
         Mark a function for Just-in-time (JIT) compilation to optimize its execution times.
         The function must accept multivectors as input arguments and is assumed to either
@@ -400,14 +402,15 @@ class Algebra:
             By default this is False, given the cost of optimizing large expressions.
         :param codegen_symbolcls: (optional) The class to use for symbolic multivectors.
             By default the codegen_symbolcls from Algebra is used.
-        :param printer: (optional) The sympy style printer used to generate the code with sympy-style printing.
-            By default the printer from Algebra is used.
-        :param func_printer: (optional) The sympy style evaluator printer used to generate the code with sympy-style printing.
-            By default the func_printer from Algebra is used.
+        :param lambdifier: (optional) The function that turns the symbolic expressions into a python function.
+            By default the lambdifier from Algebra is used.
         :param wrapper: (optional) The wrapper function used to wrap the compiled function.
             By default the wrapper from Algebra is used.
         :param values_asarray: (optional) The values_asarray function used to cast the values to the correct array type.
             By default values_asarray from Algebra is used.
+        :param lambdifier_kwargs: Any remaining keyword arguments are passed on to the `lambdifier`.
+            For the default :func:`~kingdon.codegen.lambdify` these are :code:`printer` and
+            :code:`func_printer`, the sympy style printers used to print the expressions.
         """
         def wrap(expr, name=None, symbolic=False):
             if name is None:
@@ -419,7 +422,7 @@ class Algebra:
                 self.registry[name] = OperatorDict(
                     name, codegen=expr, algebra=self,
                     codegen_symbolcls=codegen_symbolcls or self.codegen_symbolcls,
-                    printer=printer, func_printer=func_printer, wrapper=wrapper, values_asarray=values_asarray)
+                    lambdifier=lambdifier, wrapper=wrapper, values_asarray=values_asarray, lambdifier_kwargs=lambdifier_kwargs)
             return self.registry[name]
 
         # See if we are being called as @jit or @jit()
@@ -429,7 +432,7 @@ class Algebra:
         # Called as @jit
         return wrap(expr, name=name, symbolic=symbolic)
 
-    def compile(self, expr=None, /, *mvs, symbolic=True, printer=None, func_printer=None, wrapper=None, values_asarray=None) -> CompiledExpression:
+    def compile(self, expr=None, /, *mvs, symbolic=True, lambdifier=None, wrapper=None, values_asarray=None, **lambdifier_kwargs) -> CompiledExpression:
         """
         Compile a GA :code:`expr` with specific symbolic multivectors.
         For typical use cases you'll probably want to use :code:`Algebra.jit` instead, since that does not require you
@@ -462,13 +465,26 @@ class Algebra:
         Compiling common operations involving constant multivectors such as frames can therefore be highly beneficial.
 
         Beware that :code:`rotate_e1` should not be used on non-unit vectors, so the onus falls on you to enure you only call it with appropriate vectors.
+
+        :param expr: Python function of a valid kingdon GA expression.
+        :param mvs: The symbolic multivectors to compile `expr` for.
+        :param symbolic: (optional) If true (default), the expression is symbolically optimized.
+        :param lambdifier: (optional) The function that turns the symbolic expressions into a python function.
+            By default the lambdifier from Algebra is used.
+        :param wrapper: (optional) The wrapper function used to wrap the compiled function.
+            By default the wrapper from Algebra is used.
+        :param values_asarray: (optional) The values_asarray function used to cast the values to the correct array type.
+            By default values_asarray from Algebra is used.
+        :param lambdifier_kwargs: Any remaining keyword arguments are passed on to the `lambdifier`.
+            For the default :func:`~kingdon.codegen.lambdify` these are :code:`printer` and
+            :code:`func_printer`, the sympy style printers used to print the expressions.
+        :return: Instance of :class:`~kingdon.codegen.CompiledExpression`.
         """
         wrapper = wrapper or self.wrapper
-        printer = printer or self.printer
+        lambdifier = lambdifier or self.lambdifier
         values_asarray = values_asarray or self.values_asarray
-        func_printer = func_printer or self.func_printer
         if symbolic:
-            compiled_expr = do_compile_symbolic(expr, *mvs, printer=printer, func_printer=func_printer, wrapper=wrapper, values_asarray=values_asarray)
+            compiled_expr = do_compile_symbolic(expr, *mvs, lambdifier=lambdifier, wrapper=wrapper, values_asarray=values_asarray, lambdifier_kwargs=lambdifier_kwargs)
         else:
             compiled_expr = do_compile(expr, *mvs, wrapper=wrapper, values_asarray=values_asarray)
         return compiled_expr

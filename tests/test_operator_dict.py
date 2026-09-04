@@ -230,7 +230,8 @@ def test_codegen_set(codegen_symbolcls):
 
 
 @pytest.mark.parametrize('codegen_symbolcls', [RationalPolynomial.fromname, Symbol], ids=['RationalPolynomial', 'Symbol'])
-def test_codegen_printer(codegen_symbolcls):
+def test_codegen_lambdifier_kwargs(codegen_symbolcls):
+    """ Users can provide optional kwargs to the lambdifier."""
     alg = Algebra(2)
     x = alg.multivector(name='x')
     y = alg.multivector(name='y')
@@ -255,6 +256,37 @@ def test_codegen_printer(codegen_symbolcls):
         return x*y
     res = my_gp(x, y)
     assert res == x*y
-    assert my_gp.printer == my_printer
-    assert my_gp.func_printer == my_func_printer
+    assert my_gp.lambdifier_kwargs == {'printer': my_printer, 'func_printer': my_func_printer}
     assert my_gp.wrapper == my_wrapper
+
+
+def test_lambdifier_sympy():
+    """ The lambdifier keyword replaces kingdon's codegen entirely, here by sympy's lambdify. """
+    import sympy
+
+    def sympy_lambdifier(args, exprs, funcname, output_mv_idx=None, **kwargs):
+        return sympy.lambdify(list(args.values()), exprs, **kwargs)
+
+    alg = Algebra(2, lambdifier=sympy_lambdifier, codegen_symbolcls=sympy.Symbol)
+    ref = Algebra(2)  # identical algebra using kingdon's own codegen
+
+    u, v = alg.vector([1., 2.]), alg.vector([0., 3.])
+    ref_u, ref_v = ref.vector([1., 2.]), ref.vector([0., 3.])
+    R, ref_R = u * v, ref_u * ref_v
+
+    # sympy did the codegen, not kingdon, which names its functions after the operation.
+    assert alg.gp[u, v].func.__name__ == '_lambdifygenerated'
+    assert ref.gp[ref_u, ref_v].func.__name__ == 'gp_6_x_6'
+    assert R.keys() == ref_R.keys()
+    assert R.values() == pytest.approx(ref_R.values())
+
+    # It reaches every operator of the algebra, not just the geometric product.
+    assert alg.reverse[R].func.__name__ == '_lambdifygenerated'
+    assert (~R).values() == pytest.approx((~ref_R).values())
+
+    # And it can be given per jitted function, together with kwargs for the lambdifier itself.
+    @alg.jit(symbolic=True, lambdifier=sympy_lambdifier, modules='math')
+    def normsq(x):
+        return ops.gp(x, ops.reverse(x))
+    assert normsq(u).e == pytest.approx(5.)
+    assert normsq[(u,)].func.__name__ == '_lambdifygenerated'

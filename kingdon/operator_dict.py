@@ -11,7 +11,7 @@ from types import GenericAlias
 import sympy
 
 from kingdon.multivector import MultiVector, MultiVectorType, Scalar, stack
-from kingdon.codegen import do_compile_symbolic, do_compile, KingdonPrinter
+from kingdon.codegen import do_compile_symbolic, do_compile
 from kingdon.taperecorder import TapeRecorder
 from kingdon.polynomial import RationalPolynomial
 
@@ -108,8 +108,8 @@ class OperatorDict(Mapping):
     algebra: "Algebra"
     operator_dict: dict = field(default_factory=dict, init=False)
     codegen_symbolcls: Callable = field(default=None, repr=False)
-    printer: sympy.printing.lambdarepr.LambdaPrinter = field(default=None, repr=False)
-    func_printer: KingdonPrinter = field(default=None, repr=False)
+    lambdifier: Callable = field(default=None, repr=False)
+    lambdifier_kwargs: dict = field(default_factory=dict, repr=False)
     wrapper: Callable = field(default=None, repr=False)
     values_asarray: Callable = field(default=None, repr=False)
 
@@ -117,10 +117,8 @@ class OperatorDict(Mapping):
          # If the user forces a different codegen settings for this operator then give them what they want.
         if not self.codegen_symbolcls:
             self.codegen_symbolcls = self.algebra.codegen_symbolcls
-        if not self.printer and self.algebra.printer:
-            self.printer = self.algebra.printer
-        if not self.func_printer and self.algebra.func_printer:
-            self.func_printer = self.algebra.func_printer
+        if not self.lambdifier and self.algebra.lambdifier:
+            self.lambdifier = self.algebra.lambdifier
         if not self.wrapper and self.algebra.wrapper:
             self.wrapper = self.algebra.wrapper
         if not self.values_asarray:
@@ -149,7 +147,7 @@ class OperatorDict(Mapping):
         if types_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
             symbolic_mvs = self.make_symbolic_mvs(types_in, shapes_in)
-            compiled = self.operator_dict[types_in] = self.algebra.compile(self.codegen, *symbolic_mvs, printer=self.printer, func_printer=self.func_printer, wrapper=self.wrapper, values_asarray=self.values_asarray)
+            compiled = self.operator_dict[types_in] = self.algebra.compile(self.codegen, *symbolic_mvs, lambdifier=self.lambdifier, wrapper=self.wrapper, values_asarray=self.values_asarray, **self.lambdifier_kwargs)
             self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
         return self.operator_dict[types_in]
 
@@ -240,7 +238,7 @@ class UnaryOperatorDict(OperatorDict):
         type_in = (type(mv), mv.keys())
         if type_in not in self.operator_dict:
             symbolic_mv = self.make_symbolic_mvs((type_in,), (mv.shape,))[0]
-            compiled = self.operator_dict[type_in] = self.algebra.compile(self.codegen, symbolic_mv, printer=self.printer, func_printer=self.func_printer, wrapper=self.wrapper, values_asarray=self.values_asarray)
+            compiled = self.operator_dict[type_in] = self.algebra.compile(self.codegen, symbolic_mv, lambdifier=self.lambdifier, wrapper=self.wrapper, values_asarray=self.values_asarray, **self.lambdifier_kwargs)
             self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
         return self.operator_dict[type_in]
 

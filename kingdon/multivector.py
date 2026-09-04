@@ -1,6 +1,5 @@
 import operator
 from collections.abc import Mapping, Sequence
-from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import reduce, cached_property, wraps

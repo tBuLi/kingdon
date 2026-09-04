@@ -10,6 +10,7 @@ import inspect
 import builtins
 import keyword
 import copy
+from functools import partial
 
 from sympy.utilities.iterables import iterable, flatten
 from sympy.printing.lambdarepr import LambdaPrinter
@@ -104,15 +105,19 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None, default
     return best_MVType, best_layout
 
 
-def do_compile_symbolic(codegen, *mvs, printer=None, func_printer=None, wrapper=None, values_asarray=None) -> CompiledExpression:
+def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asarray=None, lambdifier_kwargs: dict | None = None) -> CompiledExpression:
     """
     :param codegen: callable that performs codegen for the given :code:`mvs`. This can be any callable
         that returns a :class:`~kingdon.multivector.MultiVector`.
     :param mvs: Any remaining positional arguments are taken to be symbolic :class:`~kingdon.multivector.MultiVector`'s.
-    :param printer: The sympy style printer used to generate the code with sympy-style printing.
-    :param func_printer: The sympy style evaluator printer used to generate the code with sympy-style printing.
+    :param lambdifier: The function that turns the symbolic expressions into a python function.
+        Defaults to :func:`lambdify`.
+    :param lambdifier_kwargs: Keyword arguments bound onto the `lambdifier` before it is called.
     :return: Instance of :class:`CompiledExpression`.
     """
+    lambdifier = lambdifier or lambdify
+    if lambdifier_kwargs:
+        lambdifier = partial(lambdifier, **lambdifier_kwargs)
     algebra = mvs[0].algebra
     mvs_orig = [copy.deepcopy(mv) for mv in mvs]
 
@@ -142,10 +147,9 @@ def do_compile_symbolic(codegen, *mvs, printer=None, func_printer=None, wrapper=
     keys, exprs = tuple(res.keys()), list(res.values())
     if output_mv_idx is not None:
         keys = ()
-    func = lambdify(args, exprs, funcname=funcname,
-                    cse=algebra.cse, printer=printer, func_printer=func_printer,
-                    output_mv_idx=output_mv_idx
-                    )
+    func = lambdifier(
+        args, exprs, funcname=funcname, cse=algebra.cse, output_mv_idx=output_mv_idx
+    )
     return CompiledExpression(
         algebra, keys, func, MVType or algebra.mvtype, output_mv_idx, wrapper(func) if wrapper else func, values_asarray=values_asarray
     )
