@@ -474,11 +474,11 @@ def test_point_signs(pqr):
     else:
         assert not all(xi > 0 for xi in p1.values())
 
-@pytest.mark.parametrize("graded", [False, True])
-def test_custom_types_with_layout(graded):
+@pytest.mark.parametrize("full_layout", [False, True])
+def test_custom_types_with_layout(full_layout):
     """
-    Users can also directly specify a layout on a multivector type, instead of having to specify an archetype.
-    As we have seen in test_point_signs, the basis of the point archetype only works for the named algebras
+    Users can also directly specify a layout dict on a multivector type, instead of having to specify a layout classmethod.
+    As we have seen in test_point_signs, the basis of the point layout only works for the named algebras
     because they define a specific basis. So an ideal test is to use a custom type with a specific layout
     that will work in the unnamed equivalent of 2DPGA.
     """
@@ -499,8 +499,8 @@ def test_custom_types_with_layout(graded):
 
     extra_pga_types = [MyDirection, MyEVector, MyUPoint, MyPoint]
     with pytest.raises(ValueError):
-        Algebra(2, 0, 1, extra_types=[MyIllegalDirection, *extra_pga_types[1:]], graded=graded)
-    alg = Algebra(2, 0, 1, extra_types=extra_pga_types, graded=graded)
+        Algebra(2, 0, 1, extra_types=[MyIllegalDirection, *extra_pga_types[1:]], full_layout=full_layout)
+    alg = Algebra(2, 0, 1, extra_types=extra_pga_types, full_layout=full_layout)
     e0, e1, e2 = alg.blades.grade(1).values()
 
     assert type(alg.blades.e0) is MyUPoint

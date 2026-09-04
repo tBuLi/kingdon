@@ -160,12 +160,12 @@ class MultiVector(metaclass=MultiVectorType):
             if grades is None:
                 grades = tuple(sorted({k.bit_count() for k in keys + tuple(k for k, v in layout.items() if v != ...)}))
 
-        if algebra.graded and algebra._type_layouts:  # The second condition is false before layouts have been bound.
+        if algebra.full_layout and algebra._type_layouts:  # The second condition is false before layouts have been bound.
             if layout and len(keys) != len([v for v in layout.values() if v == ...]):
-                raise ValueError(f"In graded mode, the number of keys should be equal to "
+                raise ValueError(f"In full_layout mode, the number of keys should be equal to "
                                  f"those expected for a {cls} with layout {layout=}.")
             elif not layout and len(keys) != len(algebra):
-                raise ValueError(f"In graded mode, the number of keys for {cls} should be equal to {len(algebra)}.")
+                raise ValueError(f"In full_layout mode, the number of keys for {cls} should be equal to {len(algebra)}.")
 
         return keys
 

@@ -48,9 +48,11 @@ class Algebra:
     :param basis: Custom basis order, e.g. `["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"]` for 2DPGA.
     :param cse: If :code:`True` (default), attempt Common Subexpression Elimination (CSE)
         on symbolically optimized expressions.
-    :param graded: If :code:`True` (default is :code:`False`), perform binary and unary operations on a graded basis.
+    :param full_layout: If :code:`True` (default is :code:`False`), every multivector carries the full layout of its
+        type, so binary and unary operations are performed per type rather than per set of basis blades.
         This will still be more sparse than computing with a full multivector, but not as sparse as possible.
         It does however, vastly reduce the number of possible expressions that have to be symbolically optimized.
+    :param graded: Deprecated alias for :code:`full_layout`, which raises a :class:`FutureWarning` when given.
     :param extra_types: multivector types to use in addition to the standard ones already provided by kingdon. See :ref:`multivector types <Multivector Types>`.
     :param types: Complete list of multivector types to use. This will replace the standard ones. See :ref:`multivector types <Multivector Types>`.
     :param simplify: If :code:`True` (default), we attempt to simplify as much as possible. Setting this to
@@ -122,7 +124,8 @@ class Algebra:
 
     # Options for the algebra
     cse: bool = field(default=True, repr=False, compare=False)  # Common Subexpression Elimination (CSE)
-    graded: bool = field(default=False, repr=False)  # If true, precompute products per grade.
+    full_layout: bool = field(default=False, repr=False)  # If true, every mv carries the full layout of its type.
+    graded: InitVar[bool | None] = None  # Deprecated alias for full_layout.
     pretty_blade: str = field(default='𝐞', repr=False, compare=False)
     pretty_digits: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # TODO: this can be defined outside Algebra
     large: bool = field(default=None, repr=False, compare=False)
@@ -150,7 +153,11 @@ class Algebra:
     blades: "BladeDict" = field(init=False, repr=False, compare=False)
     pss: object = field(init=False, repr=False, compare=False)
 
-    def __post_init__(self, extra_types):
+    def __post_init__(self, graded, extra_types):
+        if graded is not None:
+            warnings.warn("The graded argument has been renamed to full_layout.", FutureWarning, stacklevel=2)
+            self.full_layout = graded
+
         if self.signature is not None:
             counts = Counter(self.signature)
             self.p, self.q, self.r = counts[1], counts[-1], counts[0]
@@ -767,7 +774,7 @@ class BladeDict(Mapping):
         if basis_blade not in self.blades:
             bin_blade = self.algebra.canon2bin[basis_blade]
             MVType, layout = resolve_layout(self.algebra._type_layouts, {bin_blade: 1}, default=self.algebra.mvtype)
-            if self.algebra.graded:
+            if self.algebra.full_layout:
                 keysvalues = tuple((idx, int(bin_blade == idx))
                                      for idx, value in layout.items() if value == ...)
                 keys, values = zip(*keysvalues) if keysvalues else ((), [])

@@ -220,12 +220,12 @@ def test_blades(vga2d):
 def _assert_blade_typing(alg, basis_blade, expected, expected_full):
     """ Assert that :code:`alg.blades[basis_blade]` has the expected value *and* type. """
     blade = alg.blades[basis_blade]
-    expectation = (expected_full if alg.graded else expected)(alg)
+    expectation = (expected_full if alg.full_layout else expected)(alg)
     assert type(blade) is type(expectation)
     assert blade == expectation
 
 
-@pytest.mark.parametrize("alg", [Algebra.fromname("2DPGA"), Algebra.fromname("2DPGA", graded=True)])
+@pytest.mark.parametrize("alg", [Algebra.fromname("2DPGA"), Algebra.fromname("2DPGA", full_layout=True)])
 @pytest.mark.parametrize("basis_blade, expected, expected_full", [
     ('e', lambda alg: Translation(alg), lambda alg: Translation(alg, [0, 0])),
     ('e0', lambda alg: UPoint(alg), lambda alg: UPoint(alg, [0, 0])),
@@ -251,7 +251,7 @@ def test_blades_typing_2dpga_named(alg, basis_blade, expected, expected_full):
     _assert_blade_typing(alg, basis_blade, expected, expected_full)
 
 
-@pytest.mark.parametrize("alg", [Algebra(2,0,1), Algebra(2,0,1, graded=True)])
+@pytest.mark.parametrize("alg", [Algebra(2,0,1), Algebra(2,0,1, full_layout=True)])
 @pytest.mark.parametrize("basis_blade, expected, expected_full", [
     ('e', lambda alg: Scalar(alg, e=1), lambda alg: Scalar(alg, [1])),
     ('e0', lambda alg: Vector(alg, e0=1), lambda alg: Vector(alg, [1, 0, 0])),
@@ -269,7 +269,7 @@ def test_blades_typing_2dpga(alg, basis_blade, expected, expected_full):
 
 
 # In 3DPGA the bivectors are just bivectors, whereas in 2DPGA they are directions.
-@pytest.mark.parametrize("alg", [Algebra.fromname('3DPGA'), Algebra.fromname('3DPGA', graded=True)])
+@pytest.mark.parametrize("alg", [Algebra.fromname('3DPGA'), Algebra.fromname('3DPGA', full_layout=True)])
 @pytest.mark.parametrize("basis_blade, expected, expected_full", [
     ('e', lambda alg: Translation(alg), lambda alg: Translation(alg, [0, 0, 0])),
     ('e0', lambda alg: UPoint(alg), lambda alg: UPoint(alg, [0, 0, 0])),
@@ -382,17 +382,26 @@ def test_outer(sta):
     assert BwB.grades == (4,)
     assert BwB.e1234 == 2*(B.e12*B.e34 - B.e13*B.e24 + B.e14*B.e23)
 
-def test_alg_graded(vga2d):
-    vga2d_graded = replace(vga2d, graded=True)
-    assert vga2d != vga2d_graded
-    u = vga2d_graded.vector([1, 2])
-    v = vga2d_graded.vector([0, 3])
+def test_alg_full_layout(vga2d):
+    vga2d_full = replace(vga2d, full_layout=True)
+    assert vga2d != vga2d_full
+    u = vga2d_full.vector([1, 2])
+    v = vga2d_full.vector([0, 3])
     R = u * v
     assert R.grades == (0, 2)
     assert R.e == 6
     assert R.e1 == 0
     assert R.e2 == 0
     assert R.e12 == 3
+
+
+def test_alg_graded_deprecated():
+    with pytest.warns(FutureWarning):
+        alg = Algebra(2, graded=True)
+    assert alg.full_layout
+    with pytest.warns(FutureWarning):
+        alg = Algebra.fromname('2DPGA', graded=False)
+    assert not alg.full_layout
 
 
 def test_inner_products(vga2d):
@@ -793,16 +802,16 @@ def test_type():
 
 
 @pytest.mark.parametrize("alg", [
-    Algebra(2, 0, 1, graded=True),
-    Algebra(3, graded=True),
-    Algebra.fromname("2DPGA", graded=True),
+    Algebra(2, 0, 1, full_layout=True),
+    Algebra(3, full_layout=True),
+    Algebra.fromname("2DPGA", full_layout=True),
 ])
-def test_graded(alg):
+def test_full_layout(alg):
     for b in alg.blades.values():
         assert b.keys() == tuple(k for k, v in alg._type_layouts[type(b)].items() if v == ...)
 
     with pytest.raises(ValueError):
-        # In graded mode, the keys have to be correct.
+        # In full_layout mode, the keys have to be correct.
         x = alg.multivector(name='x', keys=(1,))
 
 
@@ -814,7 +823,7 @@ def test_blade_dict():
     with pytest.raises(AttributeError):
         alg.blades.f123
 
-    alg = Algebra(2, graded=True)
+    alg = Algebra(2, full_layout=True)
     assert not alg.blades.lazy
     assert len(alg.blades) == len(alg)
     assert len(alg.blades['e1'].values()) == 2
@@ -826,7 +835,7 @@ def test_blade_dict():
     assert len(alg.blades['e12'].values()) == 1
     assert len(alg.blades) == 9
 
-    alg = Algebra(7, graded=True)
+    alg = Algebra(7, full_layout=True)
     assert alg.blades.lazy
     assert len(alg.blades) == 8  # PSS is calculated by default
     assert len(alg.blades['e12'].values()) == len(tuple(alg.indices_for_grade(2)))
