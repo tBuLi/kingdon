@@ -47,17 +47,18 @@ Features
 Kingdon is a Geometric Algebra (GA) library which combines a Pythonic API with
 symbolic simplification and just-in-time compilation to achieve high-performance in a single package.
 It support both symbolic and numerical GA computations.
-Moreover, :code:`kingdon` uses :code:`ganja.js` for visualization in notebooks,
+Moreover, :code:`kingdon` uses `ganja.js <https://github.com/enkimute/ganja.js>`__ for visualization in notebooks,
 making it an extremely well rounded GA package.
 
 In bullet points:
 
-- Symbolically optimized.
+- Symbolically optimized code generation.
 - Leverage sparseness of input.
-- :code:`ganja.js` enabled graphics in jupyter notebooks.
-- Agnostic to the input types: work with GA's over :code:`numpy` arrays, :code:`PyTorch` tensors, :code:`sympy` expressions, etc. Any object that overloads addition, subtraction and multiplication makes for valid multivector coefficients in :code:`kingdon`.
+- `ganja.js <https://github.com/enkimute/ganja.js>`__ enabled graphics in jupyter notebooks.
+- Agnostic to the input types: work with GA's over `numpy <https://numpy.org/>`__ arrays, `torch <https://pytorch.org/>`__ tensors, `sympy <https://www.sympy.org/>`__ expressions, etc. Any object that overloads addition, subtraction and multiplication makes for valid multivector coefficients in :code:`kingdon`.
 - Automatic broadcasting, such that transformations can be applied to e.g. point-clouds.
-- Compatible with :code:`numba` and other JIT compilers to speed-up numerical computations.
+- Compatible with `einops <https://einops.rocks/>`__ if you :code:`import kingdon.einops_backend` before you do your einops magic.
+- Compatible with `numba <https://numba.pydata.org/>`__ and other JIT compilers to speed-up numerical computations.
 
 Teahouse Menu
 =============
@@ -178,15 +179,6 @@ It is also possible to define some coefficients to be symbolic by inputting a st
     3 𝐞₀ + (-b12) 𝐞₂
 
 
-A :code:`kingdon` MultiVector with symbols is callable. So in order to evaluate :code:`w` from the previous example,
-for a specific value of :code:`b12`, simply call :code:`w`:
-
-.. code-block:: python
-
-    >>> w(b12=10)
-    3 𝐞₀ + -10 𝐞₂
-
-
 Overview of Operators
 =====================
 .. list-table:: Operators
@@ -301,4 +293,4 @@ Overview of Operators
 Credits
 -------
 
-This package was inspired by GAmphetamine.js.
+This package was inspired by `GAmphetamine.js <https://github.com/enkimute/GAmphetamine.js>`__.

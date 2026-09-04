@@ -5,3 +5,4 @@ ipykernel
 symfit
 matplotlib
 clifford
+einops

@@ -1,14 +1,17 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from collections.abc import Mapping
-from typing import Callable, Tuple
-from functools import wraps
+from collections.abc import Mapping, Callable
+from typing import NamedTuple
+from functools import wraps, cached_property
 import inspect
 import string
+from types import GenericAlias
 
-from sympy import Symbol, Expr, simplify
+import sympy
 
-from kingdon.multivector import MultiVector
-from kingdon.codegen import do_codegen, do_compile
+from kingdon.multivector import MultiVector, MultiVectorType, Scalar, stack
+from kingdon.codegen import do_compile_symbolic, do_compile
 from kingdon.taperecorder import TapeRecorder
 from kingdon.polynomial import RationalPolynomial
 
@@ -31,7 +34,7 @@ def resolve_and_expand(func):
 
     if is_method:
         @wraps(func)
-        def wrapper(self, *mvs):
+        def wrapper(self, *mvs, **kwargs):
             mvs = list(mvs)
             for i in range(len(mvs)):
                 mv = mvs[i]
@@ -43,13 +46,13 @@ def resolve_and_expand(func):
             for i in range(len(mvs)):
                 mv = mvs[i]
                 if isinstance(mv, (tuple, list)):
-                    return type(mv)(wrapper(self, *(mvs[:i] + [x] + mvs[i + 1:])) for x in mv)
+                    return type(mv)(wrapper(self, *(mvs[:i] + [x] + mvs[i + 1:]), **kwargs) for x in mv)
 
-            return func(self, *mvs)
+            return func(self, *mvs, **kwargs)
         return wrapper
 
     @wraps(func)
-    def wrapper(*mvs):
+    def wrapper(*mvs, **kwargs):
         mvs = list(mvs)
         for i in range(len(mvs)):
             mv = mvs[i]
@@ -61,38 +64,29 @@ def resolve_and_expand(func):
         for i in range(len(mvs)):
             mv = mvs[i]
             if isinstance(mv, (tuple, list)):
-                return type(mv)(wrapper(*(mvs[:i] + [x] + mvs[i + 1:])) for x in mv)
+                return type(mv)(wrapper(*(mvs[:i] + [x] + mvs[i + 1:]), **kwargs) for x in mv)
 
-        return func(*mvs)
+        return func(*mvs, **kwargs)
 
     return wrapper
 
 
-def do_operation(*mvs, codegen, algebra) -> MultiVector:
+def do_operation(*mvs, codegen, algebra, MVType=None) -> MultiVector:
     """
     This function just does the operation directly on the MV's, no codegen is performed.
     This is used for large algebras, where codegen is too costly.
     The result is the multivector resulting from :code:`codegen(*mvs)`.
     """
-    mvs = [mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(algebra, (0,), (mv,))
+    MVType = MVType or algebra.mvtype
+    mvs = [mv if isinstance(mv, MultiVector) else algebra.mvtype.fromkeysvalues(algebra, (0,), [mv,])
            for mv in mvs]
     if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
         raise AlgebraError("Cannot multiply elements of different algebra's.")
 
     res = codegen(*mvs)
     if isinstance(res, MultiVector):
-        return res
-    elif isinstance(res, dict):
-        # TODO: Can this sort be done without canon2bin?
-        res = {bin: res[bin] if isinstance(res, dict) else getattr(res, canon)
-               for canon, bin in algebra.canon2bin.items() if bin in res.keys()}
-        if not res:
-            return MultiVector.fromkeysvalues(algebra, tuple(), [])
-        keys, values = zip(*res.items())
-        return MultiVector.fromkeysvalues(algebra, keys, list(values)).filter()
-    else:
-        # TODO: there is probably something better than raising an error.
-        raise NotImplementedError(type(res))
+        return res.asmvtype(MVType)
+    return res
 
 
 @dataclass
@@ -102,93 +96,132 @@ class OperatorDict(Mapping):
     and caches the result for future use. For example, to generate the geometric product,
     we create an OperatorDict as follows::
 
+        import kingdon.operators as ops
         alg = Algebra(3, 0, 1)
-        gp = OperatorDict('gp', codegen=codegen_gp, algebra=alg)
+        gp = OperatorDict('gp', codegen=ops.gp, algebra=alg)
 
-    Here, :code:`codegen_gp` is a function that outputs the keys of the result, and a callable that
-    produces the corresponding values. See :class:`~kingdon.codegen.CodegenOutput` for more info.
+    Here, :code:`ops.gp` is a function that takes two symbolic :class:`~kingdon.multivector.MultiVector` as input
+    and outputs a single :class:`~kingdon.multivector.MultiVector`.
     """
     name: str
     codegen: Callable
     algebra: "Algebra"
     operator_dict: dict = field(default_factory=dict, init=False)
-    codegen_symbolcls: Callable = field(default=RationalPolynomial.fromname, repr=False)
+    codegen_symbolcls: Callable = field(default=None, repr=False)
+    lambdifier: Callable = field(default=None, repr=False)
+    lambdifier_kwargs: dict = field(default_factory=dict, repr=False)
+    wrapper: Callable = field(default=None, repr=False)
+    values_asarray: Callable = field(default=None, repr=False)
 
     def __post_init__(self):
-        if self.algebra.codegen_symbolcls is not None:
-            # If the user forces a different codegen_symbolcls then give them what they want.
+         # If the user forces a different codegen settings for this operator then give them what they want.
+        if not self.codegen_symbolcls:
             self.codegen_symbolcls = self.algebra.codegen_symbolcls
+        if not self.lambdifier and self.algebra.lambdifier:
+            self.lambdifier = self.algebra.lambdifier
+        if not self.wrapper and self.algebra.wrapper:
+            self.wrapper = self.algebra.wrapper
+        if not self.values_asarray:
+            self.values_asarray = self.algebra.values_asarray
 
     def __len__(self):
         return len(self.operator_dict)
 
-    def __getitem__(self, keys_in: Tuple[Tuple[int]]):
-        if keys_in not in self.operator_dict:
-            # Make symbolic multivectors for each set of keys and generate the code.
-            mvs = [MultiVector.fromkeysvalues(self.algebra, keys, list(self.codegen_symbolcls(f'{name}{self.algebra.bin2canon[k][1:]}') for k in keys))
-                   for name, keys in zip(string.ascii_lowercase, keys_in)]
-            keys_out, func = do_codegen(self.codegen, *mvs)
-            self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
-            self.operator_dict[keys_in] = (keys_out, func)
-        return self.operator_dict[keys_in]
+    def _make_symbolic_mv(self, name, keys, shape, mvtype, mvtypehint) -> MultiVector:
+        depth = mvtypehint[1] if isinstance(mvtypehint, tuple) else 0  # Must come from the type-hint.
+        if depth is None: depth = shape[0]  # If the type hint was MultiVector[None] than the depth should be taken from the input
+        if not depth:
+            return mvtype.fromname(self.algebra, name, keys, symbolcls=self.codegen_symbolcls)
+        return stack([mvtype.fromname(self.algebra, f'{name}_{k}', keys, symbolcls=self.codegen_symbolcls)
+                      for k in range(depth)])
 
-    def __contains__(self, keys_in: Tuple[Tuple[int]]):
-        return keys_in in self.operator_dict
+    def make_symbolic_mvs(self, types_in: tuple[tuple[type, tuple[int]]], shapes_in: tuple[tuple[int]]) -> tuple[MultiVector]:
+        return tuple(
+            self._make_symbolic_mv(name, keys, shape, MVtype, MVTypeHint)
+            for (name, MVTypeHint), (MVtype, keys), shape in zip(self.codegen_input_types.items(), types_in, shapes_in)
+        )
+
+    def __getitem__(self, mvs: tuple[MultiVector]):
+        types_in = tuple((type(mv), mv.keys()) for mv in mvs)
+        shapes_in = tuple(mv.shape for mv in mvs)
+        if types_in not in self.operator_dict:
+            # Make symbolic multivectors for each set of keys and generate the code.
+            symbolic_mvs = self.make_symbolic_mvs(types_in, shapes_in)
+            compiled = self.operator_dict[types_in] = self.algebra.compile(self.codegen, *symbolic_mvs, lambdifier=self.lambdifier, wrapper=self.wrapper, values_asarray=self.values_asarray, **self.lambdifier_kwargs)
+            self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
+        return self.operator_dict[types_in]
+
+    def __contains__(self, mvs: tuple[MultiVector]):
+        types_in = tuple((type(mv), mv.keys()) for mv in mvs)
+        return types_in in self.operator_dict
 
     def __iter__(self):
         return iter(self.operator_dict)
 
-    def filter(self, keys_out, values_out):
-        """ For given keys and values, keep only symbolically non-zero elements. """
-        keysvalues = tuple((k, simpv) for k, v in zip(keys_out, values_out) if (simpv := self.algebra.simp_func(v)))
-        keys, values = zip(*keysvalues) if keysvalues else (tuple(), list())
-        return keys, list(values)
+    @cached_property
+    def codegen_input_types(self):
+        return {name: self.algebra.mvtype if p.annotation in (inspect.Parameter.empty, "MultiVector") else p.annotation
+                for name, p in inspect.signature(self.codegen).parameters.items()}
+
+    @cached_property
+    def codegen_output_type(self):
+        return_annotation = inspect.signature(self.codegen).return_annotation
+        return self.algebra.mvtype if return_annotation in (inspect.Parameter.empty, "MultiVector") else return_annotation
+
+    def _sanitize_mvs(self, mvs: tuple[MultiVector]):
+        """
+        Make sure all inputs match their type annotations.
+        If an input is expected to be a MultiVector but is not, cast it to a scalar.
+        # TODO: make sure that if the typehint was trivial, then we do not want to pay the price
+        #   of fixing an interesting typehint.
+        """
+        if len(mvs) == 1:
+            mv = mvs[0]
+            mv = mv if isinstance(mv, MultiVector) else Scalar.fromkeysvalues(self.algebra, (0,), [mv])
+            return (mv,)
+        if len(mvs) == 2:
+            mv1, mv2 = mvs
+            mv1 = mv1 if isinstance(mv1, MultiVector) else Scalar.fromkeysvalues(self.algebra, (0,), [mv1])
+            mv2 = mv2 if isinstance(mv2, MultiVector) else Scalar.fromkeysvalues(self.algebra, (0,), [mv2])
+            mvs = (mv1, mv2)
+        else:
+            mvs = [mv if isinstance(mv, MultiVector) else Scalar.fromkeysvalues(self.algebra, (0,), [mv])
+                   for mv in mvs]
+        if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
+            raise AlgebraError("Cannot multiply elements of different algebra's.")
+        return mvs
 
     @resolve_and_expand
     def __call__(self, *mvs):
+        mvs = self._sanitize_mvs(mvs)
         if len(mvs) == 2:
             return self._call_binary(*mvs)
 
-        # Make sure all inputs are multivectors. If an input is not, assume its scalar.
-        mvs = [mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), (mv,))
-               for mv in mvs]
-        if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
-            raise AlgebraError("Cannot multiply elements of different algebra's.")
+        compiled_expr = self[mvs]
+        mv_out = compiled_expr(*mvs)
 
-        keys_in = tuple(mv.keys() for mv in mvs)
-        values_in = tuple(mv.values() for mv in mvs)
-        keys_out, func = self[keys_in]
         issymbolic = any(mv.issymbolic for mv in mvs)
-        if issymbolic or not mvs[0].algebra.wrapper:
-            values_out = func(*values_in)
-        else:
-            values_out = self.algebra.numspace[func.__name__](*values_in)
-
         if issymbolic and self.algebra.simp_func:
-            keys_out, values_out = self.filter(keys_out, values_out)
-
-        return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)
+            if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
+                mvs[output_mv_idx].set(mvs[output_mv_idx].filter(self.algebra.simp_func, map=True))
+            else:
+                mv_out = mv_out.filter(self.algebra.simp_func, map=True)
+        return mv_out
 
     def _call_binary(self, mv1, mv2):
         """ Specialization for binary operators. """
-        # Make sure all inputs are multivectors. If an input is not, assume its scalar.
-        mv1 = mv1 if isinstance(mv1, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv1])
-        mv2 = mv2 if isinstance(mv2, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), [mv2])
-        # Check is written to be fast, not readable. Typically, the first check is true.
-        if not (mv1.algebra is mv2.algebra or mv1.algebra == mv2.algebra):
-            raise AlgebraError("Cannot multiply elements of different algebra's.")
+        compiled_expr = self[mv1, mv2]
+        mv_out = compiled_expr(mv1, mv2)
 
-        keys_out, func = self[mv1.keys(), mv2.keys()]
         issymbolic = (mv1.issymbolic or mv2.issymbolic)
-        if issymbolic or not mv1.algebra.wrapper:
-            values_out = func(mv1.values(), mv2.values())
-        else:
-            values_out = self.algebra.numspace[func.__name__](mv1.values(), mv2.values())
-
         if issymbolic and self.algebra.simp_func:
-            keys_out, values_out = self.filter(keys_out, values_out)
+            if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
+                mvs = [mv1, mv2]
+                mvs[output_mv_idx].set(mvs[output_mv_idx].filter(self.algebra.simp_func, map=True))
+            else:
+                mv_out = mv_out.filter(self.algebra.simp_func, map=True)
 
-        return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)
+        return mv_out
 
 
 class UnaryOperatorDict(OperatorDict):
@@ -197,62 +230,73 @@ class UnaryOperatorDict(OperatorDict):
     case of unary operators, we can do away with all of the overhead that is necessary for
     operators that act on multiple multivectors.
     """
-    def __getitem__(self, keys_in: Tuple[Tuple[int]]):
-        if keys_in not in self.operator_dict:
-            mv = MultiVector.fromkeysvalues(self.algebra, keys_in, list(self.codegen_symbolcls(f'a{self.algebra.bin2canon[k][1:]}') for k in keys_in))
-            keys_out, func = do_codegen(self.codegen, mv)
-            self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
-            self.operator_dict[keys_in] = (keys_out, func)
-        return self.operator_dict[keys_in]
+    def __contains__(self, mv: MultiVector):
+        types_in = (type(mv), mv.keys())
+        return types_in in self.operator_dict
+
+    def __getitem__(self, mv: MultiVector):
+        type_in = (type(mv), mv.keys())
+        if type_in not in self.operator_dict:
+            symbolic_mv = self.make_symbolic_mvs((type_in,), (mv.shape,))[0]
+            compiled = self.operator_dict[type_in] = self.algebra.compile(self.codegen, symbolic_mv, lambdifier=self.lambdifier, wrapper=self.wrapper, values_asarray=self.values_asarray, **self.lambdifier_kwargs)
+            self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
+        return self.operator_dict[type_in]
 
     @resolve_and_expand
     def __call__(self, mv):
-        keys_out, func = self[mv.keys()]
+        mv = self._sanitize_mvs((mv,))[0]
+        compiled_expr = self[mv]
+        mv_out = compiled_expr(mv)
 
         issymbolic = mv.issymbolic
-        if issymbolic or not mv.algebra.wrapper:
-            values_out = func(mv.values())
-        else:
-            values_out = self.algebra.numspace[func.__name__](mv.values())
-
         if issymbolic and self.algebra.simp_func:
-            keys_out, values_out = self.filter(keys_out, values_out)
+            if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
+                mv[output_mv_idx].set(mv.filter(self.algebra.simp_func, map=True))
+            else:
+                mv_out = mv_out.filter(self.algebra.simp_func, map=True)
 
-        return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)
+        return mv_out
 
 
 class Registry(OperatorDict):
-    def __getitem__(self, keys_in: Tuple[Tuple[int]]):
-        if keys_in not in self.operator_dict:
+    def __getitem__(self, mvs: tuple[MultiVector]):
+        types_in = tuple((type(mv), mv.keys()) for mv in mvs)
+        shapes_in = tuple(mv.shape for mv in mvs)
+        if types_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
-            tapes = [TapeRecorder(algebra=self.algebra, expr=name, keys=keys)
-                     for name, keys in zip(string.ascii_lowercase, keys_in)]
-            keys_out, func = do_compile(self.codegen, *tapes)
-            self.algebra.numspace[func.__name__] = self.algebra.wrapper(func) if self.algebra.wrapper else func
-            self.operator_dict[keys_in] = (keys_out, func)
-        return self.operator_dict[keys_in]
+            # tapes = [TapeRecorder(algebra=self.algebra, expr=name, mvtype=MVType, keys=keys)
+            #          for name, (MVType, keys) in zip(string.ascii_lowercase, types_in)]
+            tapes = self.make_symbolic_mvs(types_in, shapes_in)
+            compiled = self.operator_dict[types_in] = self.algebra.compile(self.codegen, *tapes, symbolic=False, wrapper=self.wrapper, values_asarray=self.values_asarray)
+            self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
+        return self.operator_dict[types_in]
 
     @resolve_and_expand
     def __call__(self, *mvs):
         if all(isinstance(mv, TapeRecorder) for mv in mvs):
-            keys_in = tuple(mv.keys() for mv in mvs)
-            keys_out, func = self[keys_in]
-            expr = f"{func.__name__}({', '.join(mv.expr for mv in mvs)})"
-            return TapeRecorder(self.algebra, keys=keys_out, expr=expr)
+            types_in = tuple((mv.mvtype, mv.keys()) for mv in mvs)
+            compiled_expr = self.operator_dict[types_in]
+            expr = f"{compiled_expr.func.__name__}({', '.join(mv.expr for mv in mvs)})"
+            return TapeRecorder(self.algebra, mvtype=compiled_expr.mvtype, keys=compiled_expr.keys_out, expr=expr)
 
         # Make sure all inputs are multivectors. If an input is not, assume its scalar.
-        mvs = [mv if isinstance(mv, MultiVector) else MultiVector.fromkeysvalues(self.algebra, (0,), (mv,))
+        mvs = [mv if isinstance(mv, MultiVector) else self.algebra.mvtype.fromkeysvalues(self.algebra, (0,), (mv,))
                for mv in mvs]
         if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
             raise AlgebraError("Cannot multiply elements of different algebra's.")
 
-        keys_in = tuple(mv.keys() for mv in mvs)
-        values_in = tuple(mv.values() for mv in mvs)
-        keys_out, func = self[keys_in]
+        compiled_expr = self[mvs]
+        return compiled_expr(*mvs)
 
-        if not mvs[0].algebra.wrapper:
-            values_out = func(*values_in)
-        else:
-            values_out = self.algebra.numspace[func.__name__](*values_in)
+    def _make_symbolic_mv(self, name, keys, shape, mvtype, mvtypehint) -> TapeRecorder:
+        depth = mvtypehint[1] if isinstance(mvtypehint, tuple) else 0  # Must come from the type-hint.
+        if depth is None: depth = shape[1]  # If the type hint was MultiVector[None] than the depth should be taken from the input
+        if not depth:
+            return TapeRecorder.fromname(self.algebra, name, keys, mvtype=mvtype)
+        return TapeRecorder.fromname(self.algebra, name, keys, mvtype=mvtype, shape=(depth,))
 
-        return MultiVector.fromkeysvalues(self.algebra, keys=keys_out, values=values_out)
+    def make_symbolic_mvs(self, types_in: tuple[tuple[type, tuple[int]]], shapes_in: tuple[tuple[int]]) -> tuple[TapeRecorder]:
+        return tuple(
+            self._make_symbolic_mv(name, keys, shape, MVType, MVTypeHint)
+            for (name, MVTypeHint), (MVType, keys), shape in zip(self.codegen_input_types.items(), types_in, shapes_in)
+        )

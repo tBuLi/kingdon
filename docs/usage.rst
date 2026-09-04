@@ -16,12 +16,12 @@ For example, in order to create a 2D Geometric Algebra we can initiate
     >>> alg = Algebra(2)  # Equivalent: default value for p, q, r is 0.
 
 The basis blades of the algebra are available in the dictionary :code:`alg.blades`. This can be
-added to :code:`locals()` in order to allow for easy access to all the basis blades, and allows
+added to :code:`globals()` in order to allow for easy access to all the basis blades, and allows
 the initiation of multivectors using the basis-blades directly:
 
 .. code-block::
 
-    >>> locals().update(alg.blades)
+    >>> globals().update(alg.blades)
     >>> x = 2 * e + 1 * e1 - 5 * e2 + 6 * e12
 
 where :code:`e` is the identity element, i.e. :math:`e = 1`.
@@ -49,13 +49,11 @@ For example, let us create two symbolic vectors :code:`u` and :code:`v` in this 
 The return type of :meth:`~kingdon.algebra.Algebra.multivector` is an instance of :class:`~kingdon.multivector.MultiVector`.
 
 .. note::
-    :code:`kingdon` offers convenience methods for common types of multivectors, such as the vectors above.
-    For example, the vectors above can also be created using :code:`u = alg.vector(name='u')`.
-    Moreover, a scalar is created by :meth:`~kingdon.algebra.Algebra.scalar`,
-    a bivector by :meth:`~kingdon.algebra.Algebra.bivector`,
-    a pseudoscalar by :meth:`~kingdon.algebra.Algebra.pseudoscalar`, and so on.
-    However, all of these merely add the corresponding :code:`grades` argument to your input and
-    then call :class:`~kingdon.algebra.Algebra.multivector`, so :class:`~kingdon.algebra.Algebra.multivector` is what we need to understand.
+    :code:`kingdon` offers constructors for common types of multivectors, such as the vectors above.
+    For example, the vectors above can also be created using :code:`u = alg.vector(name='u')`,
+    a scalar by :code:`alg.scalar`, a bivector by :code:`alg.bivector`, a pseudoscalar by
+    :code:`alg.pseudoscalar`, and so on.
+    More on :ref:`multivector types <Multivector Types>` will follow later.
 
 :class:`~kingdon.multivector.MultiVector`'s support common math operators:
 
@@ -75,17 +73,29 @@ We also have the inner and exterior "products":
     >>> u ^ v
     (u1*v2 - u2*v1) 𝐞₁₂
 
-We see that *in the case of vectors* the product is equal to the sum of the inner and exterior.
+We see that *in the case of vectors* the product is equal to the sum of the inner and exterior,
+which is the famous GA relationship :math:`uv = u \cdot v + u \wedge v`.
 
 Since vectors in 2DVGA represent reflections in lines through the origin, we can reflect the
-line :code:`v` in the line :code:`u` by using conjugation:
+line :code:`v` in the line :code:`u` by using conjugation: :math:`u[v] = - u v u^{-1}`.
+This is implemented in kingdon as :code:`u >> v`.
 
 .. code-block::
 
     >>> u >> v
-    (-u1**2*v1 - 2*u1*u2*v2 + u2**2*v1) 𝐞₁ + (u1**2*v2 - 2*u1*u2*v1 - u2**2*v2) 𝐞₂
+    (-2*u1*u2*v2 + 2*u2**2*v1 - v1) 𝐞₁ + (2*u1**2*v2 - 2*u1*u2*v1 - v2) 𝐞₂
 
 we see that the result is again a vector, as it should be.
+
+.. warning::
+    Kingdon's codegen *assumes* the versor satisfies :math:`u \widetilde{u} = 1`,
+    and hence :math:`u^{-1} = \widetilde{u}`,
+    for conjugation (:code:`>>`) and projection (:code:`@`).
+    This assumption allows kingdon to optimize the generated code even further
+    for the common scenario where :math:`u \in \text{Pin}(p,q,r)`.
+    However, ensuring that :code:`u` is actually normalized is up to you.
+    If you do not want to rely on this assumption, you can also define
+    your own :ref:`operators <Adding Operators>`.
 
 These examples should show that the symbolic multivectors of :code:`kingdon`
 make it easy to do symbolic computations. Moreover, we can also use :mod:`sympy` expressions
@@ -97,7 +107,7 @@ as values for the multivector:
     >>> t = Symbol('t')
     >>> x = cos(t) * e + sin(t) * e12
     >>> x.normsq()
-    1
+    (1)
 
 .. note::
     Strings are also automatically converted to symbolics with SymPy.
@@ -107,7 +117,7 @@ as values for the multivector:
 
         >>> x = alg.multivector(e='cos(t)', e12='sin(t)')
         >>> x.normsq()
-        1
+        (1)
 
 More control over basisvectors
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -126,9 +136,10 @@ Internally, :code:`kingdon` uses the binary representation.
 
 Numerical Multivectors
 ----------------------
-While :code:`kingdon` makes no assumptions about the data structures that are passed into a multivector
-in order to support ducktyping and customization as much as possible, it was nonetheless designed to
-work really well with :code:`numpy` arrays.
+:code:`kingdon` makes no assumptions about the data structures that are passed into a multivector
+in order to support ducktyping and customization as much as possible.
+This also means it works really well with e.g. :code:`numpy` arrays or :code:`torch` tensors.
+(See the :ref:`array section <Array Syntax>` for more specific info.)
 
 For example, to repeat some of the examples above with numerical values, we could do
 
@@ -141,10 +152,10 @@ For example, to repeat some of the examples above with numerical values, we coul
     >>> u * v
     (0.1541) + (0.0886) 𝐞₁₂
 
-A big performance bottleneck that we suffer from in Python, is that arrays over objects are very slow.
+A big performance bottleneck that we suffer from in Python, is that arrays over objects are very slow. (array of structures.)
 So while we could make a numpy array filled with :code:`~kingdon.multivector.MultiVector`'s, this would tank our performance.
-:code:`kingdon` gets around this problem by instead accepting numpy arrays as input. So to make a collection of
-3 lines, we do
+:code:`kingdon` gets around this problem by instead accepting numpy arrays as input. (structure of arrays.)
+So to make a collection of 3 lines in kingdon, we do
 
 .. code-block::
 
@@ -164,7 +175,61 @@ All other dimensions are not used by :code:`kingdon`. Now we can reflect this mu
     ([0.82499172 0.71181276 0.98052928]) 𝐞₁ + ([-0.53395072 -0.07312351 -0.42464341]) 𝐞₂
 
 Despite the different shapes, broadcasting is done correctly in the background thanks to the magic of numpy,
-and with only minor performance penalties.
+and with vanishing performance penalties as the sizes of the arrays increase.
+
+Multivector Types
+-----------------
+
+Every algebra comes with a list of
+multivector types, each available as a constructor on the algebra. The k-vectors
+(:code:`scalar`, :code:`vector`, :code:`bivector`, ...) are always there, :code:`bireflection` from
+:math:`d \geq 2`, and the PGA types :code:`direction`, :code:`evector`, :code:`upoint`, :code:`point`
+and :code:`translation` when a PGA is created from name:
+
+.. code-block::
+
+    >>> pga = Algebra.fromname('3DPGA')
+    >>> p = pga.point(name='p'); p
+    p032 𝐞₀₃₂ + p013 𝐞₀₁₃ + p021 𝐞₀₂₁ + 1.0 𝐞₁₂₃
+    >>> d = pga.direction(name='d'); d
+    d032 𝐞₀₃₂ + d013 𝐞₀₁₃ + d021 𝐞₀₂₁
+    >>> t = pga.translation(name='t'); t
+    1.0 + t01 𝐞₀₁ + t02 𝐞₀₂ + t03 𝐞₀₃
+
+Notice that a point knows its :math:`\mathbf{e}_{123}` coefficient is :code:`1.0`, and a translation
+knows its scalar part is :code:`1.0`. These are properties of the type, not values you have to supply:
+all three examples above are only three values in memory.
+The type-system also enables :code:`kingdon` to generate even shorter code.
+
+Every :math:`k`-vector also has a :math:`d - k` dual, which are available by prepending :code:`pseudo` to the name.
+So in 3DPGA a pseudoscalar is a quadvector, and a pseudovector is a trivector:
+
+.. code-block::
+
+    >>> pga.pseudoscalar(name='s')
+    s0123 𝐞₀₁₂₃
+    >>> pga.pseudovector(name='w')
+    w032 𝐞₀₃₂ + w013 𝐞₀₁₃ + w021 𝐞₀₂₁ + w123 𝐞₁₂₃
+
+Results of operations are typed as well, so :code:`kingdon` keeps track of what you are computing with:
+
+.. code-block::
+
+    >>> type(pga.vector(name='u') * pga.vector(name='v'))
+    <class 'kingdon.multivector.Bireflection'>
+    >>> type(pga.point(name='p') & pga.point(name='q'))
+    <class 'kingdon.multivector.Bivector'>
+
+Because points are defined as the dual of the "undual point" :code:`upoint`,
+they can be made in a dimension agnostic way:
+
+.. code-block::
+
+    >>> pga.upoint(e1='x').dual()
+    x 𝐞₀₃₂ + 1.0 𝐞₁₂₃
+
+You can add your own types with the :code:`extra_types` argument to :class:`~kingdon.algebra.Algebra`,
+or replace the standard list entirely with :code:`types`. See :doc:`types` for how to define one.
 
 Operators
 ---------
@@ -274,27 +339,232 @@ Graphing using :code:`ganja.js`
 
 .. code-block::
 
-    >>> alg.graph(0xff0000, u, "u", lineWidth=3)
+    >>> alg = Algebra(2, 0, 1)
+    >>> A, B, C = alg.upoint(e1=1, e2=1).dual(), alg.upoint(e1=-1, e2=1).dual(), alg.upoint(e1=-1, e2=-1).dual()
+    >>> alg.graph(
+    ...     0xD0FFE1, [A, B, C],
+    ...     0x224488, A, "A", B, "B", C, "C",
+    ...     lineWidth=3, grid=1, labels=1
+    ... )
+
+Running this in a notebook produces:
+
+.. raw:: html
+
+    <div id="kingdon-graph-demo" style="width: 100%; height: 220px; border: 1px solid #ddd; border-radius: 4px;"></div>
+    <script>
+      // ganja.js registers itself via AMD if a `define.amd` loader (such as the
+      // RequireJS instance these docs load for notebook widgets) is present on the
+      // page, in which case it never attaches `Algebra` to `window`. So, exactly like
+      // kingdon.graph.js does for the notebook widget, we fetch the source and eval
+      // it with `define` shadowed to force the plain-global export path instead.
+      fetch("https://enki.ws/ganja.js/ganja.js")
+        .then((response) => response.text())
+        .then((ganja_source) => {
+          const ctx = {};
+          new Function("const define=1;" + ganja_source).apply(ctx);
+          const Algebra = ctx.Algebra;
+
+          Algebra(2, 0, 1, () => {
+            var A = !(1e0 + 1e1 + 1e2);
+            var B = !(1e0 + -1e1 + 1e2);
+            var C = !(1e0 + -1e1 - 1e2);
+            var el = this.graph([
+              0xD0FFE1, [A, B, C],
+              0x224488, A, "A", B, "B", C, "C",
+            ], {lineWidth: 3, grid: 1, labels: 1});
+            el.style.width = "100%";
+            el.style.height = "100%";
+            document.getElementById("kingdon-graph-demo").appendChild(el);
+          });
+        });
+    </script>
 
 The rules are simple: all positional arguments will be passed on to :code:`ganja.js` as
 elements to graph, whereas keyword arguments are passed to :code:`ganja.js` as options.
-Hence, the example above will graph the line :code:`u` with :code:`lineWidth = 3`,
-and will attach the label "u" to it, and all of this will be red.
-Identical to :code:`ganja.js`, valid inputs to :code:`alg.graph` are (lists of) instances
+Hence, the example above will graph the filled triangle :code:`[A, B, C]` in a light green
+(:code:`0xD0FFE1`), and the points :code:`A`, :code:`B`, :code:`C` in dark blue (:code:`0x224488`)
+each with their own label, all with :code:`lineWidth = 3`, and with the :code:`grid` and point
+:code:`labels` turned on.
+Identical to :code:`ganja.js`, valid inputs to :meth:`~kingdon.algebra.Algebra.graph` are (lists of) instances
 of :class:`~kingdon.multivector.MultiVector`, strings, and hexadecimal numbers to indicate colors,
 or a function without arguments that returns these things.
 The strings can be simple labels, or valid SVG syntax.
+
+See :meth:`~kingdon.algebra.Algebra.graph` for more details.
 
 .. note::
     kingdon supports :code:`ganja.js`'s animation and interactivity in jupyter notebooks,
     `try kingdon in your browser <https://tbuli.github.io/teahouse/>`_ to give it a go!
 
+Meshes and point clouds
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Passing a few thousand multivectors one by one is neither pleasant to write nor fast to draw.
+Instead, pass a *single* multivector whose coefficients are arrays (see :doc:`arrays`): its
+:code:`shape` is spliced into the list of subjects, so one subject becomes many elements. The
+trailing axis decides what is drawn, exactly like a python list would:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - Shape
+     - Drawn as
+   * - :code:`()`
+     - a single element, as usual.
+   * - :code:`(N,)`
+     - :math:`N` separate elements, e.g. a point cloud.
+   * - :code:`(N, 2)`
+     - :math:`N` line segments, e.g. the edges of a mesh.
+   * - :code:`(N, 3)`
+     - :math:`N` filled triangles, e.g. the faces of a mesh.
+
+So for a mesh given by a :code:`vertices` array of shape :math:`(N, 3)` and an integer
+:code:`faces` array of shape :math:`(M, 3)` indexing into it, the whole scene is two subjects:
+
+.. code-block::
+
+    >>> from kingdon.multivector import EVector, UPoint, Point, Translation
+    >>> alg = Algebra(3, 0, 1, extra_types=[EVector, UPoint, Point, Translation])
+    >>> v = alg.upoint(vertices.T).dual()      # The point cloud.
+    >>> facets = v[faces]                      # A point per corner per face.
+    >>> facets.shape, v.shape
+    (Point[(M, 3)], Point[(N,)])
+    >>> alg.graph(
+    ...     0xEE8888, facets,
+    ...     0x000000, v,
+    ...     pointRadius=0.2,
+    ... )
+
+Two things are worth keeping in mind when building the points:
+
+- Always build them as :code:`alg.upoint(...).dual()` (or :code:`(alg.blades.e0 + alg.evector(...)).dual()`),
+  and hand :code:`upoint` the transpose of the vertices, such that the :math:`x, y, z` axis comes
+  first and the :math:`N` axis last. It is tempting to write :code:`alg.point(vertices.T)` instead,
+  but the positional values of a type are its *free coefficients in layout order*, which for
+  :class:`~kingdon.multivector.Point` is :math:`(\mathbf{e}_{012}, \mathbf{e}_{013}, \mathbf{e}_{023})`,
+  i.e. :math:`(-z, y, -x)` and not :math:`(x, y, z)`. Going through the undual point is
+  independent of the ordering and signs of the basis blades, and hence of the dimension.
+- :code:`ganja.js` only renders algebras in the lexicographical basis, so create the algebra as
+  :code:`Algebra(3, 0, 1, extra_types=[...])` rather than :code:`Algebra.fromname('3DPGA')`;
+  the latter reorders the basis and :meth:`~kingdon.algebra.Algebra.graph` will refuse it.
+
+Everything that makes shaped multivectors convenient applies to the subjects as well: boolean
+masks and fancy indexing select what to draw, e.g. :code:`v[(plane & v).e > 0]` graphs only the
+points in front of a :code:`plane`, and operators act on the whole mesh at once, so
+:code:`facets[:, 0] & facets[:, 1] & facets[:, 2]` gives a :code:`Vector[(M,)]` of face planes
+that can be graphed just as well. Since the mesh travels to :code:`ganja.js` as a single binary
+buffer, this is also much faster than graphing the elements individually.
+
+.. note::
+    Only unshaped multivectors passed as direct positional arguments are draggable; a shaped
+    subject is drawn but cannot be picked up.
+
 Large Algebra's
 ---------------
-In theory :code:`kingdon` supports algebra's up to 36D, but your computer might go up in smoke 
-if you push it that far. In order to make large's algebras feasible, :code:`kingdon` no longer 
-performs symbolic optimization and caching because this consumes to much memory, and instead 
+In theory :code:`kingdon` supports algebra's up to 36D, but your computer might go up in smoke
+if you push it that far. In order to make large's algebras feasible, :code:`kingdon` no longer
+performs compilation on operators because this takes too long, and instead
 just computes naively.
+
+.. note::
+    You can still use the :code:`@add_operator(symbolic=True)` decorator to compile your operators if desired,
+    in order to speedup those operations you care about.
+
+    What decides that trade-off is the number of blades of the input, not :math:`d`: compilation time grows
+    roughly with the square of the number of blades, whereas the speedup stays around an order of magnitude.
+    The (indicative) numbers below are for :code:`a * b` on elements of increasing density.
+
+    .. list-table::
+       :header-rows: 1
+       :widths: 6 22 10 16 20 18 12
+
+       * - :math:`d`
+         - Element
+         - Keys
+         - Compile (s)
+         - Compiled call (ms)
+         - Direct call (ms)
+         - Speedup
+       * - 7
+         - vector
+         - 7
+         - 0.003
+         - 0.008
+         - 0.038
+         - 5x
+       * - 8
+         - vector
+         - 8
+         - 0.003
+         - 0.010
+         - 0.048
+         - 5x
+       * - 10
+         - vector
+         - 10
+         - 0.005
+         - 0.018
+         - 0.132
+         - 7x
+       * - 12
+         - vector
+         - 12
+         - 0.010
+         - 0.010
+         - 0.472
+         - 48x
+       * - 7
+         - bivector
+         - 21
+         - 0.024
+         - 0.014
+         - 0.154
+         - 11x
+       * - 8
+         - bivector
+         - 28
+         - 0.059
+         - 0.037
+         - 0.264
+         - 7x
+       * - 10
+         - bivector
+         - 45
+         - 0.196
+         - 0.040
+         - 0.867
+         - 22x
+       * - 12
+         - bivector
+         - 66
+         - 0.620
+         - 0.074
+         - 2.18
+         - 29x
+       * - 7
+         - full mv
+         - 128
+         - 3.7
+         - 0.22
+         - 5.53
+         - 25x
+       * - 8
+         - full mv
+         - 256
+         - 29.7
+         - 1.05
+         - 26.4
+         - 25x
+       * - 9
+         - full mv
+         - 512
+         - 224.9
+         - 5.24
+         - 126.5
+         - 24x
+
 By default any algebra of :math:`d > 6` is considered large, but it can be forced manually with
 the `large` option to :class:`~kingdon.algebra.Algebra` depending on your needs:
 
@@ -303,20 +573,25 @@ the `large` option to :class:`~kingdon.algebra.Algebra` depending on your needs:
     >>> alg = Algebra(3, large=True)
     >>> alg = Algebra(8, large=False)
 
-For examples of large algebra's, see the OPNS section of the `teahouse <https://tbuli.github.io/teahouse>`_.
+A large algebra has no :ref:`multivector types <Multivector Types>`: every multivector is a
+:class:`~kingdon.multivector.MultiVector`. The k-vector constructors such as
+:code:`alg.vector` and :code:`alg.pseudovector` are still there, they simply construct a
+:class:`~kingdon.multivector.MultiVector` of the requested grade.
+
+For examples of large algebra's, see the OPNS section of the `teahouse <https://tbuli.github.io/teahouse>`_,
+which has some demos in the mother algebra :code:`Algebra(4, 4)`, 2D CSGA :code:`Algebra(5, 3)` and
+3DCCGA :code:`Algebra(6, 3)`.
 
 Performance Tips
 ----------------
 Because :code:`kingdon` attempts to symbolically optimize expressions the first time they are called, the first
-call to any operation is relatively slow, whereas subsequent calls have extremely good performance. 
-Note however that even the first execution that includes the symbolic optimization typically 
+call to any operation takes a bit more time, whereas subsequent calls have extremely good performance.
+Note however that even the first execution that includes the symbolic optimization typically
 takes on the order of milliseconds, so you probably won't even notice it.
 
-Since `kingdon` v2.2.x the symbolic code generation features a port of `GAMphetamine.js <https://github.com/enkimute/GAmphetamine.js>_`'s 
-very powerful Common Subexpression Elimination (CSE) algorithm, which results in the most 
-optimal code known to man. As in, for those cases in which a hand optimized optimum is known, 
-the CSE optimized code is exactly the same. Moreover, it is *quick*. 
-Praise `Enki <https://github.com/enkimute>`_.
+Since `kingdon` v2.2.x the symbolic code generation features a port of `GAMphetamine.js <https://github.com/enkimute/GAmphetamine.js>`_'s
+very powerful Common Subexpression Elimination (CSE) algorithm, which is able to reproduce the hand optimized optimum in several cases.
+(More will follow in the future when the latest changes of `GAMphetamine.js` are ported.)
 
 The table below lists multiplications and additions counted in the emitted Python for representative **3DPGA** expressions
 when CSE is enabled vs not. Count columns use :code:`muls/adds`.
@@ -330,38 +605,48 @@ when CSE is enabled vs not. Count columns use :code:`muls/adds`.
      - Naive
    * - :code:`R >> p`, :math:`R` even, :math:`p` normalized point
      - :code:`21/18`
-     - :code:`84/33`
+     - :code:`72/30`
    * - :code:`R >> d`, :math:`R` even, :math:`d` a direction
      - :code:`18/12`
-     - :code:`60/20`
+     - :code:`54/20`
    * - :code:`R >> o`, :math:`R` even, :math:`o` the origin
      - :code:`15/9`
      - :code:`24/12`
-   * - :code:`R >> e032`, :math:`R` even, pure :math:`\mathbf{e}_{032}` blade
+   * - :code:`R >> (0.5*e032)`, :math:`R` even, pure :math:`\mathbf{e}_{032}` blade
      - :code:`6/4`
-     - :code:`11/6`
-   * - :math:`p_1 \vee p_2` — join of two normalized points (regressive product)
+     - :code:`9/6`
+   * - :code:`p1 & p2`, join of two normalized points (regressive product)
      - :code:`6/6`
      - :code:`6/10`
-   * - :math:`p \vee \ell` — normalized point :math:`p`, line :math:`\ell` (bivector)
+   * - :code:`p & l`, normalized point :code:`p`, line :code:`l` (bivector)
      - :code:`9/9`
      - :code:`9/11`
-   * - :math:`p_1 \vee p_2 \vee p_3` — join of three normalized points
+   * - :code:`p1 & p2 & p3`, join of three normalized points
      - :code:`9/12`
      - :code:`30/22`
-   * - :math:`(p \cdot P)\,P^{-1}` — project normalized point :math:`p` on plane :math:`P`
-     - :code:`18/12`
-     - :code:`51/20`
-   * - :math:`(p \cdot P) * P + (p * (1 - P * ~P)).grade(3)` — normalized plane :math:`P`
+   * - :code:`(p | P) * P.inv()`, project normalized point :code:`p` on a general (non-normalized) plane :code:`P`
+     - :code:`18/12` (+3 divs)
+     - :code:`36/20` (+3 divs)
+   * - :code:`p @ P`, project normalized point :code:`p` on normalized plane :code:`P`
      - :code:`6/6`
-     - :code:`24/15`
-   * - :math:`(p \cdot \ell) * (-\ell) + (p * (1 - \ell * ~ \ell)).grade(3)` — normalized line :math:`\ell`
-     - :code:`15/15`
-     - :code:`39/22`
+     - :code:`21/15`
+   * - :code:`p @ l`, project normalized point :code:`p` on normalized line :code:`l`
+     - :code:`12/12`
+     - :code:`33/19`
+   * - :code:`P >> p`, reflect normalized point :code:`p` in normalized plane :code:`P`
+     - :code:`9/7`
+     - :code:`33/13`
+   * - :code:`l >> p`, reflect normalized point :code:`p` in normalized line :code:`l`
+     - :code:`15/12`
+     - :code:`48/20`
 
 .. note::
-    Not all of these counts are achieved yet by `kingdon`'s default binary operators, but the CSE infrastructure is now in place.
-    In order to achieve these counts out of the box requires to also translate GAmphetamine.js's type system, which is on the v3.x roadmap.
+    These counts are reached by `kingdon`'s built-in operators, provided you use the
+    :ref:`multivector types <Multivector Types>` that carry the normalization: a :code:`bireflection`
+    rather than a generic even multivector, a :code:`point` rather than a generic trivector.
+    The :math:`\mathbf{e}_{032}` row is the exception, as it requires
+    :func:`~kingdon.algebra.Algebra.compile` with the blade as a constant, since only then
+    is its coefficient known at codegen time.
 
 The symbolically optimized code that kingdon produces is already a good starting point for high performance code.
 However, there are still several things to be aware of to ensure good performance.
@@ -370,19 +655,20 @@ Broadcasting
 ~~~~~~~~~~~~
 Avoid arrays of multivectors, and use multivectors over e.g. :code:`numpy` arrays or :code:`PyTorch`
 tensors instead, as shown in :doc:`arrays`.
-This ensures the high level overhead of kingdon is paid only once, and we instead delegate 
+This ensures the high level overhead of kingdon is paid only once, and we instead delegate
 the computation to the underlying datastructures.
 
-Register Expressions
-~~~~~~~~~~~~~~~~~~~~
-To make it easy to optimize larger expressions, :code:`kingdon` offers the :func:`~kingdon.algebra.Algebra.register`
-decorator.
+Adding Operators
+~~~~~~~~~~~~~~~~
+To make it easy to optimize larger expressions, :code:`kingdon` offers the
+:func:`~kingdon.algebra.Algebra.add_operator` decorator, which adds the expression to the algebra
+as an operator of its own.
 
 .. code-block::
 
     >>> alg = Algebra(3, 0, 1)
     >>>
-    >>> @alg.register
+    >>> @alg.add_operator
     >>> def myfunc(u, v):
     >>>      return u * (u + v)
     >>>
@@ -393,24 +679,40 @@ decorator.
 Calling the decorated :code:`myfunc` has the benefit that all the numerical computation is done in one single call,
 instead of doing each binary operation individually. This has the benefit that all the (expensive) python boilerplate
 code is called only once.
-Moreover, one can use :code:`@alg.register(symbolic=True)` to symbolically optimize the expression, similar to how 
-`kingdon`'s default binary operators work. As we have seen above in the CSE section, this can result in significant 
+Moreover, one can use :code:`@alg.add_operator(symbolic=True)` to symbolically optimize the expression, similar to how
+`kingdon`'s default binary operators work. As we have seen above in the CSE section, this can result in significant
 performance improvements. Afterall, the fastest computation is one you do not have to do.
 
-Graded
-~~~~~~
+:func:`~kingdon.algebra.Algebra.add_operator` figures out the symbolic multivectors from the multivectors you call
+it with, and caches a compiled function per combination of input types. If you would rather pick those
+symbolic multivectors yourself, use :func:`~kingdon.algebra.Algebra.compile` directly. It takes the expression
+followed by the symbolic multivectors and hands you back a :class:`~kingdon.codegen.CompiledExpression`:
+
+.. code-block::
+
+    >>> R = alg.bireflection(name='R', symbolcls=alg.codegen_symbolcls)
+    >>> e1 = alg.vector(e1=1)
+    >>> rotate_e1 = alg.compile(myfunc, R, e1)
+
+This is worth the extra effort when you know something about the values that :code:`add_operator` cannot know,
+such as the fact that you only ever rotate unit vectors. See
+:func:`~kingdon.algebra.Algebra.compile` for a worked example.
+
+Full layout
+~~~~~~~~~~~
 The first time :code:`kingdon` is asked to perform an operation it hasn't seen before, it performs code generation
 for that particular request. Because codegen is a relatively expensive step, it can be beneficial to reduce the number of
-times it is needed. An easy way to achieve this is to initiate the :class:`~kingdon.algebra.Algebra` with `graded=True`.
-This enforces that :code:`kingdon` does not specialize codegen down to the individual basis blades, but rather only
-per grade. This means there are far less combinations that have to be considered and generated.
+times it is needed. An easy way to achieve this is to initiate the :class:`~kingdon.algebra.Algebra` with
+`full_layout=True`. This enforces that every multivector carries the full :doc:`layout <types>` of its type, so
+:code:`kingdon` does not specialize codegen down to the individual basis blades, but rather only per type.
+This means there are far less combinations that have to be considered and generated.
 
 Numba JIT
 ~~~~~~~~~
 We can enable numba just-in-time compilation by initiating an :class:`~kingdon.algebra.Algebra` with `wrapper=numba.njit`,
 which will apply numba's njit decorator to all of kingdon's generated functions.
 This comes with a significant cost the first time any operator is called, but subsequent calls to the same operator are
-significantly faster. 
+significantly faster.
 However, it is worth mentioning that when dealing with :ref:`Numerical Multivectors` over e.g. numpy arrays,
 the benefit of using `numba` actually disappears rapidly as the numpy arrays become larger, since then most of the time
 is spend in numpy routines anyway.

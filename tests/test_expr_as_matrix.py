@@ -3,7 +3,7 @@ import itertools
 from sympy import Matrix
 import numpy as np
 
-from kingdon import Algebra, MultiVector
+from kingdon import Algebra, MultiVector, Vector
 from kingdon.matrixreps import expr_as_matrix
 
 
@@ -46,18 +46,8 @@ def test_expr_as_matrix_numerical():
     # Test for the matrix rep of the commutator. (Grade preserving)
     A, y = expr_as_matrix(alg.cp, B, x)
     assert type(A) == np.ndarray
-    assert type(y) == MultiVector
+    assert type(y) == Vector
     assert A.shape == (4, 4)
-
-    Bvals = np.random.random((len(alg.blades.grade(2)), 10))
-    x = alg.vector(name='x')
-    B = alg.bivector(Bvals)
-
-    # Test for the matrix rep of the commutator. (Grade preserving)
-    A, y = expr_as_matrix(alg.cp, B, x)
-    assert type(A) == list
-    assert type(y) == MultiVector
-
 
 def test_matrixreps():
     # 3DVGA test

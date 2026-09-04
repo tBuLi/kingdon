@@ -355,7 +355,7 @@ def _substitute_extracted(expr, sum_map):
             e.clear()
         else:
             e.clear()
-            e.extend(simplified.args)
+            e.extend(list(t) for t in simplified.args)
 
 
 def _detect_linear_deps(expr):
@@ -443,9 +443,10 @@ def poly_cse(expr, prot=None, iso=None):
     if not isinstance(expr, list):
         return [], expr
 
-    # Shallow-copy the outer list and each component so in-place mutations
-    # in the CSE phases don't affect the caller's data.
-    expr = [list(e) if isinstance(e, list) else e for e in expr]
+    # Deep-copy each component (and its monomials) so in-place mutations in the
+    # CSE phases don't affect the caller's data, and so tuple-form Polynomial.args
+    # passed in get converted to mutable lists for _isolate / _substitute_extracted.
+    expr = [[list(t) for t in e] if isinstance(e, (list, tuple)) else e for e in expr]
 
     prelude = []
     iso_vars = [x for x in (iso or []) if isinstance(x, str)]
@@ -488,6 +489,7 @@ def poly_cse(expr, prot=None, iso=None):
 
     return prelude, expr
 
+
 def compare(a, b):
     if a is None: return 1
     if b is None: return -1
@@ -501,47 +503,20 @@ def compare(a, b):
     return la - lb
 
 
-class mathstr(str):
-    """ Lightweight string subclass that overloads maths operators to form expressions. """
-    def __add__(self, other: str):
-        if other[0] == '-':
-            return self.__class__(f'{self}{other}')
-        return self.__class__(f'{self}+{other}')
-
-    def __sub__(self, other: str):
-        if other[0] == '-':
-            return self.__class__(f'{self}+{other[1:]}')
-        return self.__class__(f'{self}-{other}')
-
-    def __neg__(self):
-        if self[0] == '-':
-            return self.__class__(self[1:])
-        return self.__class__('-'+self)
-
-    def __mul__(self, other: str):
-        if other[0] != '-':
-            return self.__class__(f'{self}*{other}')
-        elif self[0] == '-':
-            return self.__class__(f'{self[1:]}*{other[1:]}')
-        return self.__class__(f'-{self}*{other[1:]}')
-
-    def __pow__(self, power):
-        if power == 0.5:
-            return self.__class__(f'({self}**(1/2))')  # SymPy conversion needs 1/2 instead of 0.5
-        return self.__class__(f'({self}**{power})')
-
-
 class Polynomial:
+    __slots__ = ('args',)
 
     def __init__(self, coeff):
         if isinstance(coeff, self.__class__):
             self.args = coeff.args
         elif isinstance(coeff, (list, tuple)):
-            self.args = coeff
-        elif isinstance(coeff, (int, float)):
-            self.args = [[coeff]]
+            self.args = tuple(tuple(m) for m in coeff)
+        elif isinstance(coeff, (int, float, Fraction)):
+            self.args = ((coeff,),)
         elif isinstance(coeff, str):
-            self.args = [[1, coeff]] if coeff[0] != "-" else [[-1, coeff[1:]]]
+            self.args = ((1, coeff),) if coeff[0] != "-" else ((-1, coeff[1:]),)
+        else:
+            raise TypeError(f'Cannot build a {type(self).__name__} out of a {type(coeff).__name__}.')
 
     @classmethod
     def fromname(cls, name):
@@ -554,10 +529,13 @@ class Polynomial:
         return self.args[item]
 
     def __eq__(self, other):
-        if other == 0 and (not self.args or self.args == [[0]]): return True
-        if other == 1 and self.args == [[1]]: return True
+        if other == 0 and (not self.args or self.args == ((0,),)): return True
+        if other == 1 and self.args == ((1,),): return True
         if self.__class__ != other.__class__: return False
         return self.args == other.args
+
+    def __hash__(self):
+        return hash(self.args)
 
     def __add__(self, other):
         if other == 0:
@@ -581,10 +559,9 @@ class Polynomial:
                 res.append(eb)
                 bi += 1
             else:
-                ea = ea.copy()
-                ea[0] += eb[0]
-                if ea[0] != 0:
-                    res.append(ea)
+                new_coeff = ea[0] + eb[0]
+                if new_coeff != 0:
+                    res.append((new_coeff, *ea[1:]))
                 ai += 1
                 bi += 1
         return self.__class__(res)
@@ -644,8 +621,7 @@ class Polynomial:
     def __truediv__(self, other):
         if isinstance(other, self.__class__):
             return RationalPolynomial(self, other)
-        # Assume scalar
-        return self * (1 / other)
+        return self * (Fraction(1, other) if isinstance(other, int) else 1 / other)
 
     def __str__(self):
         return poly_format(self.args)
@@ -653,7 +629,7 @@ class Polynomial:
     def tosympy(self):
         """ Return a sympy version of this Polynomial. """
         def _to_sym(s):
-            if isinstance(s, list):
+            if isinstance(s, (list, tuple)):
                 return Polynomial(s).tosympy()
             return Symbol(s) if isinstance(s, str) else s
         preprocessed = (monomial if len(monomial) == 1 else monomial[1:] if monomial[0] == 1 else monomial
@@ -668,8 +644,30 @@ class Polynomial:
             return bool(self.args[0][0])
         return bool(self.args)
 
+    def diff(self, var):
+        """Differentiate with respect to var (string or Polynomial.fromname(string))."""
+        if isinstance(var, self.__class__):
+            var_name = var.args[0][1]
+        elif hasattr(var, 'numer') and var.denom == 1:  # RationalPolynomial
+            var_name = var.numer.args[0][1]
+        else:
+            var_name = var
+
+        result = self.__class__([])
+        for monomial in self.args:
+            variables = monomial[1:]
+            n = variables.count(var_name)
+            if n == 0:
+                continue
+            new_vars = list(variables)
+            new_vars.remove(var_name)
+            result = result + self.__class__([[n * monomial[0]] + new_vars])
+        return result
+
 
 class RationalPolynomial:
+    __slots__ = ('numer', 'denom')
+
     def __init__(self, numer, denom=None):
         if isinstance(numer, self.__class__):
             orig = numer
@@ -677,10 +675,16 @@ class RationalPolynomial:
             denom = orig.denom
         elif isinstance(numer, (list, tuple)):
             numer = Polynomial(numer)
+        elif isinstance(numer, (int, float)):
+            numer = Polynomial([[numer]])
         if denom is None:
             denom = Polynomial([[1]])
         elif isinstance(denom, (list, tuple)):
             denom = Polynomial(denom)
+
+        for role, part in (('numerator', numer), ('denominator', denom)):
+            if not isinstance(part, Polynomial):
+                raise TypeError(f'Cannot build a {type(self).__name__} with a {type(part).__name__} as its {role}.')
         self.numer = numer
         self.denom = denom
 
@@ -693,6 +697,9 @@ class RationalPolynomial:
         if other == 1 and (self.numer == 1 and self.denom == 1): return True
         if self.__class__ != other.__class__: return False
         return self.numer == other.numer and self.denom == other.denom
+
+    def __hash__(self):
+        return hash((self.numer, self.denom))
 
     def __add__(self, other):
         if not isinstance(other, self.__class__):
@@ -780,20 +787,33 @@ class RationalPolynomial:
             *_, last = power_supply(self, -power)
             return 1 / last
         if power == 0.5:
-            return self.fromname(mathstr(self)**0.5)
+            return self.fromname(f'{self}**0.5')
         *_, last = power_supply(self, power)
         return last
 
     def __str__(self):
         numer_str = f"({self.numer})" if len(self.numer) > 1 else f"{self.numer}"
-        if self.denom.args == [[1]]:
+        if self.denom.args == ((1,),):
             return numer_str
         denom_str = f"({self.denom})" if len(self.denom) > 1 else f"{self.denom}"
         return f"(({numer_str}) / ({denom_str}))"
 
+    __repr__ = __str__
+
     def tosympy(self):
         """ Return a sympy version of this Polynomial. """
         return self.numer.tosympy() / self.denom.tosympy()
+
+    def diff(self, var):
+        """Differentiate with respect to var (string or Polynomial.fromname(string))."""
+        f, g = self.numer, self.denom
+        fp = f.diff(var)
+        gp = g.diff(var)
+        numer = fp * g - f * gp
+        if numer == 0:
+            return self.__class__([])
+        denom = g * g
+        return self.__class__(numer, denom)
 
     def __bool__(self):
         return self.numer.__bool__()
