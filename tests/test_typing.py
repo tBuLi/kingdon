@@ -353,7 +353,7 @@ def test_type2type(alg_name, T1, T2, T3, func):
 ])
 @pytest.mark.parametrize("dim", [4, 8, 9])
 def test_grade_selection(dim, T, grade):
-    alg = Algebra(dim)
+    alg = Algebra(dim, large=False)
     x = alg.multivector(name='x')
     xg = x.grade(grade)
     if grade > dim:
@@ -368,13 +368,13 @@ def test_custom_types():
 
     # Use only custom types
     mytypes = [MyScalar]
-    alg = Algebra(9, types=mytypes)
+    alg = Algebra(9, types=mytypes, large=False)
     assert alg.types == mytypes
     assert type(alg.blades.e) is MyScalar
 
     # Extend default types with custom types.
-    default_types = Algebra(9).types
-    alg = Algebra(9, extra_types=mytypes)
+    default_types = Algebra(9, large=False).types
+    alg = Algebra(9, extra_types=mytypes, large=False)
     assert alg.types == [*default_types, *mytypes]
 
 def test_constructors(pga2d):
@@ -586,3 +586,27 @@ def test_layout_must_use_the_basis_blades():
     assert p.keys() == (6, 5)  # In the order of the layout, and never negative.
     assert p.values() is coeffs  # Held by reference, no sign swaps.
     assert p.e12 == 1 and p.e21 == -1  # A fixed component may swap, its sign goes into the value.
+
+
+def test_no_types_in_large_algebras():
+    alg = Algebra(10)
+    v, w = alg.vector(range(1, 11)), alg.vector(range(10, 0, -1))
+    assert not alg.types and not alg._type_layouts
+    assert all(type(x) is MultiVector
+               for x in (v, v * w, -v, v + w, (v * w).grade(2), alg.pss, alg.blades.e123456789))
+    assert all(list(alg.blades[alg.bin2canon[k]].items()) == [(k, 1)] for k in range(len(alg)))
+    assert alg.pss.keys() == (len(alg) - 1,) and (alg.pss * alg.pss).e == -1
+    assert alg.scalar([1]).grades == (0,) and alg.pseudovector(range(10)).grades == (9,)
+    assert alg.purevector([1], grade=0).grades == (0,) and alg.purevector(range(10), grade=9).grades == (9,)
+    assert not hasattr(Algebra(6, 0, 1), 'point')
+
+    for kwargs in [{'types': [Scalar]}, {'extra_types': [Scalar]}, {'full_layout': True}]:
+        with pytest.raises(TypeError): Algebra(10, **kwargs)
+    with pytest.raises(TypeError): alg.add_operator(lambda a, b: a * b, name='mygp')
+
+
+def test_no_types_above_octovector():
+    """ Small algebras have no types beyond grade 8 either, and fall back to MultiVector. """
+    alg = Algebra(9, large=False)
+    assert type(alg.pss) is MultiVector and alg.pss.keys() == (len(alg) - 1,)
+    assert alg.purevector([1], grade=9).grades == (9,)

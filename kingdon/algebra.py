@@ -19,7 +19,7 @@ from kingdon.polynomial import RationalPolynomial
 from kingdon.matrixreps import matrix_rep
 from kingdon.multivector import (
     MultiVector, MultiVectorType,
-    KVector, Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector, # k-vectors
+    Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector, # k-vectors
     Bireflection, # compositions
     Direction, EVector, UPoint, Point, Translation,  # PGA Types.
 )
@@ -27,6 +27,8 @@ from kingdon.graph import GraphWidget
 from kingdon.codegen import resolve_layout, CompiledExpression, lambdify
 
 operation_field = partial(field, default_factory=dict, init=False, repr=False, compare=False)
+
+KVECTORS = [Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector]
 
 
 @dataclass
@@ -74,7 +76,9 @@ class Algebra:
         memory, and codegen is replaced by direct computation since codegen is very resource intensive for big
         expressions. By default, algebras of :math:`d > 6` are considered large, but the user can override this setting
         because also in large algebras it is still true that the generated code will perform order(s) of magnitude
-        better than direct computation.
+        better than direct computation. A large algebra has no multivector types: every multivector is a
+        :class:`~kingdon.multivector.MultiVector`, and :code:`types`, :code:`extra_types` and :code:`full_layout`
+        are therefore not available.
     """
     p: int = field(default=0, repr=False, compare=False)
     q: int = field(default=0, repr=False, compare=False)
@@ -226,23 +230,31 @@ class Algebra:
             setattr(self, name, op)
 
         self._kvectors = []
-        if not self.types:
-            kvectors = [Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector]
-            self._kvectors = kvectors[:self.d+1]
-            self.types = [*self._kvectors]
-            if self.d >= 2: self.types.extend([Bireflection])
-            if extra_types: self.types.extend(extra_types)
-        # Dynamically generate classes for types if they are not already.
-        self.types = [type(t['name'], (self.mvtype,), {'layout': t['layout']}) if isinstance(t, dict) else t
-                      for t in self.types]
-        self._type_layouts = {cls: layout for cls in self.types
-                              if (layout := self._bind_layout(cls, name='x'))}  # an empty layout matches an empty result at zero cost in resolve_layout, and would beat every other type.
+        if self.large:
+            if self.types or extra_types or self.full_layout:
+                raise TypeError('A large algebra has no multivector types, so `types`, `extra_types` and '
+                                '`full_layout` require `large=False`.')
+            for k, cls in enumerate(KVECTORS[:self.d + 1]):
+                name = cls.__name__.lower()
+                setattr(self, name, partial(self.mvtype, self, grades=(k,)))
+                setattr(self, f'pseudo{name}', partial(self.mvtype, self, grades=(self.d - k,)))
+        else:
+            if not self.types:
+                self._kvectors = KVECTORS[:self.d+1]
+                self.types = [*self._kvectors]
+                if self.d >= 2: self.types.extend([Bireflection])
+                if extra_types: self.types.extend(extra_types)
+            # Dynamically generate classes for types if they are not already.
+            self.types = [type(t['name'], (self.mvtype,), {'layout': t['layout']}) if isinstance(t, dict) else t
+                          for t in self.types]
+            self._type_layouts = {cls: layout for cls in self.types
+                                  if (layout := self._bind_layout(cls, name='x'))}  # an empty layout matches an empty result at zero cost in resolve_layout, and would beat every other type.
 
-        # Add mv constructors to the algebra
-        for cls in self._type_layouts: setattr(self, cls.__name__.lower(), partial(cls, self))
-        for k, cls in enumerate(self._kvectors):
-            if self.d - k < len(self._kvectors):
-                setattr(self, f"pseudo{cls.__name__.lower()}", partial(self._kvectors[self.d - k], self))
+            # Add mv constructors to the algebra
+            for cls in self._type_layouts: setattr(self, cls.__name__.lower(), partial(cls, self))
+            for k, cls in enumerate(self._kvectors):
+                if self.d - k < len(self._kvectors):
+                    setattr(self, f"pseudo{cls.__name__.lower()}", partial(self._kvectors[self.d - k], self))
 
         # Blades are not precomputed for large algebras, except for basis vectors.
         self.blades = BladeDict(algebra=self, lazy=self.large)
@@ -254,7 +266,7 @@ class Algebra:
         Initialize a well known algebra by its name. Options are 2DPGA, 3DPGA, and STAP.
         This uses sensible ordering of the basis vectors in the basis blades to avoid minus superfluous signs.
         """
-        extra_pga_types = [Direction, EVector, UPoint, Point, Translation]
+        extra_pga_types = [] if kwargs.get('large') else [Direction, EVector, UPoint, Point, Translation]
         if extra_types: extra_pga_types.extend(extra_types)
         if name == '2DPGA':
             basis = ["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"]
@@ -416,6 +428,8 @@ class Algebra:
                 name = expr.__name__
 
             if not symbolic:
+                if self.large:
+                    raise TypeError('A large algebra has no compiled operators to record, use `symbolic=True`.')
                 self.registry[name] = Registry(name, codegen=expr, algebra=self, wrapper=wrapper, values_asarray=values_asarray)
             else:
                 self.registry[name] = OperatorDict(
@@ -504,13 +518,13 @@ class Algebra:
         grades = tuple(filter(lambda x: x % 2 == 1, range(self.d + 1)))
         return self.mvtype(self, *args, grades=grades, **kwargs)
 
-    def purevector(self, *args, grade, **kwargs) -> KVector:
+    def purevector(self, *args, grade, **kwargs) -> MultiVector:
         """
         Create a new k-vector of the desired grade.
 
         :param grade: Grade of the multivector to create.
         """
-        if grade > len(self._kvectors):
+        if grade >= len(self._kvectors):
             return self.mvtype(self, *args, grades=(grade,), **kwargs)
         return self._kvectors[grade](self, *args, **kwargs)
 
@@ -818,8 +832,8 @@ class BladeDict(Mapping):
                 keys, values = zip(*keysvalues) if keysvalues else ((), [])
                 values = list(values)
             else:
-                if layout.get(bin_blade) == ...: keys, values = ((bin_blade,), [1])
-                else:                            keys, values = ((), [])
+                if not layout or layout.get(bin_blade) == ...: keys, values = ((bin_blade,), [1])
+                else:                                          keys, values = ((), [])
             self.blades[basis_blade] = MVType.fromkeysvalues(self.algebra, keys=keys, values=values)
         return self.blades[basis_blade] if swaps % 2 == 0 else - self.blades[basis_blade]
 

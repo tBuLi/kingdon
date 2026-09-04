@@ -465,8 +465,106 @@ Large Algebra's
 ---------------
 In theory :code:`kingdon` supports algebra's up to 36D, but your computer might go up in smoke
 if you push it that far. In order to make large's algebras feasible, :code:`kingdon` no longer
-performs symbolic optimization and caching because this consumes to much memory, and instead
+performs compilation on operators because this takes too long, and instead
 just computes naively.
+
+.. note::
+    You can still use the :code:`@add_operator(symbolic=True)` decorator to compile your operators if desired,
+    in order to speedup those operations you care about.
+
+    What decides that trade-off is the number of blades of the input, not :math:`d`: compilation time grows
+    roughly with the square of the number of blades, whereas the speedup stays around an order of magnitude.
+    The (indicative) numbers below are for :code:`a * b` on elements of increasing density.
+
+    .. list-table::
+       :header-rows: 1
+       :widths: 6 22 10 16 20 18 12
+
+       * - :math:`d`
+         - Element
+         - Keys
+         - Compile (s)
+         - Compiled call (ms)
+         - Direct call (ms)
+         - Speedup
+       * - 7
+         - vector
+         - 7
+         - 0.003
+         - 0.008
+         - 0.038
+         - 5x
+       * - 8
+         - vector
+         - 8
+         - 0.003
+         - 0.010
+         - 0.048
+         - 5x
+       * - 10
+         - vector
+         - 10
+         - 0.005
+         - 0.018
+         - 0.132
+         - 7x
+       * - 12
+         - vector
+         - 12
+         - 0.010
+         - 0.010
+         - 0.472
+         - 48x
+       * - 7
+         - bivector
+         - 21
+         - 0.024
+         - 0.014
+         - 0.154
+         - 11x
+       * - 8
+         - bivector
+         - 28
+         - 0.059
+         - 0.037
+         - 0.264
+         - 7x
+       * - 10
+         - bivector
+         - 45
+         - 0.196
+         - 0.040
+         - 0.867
+         - 22x
+       * - 12
+         - bivector
+         - 66
+         - 0.620
+         - 0.074
+         - 2.18
+         - 29x
+       * - 7
+         - full mv
+         - 128
+         - 3.7
+         - 0.22
+         - 5.53
+         - 25x
+       * - 8
+         - full mv
+         - 256
+         - 29.7
+         - 1.05
+         - 26.4
+         - 25x
+       * - 9
+         - full mv
+         - 512
+         - 224.9
+         - 5.24
+         - 126.5
+         - 24x
+
 By default any algebra of :math:`d > 6` is considered large, but it can be forced manually with
 the `large` option to :class:`~kingdon.algebra.Algebra` depending on your needs:
 
@@ -474,6 +572,11 @@ the `large` option to :class:`~kingdon.algebra.Algebra` depending on your needs:
 
     >>> alg = Algebra(3, large=True)
     >>> alg = Algebra(8, large=False)
+
+A large algebra has no :ref:`multivector types <Multivector Types>`: every multivector is a
+:class:`~kingdon.multivector.MultiVector`. The k-vector constructors such as
+:code:`alg.vector` and :code:`alg.pseudovector` are still there, they simply construct a
+:class:`~kingdon.multivector.MultiVector` of the requested grade.
 
 For examples of large algebra's, see the OPNS section of the `teahouse <https://tbuli.github.io/teahouse>`_,
 which has some demos in the mother algebra :code:`Algebra(4, 4)`, 2D CSGA :code:`Algebra(5, 3)` and

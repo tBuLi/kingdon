@@ -91,10 +91,11 @@ class TapeRecorder:
         indices_keys = [(idx, k) for idx, k in enumerate(self.keys()) if k in basis_blades]
         indices, keys = zip(*indices_keys) if indices_keys else (tuple(), tuple())
         expr = f"[{self.expr}[idx] for idx in {indices}]"
+        kvectors = self.algebra._kvectors
         return self.__class__(
             algebra=self.algebra,
             expr=expr,
-            mvtype=self.algebra._kvectors[grades[0]] if len(grades) == 1 else MultiVector,
+            mvtype=kvectors[grades[0]] if len(grades) == 1 and grades[0] < len(kvectors) else MultiVector,
             keys=keys,
         )
 

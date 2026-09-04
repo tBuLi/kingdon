@@ -835,7 +835,8 @@ def test_blade_dict():
     assert len(alg.blades['e12'].values()) == 1
     assert len(alg.blades) == 9
 
-    alg = Algebra(7, full_layout=True)
+    with pytest.raises(TypeError):
+        Algebra(7, full_layout=True)  # A large algebra has no types to lay out.
     assert alg.blades.lazy
     assert len(alg.blades) == 8  # PSS is calculated by default
     assert len(alg.blades['e12'].values()) == len(tuple(alg.indices_for_grade(2)))
