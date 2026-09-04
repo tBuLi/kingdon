@@ -58,6 +58,8 @@ nitpick_ignore = [
     # MultiVector.set shadows the builtin, so the `-> set` on MultiVector.free_symbols
     # resolves to that method in class scope and never reaches builtins.
     ('py:class', 'kingdon.multivector.MultiVector.set'),
+    # traitlets annotates with `import typing as t`, so the members GraphWidget inherits carry `t.Any` in their signatures, which resolves to nothing.
+    ('py:class', 't.Any'),
 ]
 
 autodoc_mock_imports = ["sympy"]
