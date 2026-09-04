@@ -22,8 +22,48 @@ class MultiVectorType(type):
     MultiVector type allows typehinting for MultiVectors of a given shape.
     For example, :code:`MultiVector[3]` is interpreted as a MultiVectors of shape (N, 3) by :code:`Algebra.compile`,
     where N is the number of blades in the multivector.
+    An empty subscript adds no dimensions, so :code:`MultiVector[()] is MultiVector`.
     """
-    def __getitem__(cls, item): return cls, item
+    def __getitem__(cls, item): return cls if item == () else (cls, item)
+
+
+class Shape(tuple):
+    """
+    The shape of a multivector: the plain tuple of its array dimensions, which additionally knows
+    the multivector type it describes so that it can say so when printed::
+
+        >>> alg = Algebra(2)
+        >>> alg.vector([1, 2]).shape
+        Vector[()]
+        >>> alg.vector(numpy.ones((2, 5))).shape
+        Vector[(5,)]
+
+    Since this is a :class:`tuple` subclass a shape still compares equal to the plain tuple with
+    the same entries.
+
+    The repr echoes the typehint syntax of :class:`MultiVectorType`.
+    """
+    def __new__(cls, shape=(), mvtype=None):
+        self = super().__new__(cls, shape)
+        self.mvtype = mvtype
+        return self
+
+    def __repr__(self):
+        return f'{self.mvtype.__name__}[{tuple.__repr__(self)}]' if self.mvtype else tuple.__repr__(self)
+
+    def __reduce__(self):
+        return tuple, (tuple(self),)
+
+
+def to_shape_tuple(func):
+    """
+    Decorator for a method that returns a shape, wrapping it in a :class:`Shape` that knows which
+    multivector type it describes.
+    """
+    @wraps(func)
+    def wrapper(self):
+        return Shape(func(self), type(self))
+    return wrapper
 
 
 @dataclass(init=False)
@@ -213,6 +253,7 @@ class MultiVector(metaclass=MultiVectorType):
         return int(''.join('1' if i in self.keys() else '0' for i in reversed(self.algebra.canon2bin.values())), 2)
 
     @cached_property
+    @to_shape_tuple
     def shape(self) -> tuple:
         """ Return the shape of the .values() attribute of this multivector. """
         def _list_shape(v):
@@ -918,8 +959,9 @@ def stack(mvs: list[MultiVector], stack_func=None) -> MultiVector[None]:
     Stack a list of multivectors along a new "first" dimension.
     All multivectors must have the same type and shape. Their keys may differ: the result
     gets the union of the keys of `mvs`, and a blade an input does not have contributes zeros.
-    Remember that the first dimension of a multivector is always reserved for kingdon's multivector coefficients, so the new dimension will be the one after that.
-    As a result, this function returns a multivector with shape :code:`(mvs[0].shape[0], len(mvs), *mvs[0].shape[1:])`.
+    Remember that the first dimension of the values of a multivector is always reserved for kingdon's multivector
+    coefficients, so the new dimension will be the one after that. Since :attr:`~kingdon.multivector.MultiVector.shape`
+    does not expose that blade axis, the result has shape :code:`(len(mvs), *mvs[0].shape)`.
     To be compatible with :code:`numpy` or :code:`torch` you can provide a custom `stack_func` that will be used to
     stack the values of the multivectors. By default this is :code:`values_asarray` of the algebra.
 
@@ -930,7 +972,7 @@ def stack(mvs: list[MultiVector], stack_func=None) -> MultiVector[None]:
         >>> mvs = [alg.vector(torch.randn(2)) for _ in range(3)]
         >>> x = stack(mvs, stack_func=torch.stack)
         >>> x.shape
-        (2, 3)
+        Vector[(3,)]
 
     In order to have more control over the stacking dimensions, use :code:`einops.pack` instead, like::
 
@@ -940,10 +982,10 @@ def stack(mvs: list[MultiVector], stack_func=None) -> MultiVector[None]:
         >>> mvs = [alg.vector(torch.randn(2, 4)) for _ in range(3)]
         >>> x, _ = einops.pack(mvs, '* n')  # n matches 4, insert new dimension to the left
         >>> x.shape
-        (2, 3, 4)
+        Vector[(3, 4)]
         >>> y, _ = einops.pack(mvs, 'n *')  # n matches 4, insert new dimension to the right
         >>> y.shape
-        (2, 4, 3)
+        Vector[(4, 3)]
 
     :param mvs: List of multivectors to stack.
     :param stack_func: Function to stack the values of the multivectors, like :code:`numpy.stack` or :code:`torch.stack`. Defaults to :code:`list`.

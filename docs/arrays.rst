@@ -58,7 +58,7 @@ You can use this to keep your algorithm focused on the geometry, while simultani
     >>> lines = alg.bivector(np.random.rand(6, M)).normalized()
     >>> projected_points = points[:, None] @ lines[None, :]
     >>> projected_points.shape
-    (5, 3)
+    Point[(5, 3)]
 
 The projection of point 1 on line 2 is now available as :code:`p12 = projected_points[1, 2]`.
 
@@ -71,7 +71,7 @@ This can be done using the standard masking syntax:
     >>> O = alg.point([0, 0, 0])
     >>> l = (points & O)                 # Join all p in point with O in one high level statement
     >>> l.shape
-    (5,)
+    Bivector[(5,)]
     >>> d = l.norm()                     # Length of the line segments [p, O] for p in points
     >>> target_points = points[d.e < 1]  # all points within the unit sphere
 
@@ -91,13 +91,13 @@ on which we can do operations:
     >>> vertices, faces = load_obj(...)  # Load some obj mesh file to get N vertices and M faces
     >>> v = (pga3d.blades.e0 + pga3d.evector(vertices.T)).dual()  # algebraic construction of PGA points.
     >>> v.shape
-    (N,)
+    Point[(N,)]
     >>> facets = v[faces]
     >>> facets.shape
-    (M, 3)
+    Point[(M, 3)]
     >>> planes = facets[..., 0] & facets[..., 1] & facets[..., 2]
     >>> planes.shape
-    (M,)
+    Vector[(M,)]
     >>> areas = 0.5 * planes.norm()  # The areas of the triangles is half that of the planes
     >>> area = areas.map(np.sum)
     >>> volume = np.sum(planes.e0)
@@ -119,10 +119,10 @@ in accordance with what you would expect on the basis of the shape of the multiv
     >>> alg = Algebra(2)
     >>> x = alg.vector(np.random.rand(2, 3, 4))
     >>> x.shape
-    (3, 4)
+    Vector[(3, 4)]
     >>> y = rearrange(x, 'a b -> b a')
     >>> y.shape
-    (4, 3)
+    Vector[(4, 3)]
 
 .. code-block::
     :caption: reduce
@@ -131,7 +131,7 @@ in accordance with what you would expect on the basis of the shape of the multiv
     >>>
     >>> z = reduce(x, 'a b -> a', 'mean')
     >>> z.shape
-    (3,)
+    Vector[(3,)]
 
 .. code-block::
     :caption: pack & unpack
@@ -142,7 +142,7 @@ in accordance with what you would expect on the basis of the shape of the multiv
     >>> b = alg.vector(np.zeros([2, 3, 7, 5]))
     >>> packed, ps = pack([a, b], 'j * k')
     >>> packed.shape
-    (3, 8, 5)
+    Vector[(3, 8, 5)]
     >>> a2, b2 = unpack(packed, ps, 'j * k')
     >>> a2.shape == a.shape and b2.shape == b.shape
     True
@@ -155,11 +155,11 @@ in accordance with what you would expect on the basis of the shape of the multiv
     >>> vec = alg.vector(np.random.randn(2, 10, 10))
     >>> trace = einsum(vec, 'i i ->')
     >>> trace.shape
-    ()
+    Vector[()]
     >>> weight = np.random.randn(10, 20)
     >>> matmul = einsum(vec, weight, 'i j, j k -> i k')
     >>> matmul.shape
-    (10, 20)
+    Vector[(10, 20)]
 
 
 That is it! If you are interested in more details, the rest of this page explains all of this and more in full detail.
@@ -179,9 +179,9 @@ For example, in :math:`\mathbb{R}_3` we have
     >>> xvals = np.random.rand(3)  # e1, e2, e3 coefficients
     >>> x = alg.vector(xvals)
     >>> x.shape
-    ()
+    Vector[()]
 
-Now if we look at :code:`x.shape`, we see that it is :code:`()`, even though :code:`xvals.shape` is :code:`(3,)`.
+Now if we look at :code:`x.shape`, we see that the tuple is empty, even though :code:`xvals.shape` is :code:`(3,)`.
 This reflects that :code:`x` is a single vector, and therefore not iterable. You might have expected
 iteration over a multivector to iterate over its coefficients, but in :code:`kingdon` multivectors are
 treated as geometric numbers, similar to how complex numbers are treated in complex analysis.
@@ -209,7 +209,7 @@ Now lets make a collection of :math:`N` vectors, and see what changes:
     >>> x
     [0.37454012 0.95071431 0.73199394 0.59865848 0.15601864] 𝐞₁ + [0.15599452 0.05808361 0.86617615 0.60111501 0.70807258] 𝐞₂ + [0.02058449 0.96990985 0.83244264 0.21233911 0.18182497] 𝐞₃
     >>> x.shape
-    (5,)
+    Vector[(5,)]
     >>> len(x)
     5
 
@@ -274,7 +274,7 @@ In order to convert the vertices to multivectors (in 3DPGA), we need to transpos
     >>> pga3d = Algebra.fromname("3DPGA")
     >>> v = (pga3d.blades.e0 + pga3d.evector(vertices.T)).dual()
     >>> v.shape
-    (N,)
+    Point[(N,)]
 
 Suppose we now want to alternativelly have a datastructure of shape :math:`(M, 3)`,
 which explicitelly contains the coordinates of the vertices for every face, similar to how
@@ -285,7 +285,7 @@ This is now as simple as
 
     >>> facets = v[faces]
     >>> facets.shape
-    (M, 3)
+    Point[(M, 3)]
 
 In order to compute the area and (signed) volume of the mesh we can use numpy's indexing
 syntax to first create all planes,
@@ -294,7 +294,7 @@ syntax to first create all planes,
 
     >>> planes = facets[..., 0] & facets[..., 1] & facets[..., 2]
     >>> planes.shape
-    (M,)
+    Vector[(M,)]
 
 from which we can then compute the area:
 
@@ -398,7 +398,7 @@ For example, suppose we want to project :math:`N` points on :math:`M` lines usin
     >>> lines = pga.bivector(np.random.rand(6, M)).normalized()
     >>> projected_points = points[:, None] @ lines[None, :]
     >>> projected_points.shape
-    (3, 5)
+    Point[(3, 5)]
 
 
  The result is identical to :code:`stack([p @ lines for p in points])`, but leveraging array magic is
@@ -447,10 +447,10 @@ Rearrange
     >>> alg = Algebra(2)
     >>> x = alg.vector(np.random.rand(2, 3, 4))
     >>> x.shape
-    (3, 4)
+    Vector[(3, 4)]
     >>> y = rearrange(x, 'a b -> b a')
     >>> y.shape
-    (4, 3)
+    Vector[(4, 3)]
 
 Notice how the einops pattern :code:`'a b -> b a'` only makes reference to the non-blade
 dimensions of the multivector, but not the (first) blade dimensions.
@@ -467,7 +467,7 @@ Reduce
     >>>
     >>> y = reduce(x, 'a b -> a', 'mean')
     >>> y.shape
-    (3,)
+    Vector[(3,)]
 
 Again, notice how the einops pattern :code:`'a b -> a'` only makes reference to the non-blade
 dimensions of the multivector.
@@ -485,10 +485,10 @@ still a multivector of the same type:
     >>>
     >>> y = repeat(x, 'a b -> a b c', c=5)
     >>> y.shape
-    (3, 4, 5)
+    Vector[(3, 4, 5)]
     >>> y = repeat(x, 'a b -> (rep a) b', rep=2)
     >>> y.shape
-    (6, 4)
+    Vector[(6, 4)]
 
 Pack & Unpack
 ~~~~~~~~~~~~~
@@ -504,7 +504,7 @@ and :code:`unpack` reverses the operation:
     >>> b = alg.vector(np.ones([2, 3, 7, 5]))
     >>> packed, ps = pack([a, b], 'j * k')
     >>> packed.shape
-    (3, 8, 5)
+    Vector[(3, 8, 5)]
     >>> a2, b2 = unpack(packed, ps, 'j * k')
     >>> a2.shape == a.shape and b2.shape == b.shape
     True
@@ -526,10 +526,10 @@ latter an explicit zero on :math:`\mathbf{e}_2`:
     >>> packed.keys()
     (1, 2)
     >>> packed.shape
-    (3, 8, 5)
+    Vector[(3, 8, 5)]
     >>> a2, c2 = unpack(packed, ps, 'j * k')
     >>> c2.keys(), c2.shape
-    ((1, 2), (3, 7, 5))
+    ((1, 2), Vector[(3, 7, 5)])
     >>> bool(np.all(c2.e2 == 0))
     True
 
@@ -552,11 +552,11 @@ blade by blade.
     >>> vec = alg.vector(np.random.randn(2, 10, 10))
     >>> trace = einsum(vec, 'i i ->')
     >>> trace.shape
-    ()
+    Vector[()]
     >>> weight = np.random.randn(10, 20)
     >>> matmul = einsum(vec, weight, 'i j, j k -> i k')
     >>> matmul.shape
-    (10, 20)
+    Vector[(10, 20)]
 
 Because the summation happens blade by blade, all multivectors in an :code:`einsum` must
 have the same keys (i.e. basis blades). The exception are scalars, which multiply every
@@ -567,7 +567,7 @@ blade and can therefore be combined with any multivector:
     >>> s = alg.scalar(np.random.randn(1, 10))
     >>> scaled = einsum(vec, s, 'i j, j -> i j')
     >>> scaled.shape
-    (10, 10)
+    Vector[(10, 10)]
 
 To multiply two multivectors of different types, use one of the products of the algebra
 instead, e.g. :code:`vec * bivec`. Do mind that such a product multiplies the underlying
@@ -605,7 +605,7 @@ get a multivector over :code:`torch` tensors back to the cpu:
     >>>
     >>> y = asnumpy(x)
     >>> y.shape
-    (3, 4)
+    Vector[(3, 4)]
 
 For other backends :code:`asnumpy` returns a :code:`numpy.ndarray`, but for :code:`kingdon` it
 returns a multivector whose coefficients are :code:`numpy.ndarray`, since a multivector is a
