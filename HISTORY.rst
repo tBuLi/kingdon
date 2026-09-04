@@ -111,10 +111,13 @@ Bugfix: width and height should be direct options to Algebra.graph
 Unpublished
 -----------
 * Kingdon now has a type system, inspired by ``GAmphetamine.js``. Multivector types such as ``point``, ``direction``, ``translation`` and ``bireflection`` are defined by a ``layout``: either a dict of basis blades, or a classmethod holding a GA expression, from which kingdon derives which coefficients are free and which are structural constants. Constants are no longer stored or computed with, so the generated code is shorter: the counts in the CSE table of the docs are now reached by the built-in operators. Register your own types with the ``extra_types`` (or ``types``) argument to ``Algebra``.
-* ``MultiVector`` is no longer callable. To evaluate an expression for numerical values, build the multivector numerically or compile the expression with ``Algebra.jit``/``Algebra.compile``.
+* The ``Algebra`` option ``graded`` has been renamed to ``full_layout``, since it now enforces that every multivector carries the full layout of its type.
+* ``Algebra.register`` has been deprecated in favor of ``Algebra.add_operator``, which is what it really does: it adds a new operator to the algebra. The old name still works but raises a ``FutureWarning``.
+* ``MultiVector`` is no longer callable. To evaluate an expression for numerical values, build the multivector numerically or compile the expression with ``Algebra.add_operator``/``Algebra.compile``.
 * Einops is now supported on Multivectors, allowing users to write einops expressions on multivector coefficients and seamlessly mix them with kingdon operations. See #46.
 * GAmphetamine.js inspired Common Subexpression Elimination (CSE) has been implemented, resulting in code that is as fast as hand optimized code for known test cases.
-* The ``Algebra.jit`` decorator now uses the new CSE by default, so compiled functions are now even faster without any changes to user code.
+* The ``Algebra.add_operator`` decorator now uses the new CSE by default, so compiled functions are now even faster without any changes to user code.
 * ``Algebra.compile`` is no longer a decorator: it now takes the expression followed by the symbolic multivectors to compile it for, and returns a ``CompiledExpression``.
+* ``Algebra.graph`` now accepts multivectors whose coefficients are arrays, so meshes and point clouds are a single subject instead of thousands. The shape of the multivector decides what is drawn: ``(N,)`` gives ``N`` separate elements, ``(N, 2)`` line segments and ``(N, 3)`` filled triangles. The coefficients are sent to ``ganja.js`` as a single binary buffer, which is much faster than graphing the elements one by one. See the "Meshes and point clouds" section of the docs.
 * ``RationalPolynomial`` now has a ``diff`` method similar to that of SymPy.
 * The ``set`` method of Multivectors can be used within compiled functions to update coefficients in-place instead of returning a multivector.
