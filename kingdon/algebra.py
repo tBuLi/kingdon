@@ -208,7 +208,6 @@ class Algebra:
                 for eJ in range(2 ** self.d)
             }
             self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
-            self.basis = list(self.canon2bin)
 
         self.signs = DefaultKeyDict(self._compute_sign)
 

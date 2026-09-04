@@ -1,36 +1,44 @@
 from kingdon import Algebra
 import numpy as np
+import pytest
 
-
-def test_widget():
-    alg = Algebra(2, 0, 1)
+@pytest.mark.parametrize('alg', [Algebra(2, 0, 1), Algebra.fromname('2DPGA')])
+def test_widget(alg):
     x = alg.vector([1, 1, 1]).dual()
     y = lambda: alg.vector([1, 1, 1]).dual()
     z = alg.vector([1, 1, 1])
     wvals = np.ones((3, 5))
     w = alg.vector(wvals).dual()
+    wcoeffs = np.array(w.values())  # Not wvals: dualizing flips signs and reorders blades.
+    p = alg.vector([1, 2, 1]).dual()
     func = lambda: x & y
-    args = (0xD0FFE1, x, 0x00AA88, y, func, z, w)
+    args = (0xD0FFE1, x, 0x00AA88, y, func, z, w, p)
+    if alg.basis:  # TODO: remove this clause when #141 has been solved.
+        with pytest.raises(ValueError):
+            g = alg.graph(*args)
+        return
     g = alg.graph(*args)
-    # Only point 1 is draggable because it is the only PGA pseudovector.
-    assert g.draggable_points_idxs == [1]
-    assert g.draggable_points == [
-        [{'keys': x.keys(), 'mv': x.values()}],
-    ]
+    # Only point 1 and 11 are draggable because they are the only direct PGA trivectors.
+    assert g.draggable_points_idxs == [1, 11]
+    assert g.draggable_points == [[
+        {'keys': x.keys(), 'mv': x.values(), 'type': 'bivector'},
+        {'keys': p.keys(), 'mv': p.values(), 'type': 'bivector'},
+    ]]
     assert all(isinstance(s, int) for s in g.signature)
     subjects = [
         0xD0FFE1,
-        {'keys': x.keys(), 'mv': x.values()},
+        {'keys': x.keys(), 'mv': x.values(), 'type': 'bivector'},
         0x00AA88,
-        {'keys': y().keys(), 'mv': y().values()},
-        {'keys': func().keys(), 'mv': func().values()},
-        {'keys': z.keys(), 'mv': z.values()},
-        *({'keys': wi.keys(), 'mv': wi.values()} for wi in w),
+        {'keys': y().keys(), 'mv': y().values(), 'type': 'bivector'},
+        {'keys': func().keys(), 'mv': func().values(), 'type': 'vector'},
+        {'keys': z.keys(), 'mv': z.values(), 'type': 'vector'},
+        {'keys': w.keys(), 'mv': {'dtype': wcoeffs.dtype.str, 'shape': wcoeffs.shape, 'buffer': wcoeffs.tobytes()}, 'type': 'bivector'},
+        {'keys': p.keys(), 'mv': p.values(), 'type': 'bivector'},
     ]
     assert g.subjects == subjects
 
     # Test if graph has the right basis, signature, and default style.
-    assert g.basis == [b if b != 'e' else '1' for b in alg.basis]
+    assert g.basis == [b if b != 'e' else '1' for b in alg.canon2bin]
     assert g.signature == alg.signature
     assert g.options['style'] == {
         'width': 'min( 100%, 1024px )',
@@ -83,13 +91,13 @@ def test_update_125():
     assert g.pre_subjects == list(subjects)
     assert g.subjects == [
         0xD0FFE1,
-        {'keys': x.keys(), 'mv': x.values()},
-        {'keys': Y.keys(), 'mv': Y.values()}
+        {'keys': x.keys(), 'mv': x.values(), 'type': 'bivector'},
+        {'keys': Y.keys(), 'mv': Y.values(), 'type': 'bivector'}
     ]
     # Only point 1 is draggable because it is the only PGA pseudovector.
     assert g.draggable_points_idxs == [1]
     assert g.draggable_points == [
-        [{'keys': x.keys(), 'mv': x.values()}],
+        [{'keys': x.keys(), 'mv': x.values(), 'type': 'bivector'}],
     ]
 
     z = alg.vector([1, 0.3, 1.2]).dual()
@@ -103,14 +111,47 @@ def test_update_125():
     assert g.raw_subjects == [new_graph_func]
     assert g.pre_subjects == list(new_subjects)
     assert g.subjects == [
-        {'keys': x.keys(), 'mv': x.values()},
+        {'keys': x.keys(), 'mv': x.values(), 'type': 'bivector'},
         0x00AA88,
-        {'keys': Y.keys(), 'mv': Y.values()},
-        {'keys': z.keys(), 'mv': z.values()}
+        {'keys': Y.keys(), 'mv': Y.values(), 'type': 'bivector'},
+        {'keys': z.keys(), 'mv': z.values(), 'type': 'bivector'}
     ]
     # Only point 1 is draggable because it is the only PGA pseudovector.
     assert g.draggable_points_idxs == [0, 3]
     assert g.draggable_points == [[
-        {'keys': x.keys(), 'mv': x.values()},
-        {'keys': z.keys(), 'mv': z.values()},
+        {'keys': x.keys(), 'mv': x.values(), 'type': 'bivector'},
+        {'keys': z.keys(), 'mv': z.values(), 'type': 'bivector'},
     ]]
+
+# Only the structural constants of a layout are sent to js; free components are ignored.
+@pytest.mark.parametrize('alg, types', [
+    (Algebra(2, 0, 1),
+     {'bireflection': {},
+      'bivector': {},
+      'scalar': {},
+      'trivector': {},
+      'vector': {}}
+     ),
+    (Algebra.fromname('2DPGA'),
+     {'bireflection': {},
+      'bivector': {},
+      'direction': {},
+      'evector': {},
+      'point': {3: 1.0},
+      'scalar': {},
+      'translation': {0: 1.0},
+      'trivector': {},
+      'upoint': {4: 1.0},
+      'vector': {}}
+     )
+])
+def test_graph_types(alg, types):
+    """test if types are correctly communicated to the GraphWidget."""
+    globals().update(alg.blades.grade(1))
+
+    if alg.basis:  # TODO: remove this clause when #141 has been solved.
+        with pytest.raises(ValueError):
+            g = alg.graph()
+        return
+    g = alg.graph()
+    assert g.types == types
