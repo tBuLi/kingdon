@@ -98,8 +98,7 @@ work:
    area   = 0.5 * reduce(planes.norm(), 'm -> ', 'sum').e     # total surface area
    volume = reduce(planes, 'm -> ', 'sum').e0 / 6             # signed volume of the mesh
  
-Yes — the signed volume of the whole mesh is just the sum of the ``e0``
-coefficients. 🤯
+Yes, the signed volume of the whole mesh is just the sum of the ``e0`` coefficients. 🤯
 
 But what if you do not want to manipulate the blade dimension (and hence the geometry), but you want to manipulate the batch dimensions instead?
 For that, you can directly use **einops on multivectors**, making it easy to write high-level operations
