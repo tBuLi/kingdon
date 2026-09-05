@@ -215,13 +215,13 @@ commutator product between a bivector and vector.
 In order to create an algebra, use :code:`Algebra`. When calling :code:`Algebra` we must provide the signature of the
 algebra, in this case we shall go for 3DPGA, which is the algebra :math:`\mathbb{R}_{3,0,1}`.
 There are a number of ways to make elements of the algebra. It can be convenient to work with the basis blades directly.
-We can add them to the local namespace by calling :code:`locals().update(alg.blades)`:
+We can add them to the local namespace by calling :code:`globals().update(alg.blades)`:
 
 .. code-block:: python
 
     >>> from kingdon import Algebra
     >>> alg = Algebra(3, 0, 1)
-    >>> locals().update(alg.blades)
+    >>> globals().update(alg.blades)
     >>> b = 2 * e12
     >>> v = 3 * e1
     >>> b * v
