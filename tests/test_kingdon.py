@@ -395,6 +395,23 @@ def test_alg_full_layout(vga2d):
     assert R.e12 == 3
 
 
+@pytest.mark.parametrize("alg", [
+    Algebra(2, 0, 1, full_layout=True, extra_types=[UPoint]),
+    Algebra(3, 0, 1, full_layout=True, extra_types=[UPoint]),
+    Algebra.fromname('2DPGA', full_layout=True), Algebra.fromname('3DPGA', full_layout=True)
+])
+def test_pga_full_layout(alg):
+    """ Test if full_layout works correctly for typed algebras like PGA. """
+    p = alg.upoint(name='p').dual()
+    q = alg.upoint(name='q').dual()
+    # Point times point is translation or a bireflection. The latter could really go wrong if we filter out zeros.
+    @alg.add_operator(symbolic=True)
+    def compose(x, y):
+        yreverse = ~y
+        return x * yreverse
+    R = compose(p, q)  # No news is good news.
+    assert all(k in R.keys() if v == ... else k not in R.keys() for k, v in alg._type_layouts[type(R)].items())
+
 def test_alg_graded_deprecated():
     with pytest.warns(FutureWarning):
         alg = Algebra(2, graded=True)
