@@ -130,9 +130,10 @@ class OperatorDict(Mapping):
     def _make_symbolic_mv(self, name, keys, shape, mvtype, mvtypehint) -> MultiVector:
         depth = mvtypehint[1] if isinstance(mvtypehint, tuple) else 0  # Must come from the type-hint.
         if depth is None: depth = shape[0]  # If the type hint was MultiVector[None] than the depth should be taken from the input
+        # During codegen we need to ignore full_layout
         if not depth:
-            return mvtype.fromname(self.algebra, name, keys, symbolcls=self.codegen_symbolcls)
-        return stack([mvtype.fromname(self.algebra, f'{name}_{k}', keys, symbolcls=self.codegen_symbolcls)
+            return mvtype.fromname(self.algebra, name, keys, symbolcls=self.codegen_symbolcls, full_layout=False)
+        return stack([mvtype.fromname(self.algebra, f'{name}_{k}', keys, symbolcls=self.codegen_symbolcls, full_layout=False)
                       for k in range(depth)])
 
     def make_symbolic_mvs(self, types_in: tuple[tuple[type, tuple[int]]], shapes_in: tuple[tuple[int]]) -> tuple[MultiVector]:
@@ -167,6 +168,15 @@ class OperatorDict(Mapping):
     def codegen_output_type(self):
         return_annotation = inspect.signature(self.codegen).return_annotation
         return self.algebra.mvtype if return_annotation in (inspect.Parameter.empty, "MultiVector") else return_annotation
+
+    def _simplify(self, mv: MultiVector) -> MultiVector:
+        """
+        Apply the algebra's :code:`simp_func` to the coefficients of `mv`. Coefficients that simplify
+        to zero are dropped, unless we are in full_layout mode.
+        """
+        if self.algebra.full_layout:
+            return mv.map(self.algebra.simp_func)
+        return mv.filter(self.algebra.simp_func, map=True)
 
     def _sanitize_mvs(self, mvs: tuple[MultiVector]):
         """
@@ -203,9 +213,9 @@ class OperatorDict(Mapping):
         issymbolic = any(mv.issymbolic for mv in mvs)
         if issymbolic and self.algebra.simp_func:
             if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
-                mvs[output_mv_idx].set(mvs[output_mv_idx].filter(self.algebra.simp_func, map=True))
+                mvs[output_mv_idx].set(self._simplify(mvs[output_mv_idx]))
             else:
-                mv_out = mv_out.filter(self.algebra.simp_func, map=True)
+                mv_out = self._simplify(mv_out)
         return mv_out
 
     def _call_binary(self, mv1, mv2):
@@ -217,9 +227,9 @@ class OperatorDict(Mapping):
         if issymbolic and self.algebra.simp_func:
             if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
                 mvs = [mv1, mv2]
-                mvs[output_mv_idx].set(mvs[output_mv_idx].filter(self.algebra.simp_func, map=True))
+                mvs[output_mv_idx].set(self._simplify(mvs[output_mv_idx]))
             else:
-                mv_out = mv_out.filter(self.algebra.simp_func, map=True)
+                mv_out = self._simplify(mv_out)
 
         return mv_out
 
@@ -251,9 +261,9 @@ class UnaryOperatorDict(OperatorDict):
         issymbolic = mv.issymbolic
         if issymbolic and self.algebra.simp_func:
             if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
-                mv[output_mv_idx].set(mv.filter(self.algebra.simp_func, map=True))
+                mv[output_mv_idx].set(self._simplify(mv))
             else:
-                mv_out = mv_out.filter(self.algebra.simp_func, map=True)
+                mv_out = self._simplify(mv_out)
 
         return mv_out
 
