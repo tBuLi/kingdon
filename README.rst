@@ -71,7 +71,7 @@ A multivector over arrays is just a batch of geometry — and the shape tells yo
    points = alg.point(np.random.rand(3, 5))                   # Point[(5,)]
    lines  = alg.bivector(np.random.rand(6, 3)).normalized()   # Bivector[(3,)]
  
-``kingdon`` supports vectorized expressions instead of for-loops:
+``kingdon`` supports vectorized expressions in addition to for-loops:
  
 .. code-block:: python
  
