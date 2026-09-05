@@ -60,6 +60,93 @@ In bullet points:
 - Compatible with `einops <https://einops.rocks/>`__ if you :code:`import kingdon.einops_backend` before you do your einops magic.
 - Compatible with `numba <https://numba.pydata.org/>`__ and other JIT compilers to speed-up numerical computations.
 
+Array Syntax
+============
+Kingdon has great symbiosis with the python `array api <https://data-apis.org/array-api/latest/>`_, allowing you to construct multidimensional multivectors using NumPy, PyTorch, JAX, CuPy, Dask, and more. (The examples below use NumPy.)
+A multivector over arrays is just a batch of geometry — and the shape tells you the type:
+ 
+.. code-block:: python
+ 
+   alg = Algebra.fromname("3DPGA")
+   points = alg.point(np.random.rand(3, 5))                   # Point[(5,)]
+   lines  = alg.bivector(np.random.rand(6, 3)).normalized()   # Bivector[(3,)]
+ 
+``kingdon`` supports vectorized expressions instead of for-loops:
+ 
+.. code-block:: python
+ 
+   points[:, None] @ lines[None, :]   # Point[(5, 3)]: every point projected onto every line
+
+The ``a @ b = (a | b) / b`` projection operator projects every point onto every line in one simple expressions giving a ``Point[(5, 3)]``.
+Therefore `kingdon` allows you to write high-level algorithms that focus purely on the
+geometry, while delegating the looping to the array library of your choice.
+**Masking** passes straight through to your coefficients, so numpy tricks just
+work:
+ 
+.. code-block:: python
+ 
+   O = alg.blades.e0.dual()                     # origin
+   nearby = points[(points & O).norm().e < 1]   # every point within the unit sphere
+ 
+**Fancy indexing** means a whole mesh is loop-free:
+ 
+.. code-block:: python
+ 
+   v      = alg.point(vertices.T)                             # Point[(N,)]    the point cloud
+   facets = v[faces]                                          # Point[(M, 3)]  a point per face corner
+   planes = facets[..., 0] & facets[..., 1] & facets[..., 2]  # Vector[(M,)]   the face planes
+   area   = 0.5 * reduce(planes.norm(), 'm -> ', 'sum').e     # total surface area
+   volume = reduce(planes, 'm -> ', 'sum').e0 / 6             # signed volume of the mesh
+ 
+Yes — the signed volume of the whole mesh is just the sum of the ``e0``
+coefficients. 🤯
+
+But what if you do not want to manipulate the blade dimension (and hence the geometry), but you want to manipulate the batch dimensions instead?
+For that, you can directly use **einops on multivectors**, making it easy to write high-level operations
+such as ``rearrange``, ``reduce``, ``repeat``, ``pack``/``unpack``, ``einsum``,
+without any reference to a specific array package. 
+Patterns only ever mention the batch dims (the blade axis is not
+yours to play with), so e.g. a vector stays a vector:
+ 
+.. code-block:: python
+ 
+   import kingdon.einops_backend
+   from einops import rearrange, reduce, repeat
+ 
+   x = alg.vector(np.random.rand(4, 3, 4))   # Vector[(3, 4)]
+   rearrange(x, 'a b -> b a')                # Vector[(4, 3)]
+   reduce(x, 'a b -> a', 'mean')             # Vector[(3,)]
+   repeat(x, 'a b -> a b c', c=5)            # Vector[(3, 4, 5)]
+ 
+This works for any package supported by einops (NumPy, PyTorch, JAX, CuPy, and more).
+ 
+``pack``/``unpack`` glue multivectors together along a wildcard axis, carrying
+the **right dtype** and living on the **right device**.
+ 
+.. code-block:: python
+ 
+   a = alg.vector(np.ones([4, 3, 5]))        # Vector[(3, 5)]
+   b = alg.vector(np.ones([4, 3, 7, 5]))     # Vector[(3, 7, 5)]
+   packed, ps = pack([a, b], 'j * k')        # Vector[(3, 8, 5)]
+   a2, b2 = unpack(packed, ps, 'j * k')      # Vector[(3, 5)], Vector[(3, 7, 5)]
+ 
+And ``einsum`` contracts batch dimensions blade by blade, so multivectors and
+plain arrays mix freely:
+ 
+.. code-block:: python
+ 
+   vec = alg.vector(np.random.randn(4, 10, 10))   # Vector[(10, 10)]
+   w   = np.random.randn(10, 20)                  # just a numpy array
+   einsum(vec, 'i i ->')                          # Vector[()]         the trace
+   einsum(vec, w, 'i j, j k -> i k')              # Vector[(10, 20)]   batched matmul
+ 
+
+
+**And it's** *fast*\ **.** New GAmphetamine-style CSE, on by default for built-in operators and optional for custom operators using `@alg.add_operator(symbolic=True) <https://kingdon.readthedocs.io/en/stable/module_docs.html#kingdon.algebra.Algebra.add_operator>`_. 
+3DPGA, counted in muls/adds — naive → CSE:
+``R >> p`` 72/30 → **21/18** · ``p @ P`` 21/15 → **6/6** · ``P >> p`` 33/13 →
+**9/7**. That's hand-optimized level, automatically generated.
+
 Teahouse Menu
 =============
 If you are thirsty for some examples, please visit the `teahouse <https://tbuli.github.io/teahouse/>`_.
