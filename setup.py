@@ -50,6 +50,6 @@ setup(
     test_suite='tests',
     tests_require=test_requirements,
     url='https://github.com/tbuli/kingdon',
-    version='2.1.1',
+    version='3.0.0',
     zip_safe=False,
 )

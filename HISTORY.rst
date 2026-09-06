@@ -108,8 +108,8 @@ Massive large algebra improvement!
 ------------------
 Bugfix: width and height should be direct options to Algebra.graph
 
-Unpublished
------------
+3.0.0 (2026-09-04)
+------------------
 * Kingdon now has a type system, inspired by ``GAmphetamine.js``. Multivector types such as ``point``, ``direction``, ``translation`` and ``bireflection`` are defined by a ``layout``: either a dict of basis blades, or a classmethod holding a GA expression, from which kingdon derives which coefficients are free and which are structural constants. Constants are no longer stored or computed with, so the generated code is shorter: the counts in the CSE table of the docs are now reached by the built-in operators. Register your own types with the ``extra_types`` (or ``types``) argument to ``Algebra``.
 * The ``Algebra`` option ``graded`` has been renamed to ``full_layout``, since it now enforces that every multivector carries the full layout of its type.
 * ``Algebra.register`` has been deprecated in favor of ``Algebra.add_operator``, which is what it really does: it adds a new operator to the algebra. The old name still works but raises a ``FutureWarning``.

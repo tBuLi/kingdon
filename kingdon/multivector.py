@@ -170,11 +170,19 @@ class MultiVector(metaclass=MultiVectorType):
         return obj
 
     @classmethod
-    def sanitize_keys_grades(cls, algebra, keys=None, grades=None) -> tuple[int, tuple[int]]:
+    def sanitize_keys_grades(cls, algebra, keys=None, grades=None, full_layout=None) -> tuple[int, tuple[int]]:
         """
         Ensure that keys and grades are in agreement with the layout for ``cls``.
         If no keys or grades are provided, they are created.
+
+        :param full_layout: whether `keys` has to make up the full layout of ``cls``.
+            Defaults to :code:`algebra.full_layout`. Codegen passes :code:`False`, because the
+            symbolic multivectors it works with have been stripped of their type by
+            :class:`~kingdon.multivector.MultiVector.asmvtype` and therefore carry the keys of
+            the layout they came from, not those of the type they now have.
         """
+        if full_layout is None:
+            full_layout = algebra.full_layout
         layout = algebra._type_layouts.get(cls, {})
         if keys is None:
             # Generate keys from layout. Since they are generated from layout, we don't need to validate them against layout.
@@ -199,7 +207,7 @@ class MultiVector(metaclass=MultiVectorType):
             if grades is None:
                 grades = tuple(sorted({k.bit_count() for k in keys + tuple(k for k, v in layout.items() if v != ...)}))
 
-        if algebra.full_layout and algebra._type_layouts:  # The second condition is false before layouts have been bound.
+        if full_layout and algebra._type_layouts:  # The second condition is false before layouts have been bound.
             if layout and len(keys) != len([v for v in layout.values() if v == ...]):
                 raise ValueError(f"In full_layout mode, the number of keys should be equal to "
                                  f"those expected for a {cls} with layout {layout=}.")
@@ -209,13 +217,15 @@ class MultiVector(metaclass=MultiVectorType):
         return keys
 
     @classmethod
-    def fromname(cls, algebra, name: str, keys=None, grades=None, symbolcls=None):
+    def fromname(cls, algebra, name: str, keys=None, grades=None, symbolcls=None, full_layout=None):
         """
         Initiate a symbolic multivector.
+
+        :param full_layout: see :class:`~kingdon.multivector.MultiVector.sanitize_keys_grades`.
         """
         if symbolcls is None:
             symbolcls = algebra.symbolcls or Symbol
-        keys = cls.sanitize_keys_grades(algebra, keys, grades)
+        keys = cls.sanitize_keys_grades(algebra, keys, grades, full_layout)
         values = list(symbolcls(f'{name}{algebra.bin2canon[k][1:]}') for k in keys)
         instance = cls.fromkeysvalues(algebra, keys, values, raw=True)
         return instance

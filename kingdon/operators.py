@@ -14,9 +14,26 @@ from fractions import Fraction as PyFraction
 from kingdon.powers import power_supply
 
 
+def is_zero(v) -> bool:
+    """
+    True only for values which are *certainly* zero, i.e. scalar zeros and symbolic
+    expressions that cancelled exactly.
+
+    Array-valued coefficients (numpy, torch, ...) with more than one element are never
+    inspected: which keys a multivector has has to follow from the keys of the inputs, not
+    from the data.
+    """
+    if getattr(v, 'ndim', 0):  # ndim > 0 means an array-like with a batch/vector axis.
+        return False
+    try:
+        return not v
+    except (RuntimeError, ValueError):
+        return False
+
+
 def dict_to_multivector(res: dict, algebra) -> "MultiVector":
     # Drop zeros and put the remaining keys back in canon2bin order.
-    nonzero = {k: v for k, v in res.items() if v}
+    nonzero = {k: v for k, v in res.items() if not is_zero(v)}
     items = [(k, nonzero[k]) for k in algebra.canon2bin.values() if k in nonzero]
     keys, values = zip(*items) if items else ((), [])
     return algebra.mvtype.fromkeysvalues(algebra, keys, list(values), raw=True)
@@ -46,13 +63,13 @@ def product(
     """
     sign_func = sign_func or (lambda pair: x.algebra.signs[pair])
 
-    res = {k: 0 for k in x.algebra.canon2bin.values()}
+    res = {}
     for (kx, vx), (ky, vy) in itertools.product(x.items(), y.items()):
         if (sign := sign_func((kx, ky))):
             key_out = keyout_func(kx, ky)
             if filter_func and not filter_func(kx, ky, key_out): continue
             termstr = vx * vy if sign > 0 else (- vx * vy)
-            res[key_out] += termstr
+            res[key_out] = res[key_out] + termstr if key_out in res else termstr
     return dict_to_multivector(res, x.algebra)
 
 

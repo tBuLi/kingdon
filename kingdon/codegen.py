@@ -134,11 +134,15 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
             try: float(x); return True
             except (ValueError, TypeError): return False
         res_layout = {k: float(f) if is_number(f := str(v)) else ... for k, v in res.items()}
+        # A zero coefficient carries no structural information: but full_layout could result in zeros.
+        res_layout = {k: v for k, v in res_layout.items() if v != 0.0}
         MVType, layout = resolve_layout(algebra._type_layouts, res_layout, default=algebra.mvtype)
 
         if layout:
+            # In full_layout mode the result carries every free component of its type.
             res = dict(res.items())
-            res = {k: res[k] for k, v in layout.items() if v == ... and k in res}
+            res = {k: res.get(k, 0) for k, v in layout.items()
+                   if v == ... and (algebra.full_layout or k in res)}
 
     funcname = f'{codegen.__name__}_' + '_x_'.join(f"{format(mv[0].type_number if isinstance(mv, list) else mv.type_number, 'X')}" for mv in mvs)
     args = {arg_name: [tuple(chain(*(x.values() for x in arg)))] if isinstance(arg, list) else arg.values()

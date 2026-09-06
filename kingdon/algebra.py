@@ -219,7 +219,7 @@ class Algebra:
             self.large = self.d > 6
 
         if self.large:  # Do direct computation instead of codegen
-            self.registry = {f.name: self.wrapper(resolve_and_expand(partial(do_operation, codegen=codegen, algebra=self)))
+            self.registry = {f.name: resolve_and_expand(partial(do_operation, codegen=self.wrapper(codegen), algebra=self))
                                      if self.wrapper else resolve_and_expand(partial(do_operation, codegen=codegen, algebra=self))
                              for f in fields(self) if (codegen := f.metadata.get('codegen'))}
         else:
