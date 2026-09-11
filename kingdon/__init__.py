@@ -15,3 +15,4 @@ from kingdon.multivector import (
     stack
 )
 from kingdon.matrixreps import expr_as_matrix
+from .style import colormaps
