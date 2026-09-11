@@ -762,6 +762,20 @@ def test_normalization(ga301):
     assert Bnormalized.normsq().e1234 == pytest.approx(0.0)
 
 
+def test_abs_multivector(vga2d):
+    v = vga2d.vector(e1=3, e2=-4)
+    result = abs(v)
+    assert result == pytest.approx(5.0)
+    assert result >= 0
+    assert isinstance(result, (int, float, np.floating))
+    # abs() of a negative scalar should still be positive
+    s = vga2d.scalar(e=-2.5)
+    assert abs(s) == pytest.approx(2.5)
+    # comparison form requested in issue #42
+    assert abs(v) < 6
+    assert not (abs(v) < 1)
+
+
 def test_iteration():
     alg = Algebra(4)
     nrows = 3
