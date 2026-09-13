@@ -776,6 +776,16 @@ def test_abs_multivector(vga2d):
     assert not (abs(v) < 1)
 
 
+def test_abs_algebra_01_vector_always_positive():
+    """In Algebra(0, 1), abs of a vector is a non-negative scalar."""
+    alg = Algebra(0, 1)
+    for coeff in (-3.0, -0.5, 0.0, 0.25, 2.0):
+        v = alg.vector(e1=coeff)
+        result = abs(v)
+        assert result >= 0
+        assert result == pytest.approx(abs(coeff))
+
+
 def test_iteration():
     alg = Algebra(4)
     nrows = 3
