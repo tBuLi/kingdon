@@ -828,8 +828,21 @@ class Hexavector(KVector): layout_grades = (6,)
 class Heptavector(KVector): layout_grades = (7,)
 class Octovector(KVector): layout_grades = (8,)
 
+
+class EvenMV(MultiVector):
+    @classmethod
+    def layout(cls, algebra, name):
+        return MultiVector.fromname(algebra, name=name, grades=tuple(g for g in range(algebra.d + 1) if g % 2 == 0))
+
+
+class OddMV(MultiVector):
+    @classmethod
+    def layout(cls, algebra, name):
+        return MultiVector.fromname(algebra, name=name, grades=tuple(g for g in range(algebra.d + 1) if g % 2))
+
+
 # k-reflections
-class Bireflection(MultiVector):
+class Bireflection(EvenMV):
     r"""
     A bireflection :math:`R` is assumed to be identical to :math:`\mathbf{R} = p \widetilde{q}`
     with :math:`p` and :math:`q` normalized vectors, such that :math:`R \widetilde{R} = 1`.

@@ -130,7 +130,9 @@ def test_update_125():
       'bivector': {},
       'scalar': {},
       'trivector': {},
-      'vector': {}}
+      'vector': {},
+      'evenmv': {},
+      'oddmv': {}}
      ),
     (Algebra.fromname('2DPGA'),
      {'bireflection': {},
@@ -142,7 +144,9 @@ def test_update_125():
       'translation': {0: 1.0},
       'trivector': {},
       'upoint': {4: 1.0},
-      'vector': {}}
+      'vector': {},
+      'evenmv': {},
+      'oddmv': {}}
      )
 ])
 def test_graph_types(alg, types):

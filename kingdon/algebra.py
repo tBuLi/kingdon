@@ -20,7 +20,7 @@ from kingdon.matrixreps import matrix_rep
 from kingdon.multivector import (
     MultiVector, MultiVectorType,
     Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector, # k-vectors
-    Bireflection, # compositions
+    Bireflection, EvenMV, OddMV, # compositions
     Direction, EVector, UPoint, Point, Translation,  # PGA Types.
 )
 from kingdon.graph import GraphWidget
@@ -230,6 +230,7 @@ class Algebra:
             setattr(self, name, op)
 
         self._kvectors = []
+        self._evenoddmv = [EvenMV, OddMV]
         if self.large:
             if self.types or extra_types or self.full_layout:
                 raise TypeError('A large algebra has no multivector types, so `types`, `extra_types` and '
@@ -242,7 +243,7 @@ class Algebra:
             if not self.types:
                 self._kvectors = KVECTORS[:self.d+1]
                 self.types = [*self._kvectors]
-                if self.d >= 2: self.types.extend([Bireflection])
+                if self.d >= 2: self.types.extend([Bireflection, *self._evenoddmv])
                 if extra_types: self.types.extend(extra_types)
             # Dynamically generate classes for types if they are not already.
             self.types = [type(t['name'], (self.mvtype,), {'layout': t['layout']}) if isinstance(t, dict) else t
@@ -508,15 +509,13 @@ class Algebra:
 
     def evenmv(self, *args, **kwargs) -> MultiVector:
         """ Create a new :class:`~kingdon.multivector.MultiVector` in the even subalgebra. """
-        grades = tuple(filter(lambda x: x % 2 == 0, range(self.d + 1)))
-        return self.mvtype(self, *args, grades=grades, **kwargs)
+        return self._evenoddmv[0](self, *args, **kwargs)
 
     def oddmv(self, *args, **kwargs) -> MultiVector:
         """
         Create a new :class:`~kingdon.multivector.MultiVector` of odd grades.
         """
-        grades = tuple(filter(lambda x: x % 2 == 1, range(self.d + 1)))
-        return self.mvtype(self, *args, grades=grades, **kwargs)
+        return self._evenoddmv[1](self, *args, **kwargs)
 
     def purevector(self, *args, grade, **kwargs) -> MultiVector:
         """
