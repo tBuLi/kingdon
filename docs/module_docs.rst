@@ -91,3 +91,13 @@ Import this module to register kingdon's multivectors with `einops`, see :doc:`a
 .. automodule:: kingdon.einops_backend
    :members:
    :undoc-members:
+
+Torch backend
+-------------
+
+Interoperability with `torch.nn`, see :doc:`backends/torch`. Importing this module is what puts
+`__torch_function__` on a multivector, and `Algebra(..., backend='torch')` is what imports it.
+
+.. automodule:: kingdon.torch_backend
+   :members:
+   :undoc-members:

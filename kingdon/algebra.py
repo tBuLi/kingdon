@@ -148,6 +148,8 @@ class Algebra:
     wrapper: Callable = field(default=None, repr=False, compare=False)
     # Constructor to be called on the values upon mv creation.
     values_asarray: Callable = field(default=list, repr=False, compare=False)
+    # Backend to opt in to, 'torch' or 'einops'. Opting in to 'torch' also sets values_asarray, unless one was given. See docs/backends/torch.rst.
+    backend: str = field(default='', repr=False, compare=False)
 
     # This simplify func is applied to every component after a symbolic expression is called, to simplify and filter by.
     simp_func: Callable = field(default=lambda v: v if not isinstance(v, sympy.Expr) else sympy.simplify(sympy.expand(v)), repr=False, compare=False)
@@ -213,6 +215,18 @@ class Algebra:
             }
             self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
 
+        # Opt in to a backend, before anything that captures values_asarray is built.
+        if self.backend == 'einops':
+            import kingdon.einops_backend  # noqa: F401  Registers multivectors with einops.
+        elif self.backend == 'torch':
+            # This registers the einops backend too, and brings a values_asarray that keeps the
+            # coefficients of a multivector in one tensor. `list` is the default, i.e. not chosen.
+            import kingdon.torch_backend as torch_backend
+            if self.values_asarray is list:
+                self.values_asarray = torch_backend.values_asarray
+        elif self.backend:
+            raise ValueError(f"Unknown backend {self.backend!r}; kingdon has 'torch' and 'einops'.")
+
         self.signs = DefaultKeyDict(self._compute_sign)
 
         if self.large is None:
@@ -251,11 +265,15 @@ class Algebra:
             self._type_layouts = {cls: layout for cls in self.types
                                   if (layout := self._bind_layout(cls, name='x'))}  # an empty layout matches an empty result at zero cost in resolve_layout, and would beat every other type.
 
+            if self.backend == 'torch':
+                torch_backend.register_pytree_nodes([self.mvtype, *self._type_layouts])
+
             # Add mv constructors to the algebra
             for cls in self._type_layouts: setattr(self, cls.__name__.lower(), partial(cls, self))
             for k, cls in enumerate(self._kvectors):
                 if self.d - k < len(self._kvectors):
                     setattr(self, f"pseudo{cls.__name__.lower()}", partial(self._kvectors[self.d - k], self))
+
 
         # Blades are not precomputed for large algebras, except for basis vectors.
         self.blades = BladeDict(algebra=self, lazy=self.large)
