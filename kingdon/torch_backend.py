@@ -28,16 +28,21 @@ To address the axes of the multivector itself, :code:`einops` speaks multivector
 it, where the patterns refer to :code:`mv.shape` and the blade axis stays out of it. This module
 already registers :class:`~kingdon.einops_backend.KingdonBackend` for you if :code:`einops` is installed.
 
-The exception to all of the above are the operators. However torch spells one, it is handed to the
-algebra, so that :func:`torch.mul` is the geometric product like :code:`*` is, :func:`torch.matmul`
-is the projection like :code:`@` is, and so on down :code:`+ - * / @ | ^ & >>`. This holds on
-whichever side of the operator the multivector sits: :code:`tensor | mv` is the inner product just
-as :code:`mv | tensor` is.
+The exception to all of the above is one rule: **if a multivector has an operation of that name,
+torch's name means the multivector's.** :data:`_OPERATIONS` is that rule as a table, and it holds on
+whichever side of an operator the multivector sits -- :code:`tensor | mv` is the inner product just
+as :code:`mv | tensor` is. So :func:`torch.mul` is the geometric product like :code:`*` is,
+:func:`torch.matmul` is the projection like :code:`@` is, and :func:`torch.exp` is the exponential
+of the multivector like :meth:`~kingdon.multivector.MultiVector.exp` is. A name a multivector does
+not have is handed the coefficients as ever, so :code:`torch.relu(mv)` is the relu of every one of
+them, and :code:`mv.values()` is there when the coefficients are what you mean::
 
-No other name in the torch namespace means geometric algebra, so :code:`torch.exp(mv)`
-exponentiates the coefficients while :code:`mv.exp()` is the exponential of the multivector.
+    >>> torch.exp(bivector)            # a rotor
+    >>> torch.exp(bivector.values())   # the exponential of every coefficient
 """
 from __future__ import annotations
+
+import inspect
 
 import torch
 
@@ -85,27 +90,49 @@ def values_asarray(values):
         *(torch.as_tensor(v, dtype=like.dtype, device=like.device) for v in values)))
 
 
-def _operator(name):
-    """ Hand `name` to the algebra, so that torch.mul is the geometric product. """
-    def handler(input, other=None, *, alpha=1):
-        mv = input if isinstance(input, MultiVector) else other
-        operator = getattr(mv.algebra, name)
-        return operator(input) if other is None else \
-            operator(input, other if alpha == 1 else alpha * other)
+#: What a torch name means for a multivector, as :code:`{torch name: the name kingdon has for it}`.
+#: The operators are the ones the two spell differently, and the last four are torch's dunders,
+#: since it has no name of its own for :code:`|` and friends. The rest are asked of
+#: :class:`~kingdon.multivector.MultiVector`, so that the rule follows kingdon rather than a list
+#: here going stale: every operation it has that torch has a name for. Today that is exp, norm and
+#: sqrt, and also layout, which torch spells as a class, so no call of it ever arrives here.
+_OPERATIONS = {'add': 'add', 'sub': 'sub', 'subtract': 'sub', 'mul': 'gp', 'multiply': 'gp',
+               'div': 'div', 'divide': 'div', 'true_divide': 'div', 'neg': 'neg',
+               'negative': 'neg', 'matmul': 'proj', '__or__': 'ip', '__xor__': 'op',
+               '__and__': 'rp', '__rshift__': 'sw'}
+_OPERATIONS.update({name: name for name in dir(MultiVector)
+                    if name not in _OPERATIONS and not name.startswith('_')
+                    and getattr(torch, name, None) is not None})
+
+
+def _operation(name, kingdon, func):
+    """
+    Hand torch's `name` to kingdon under the name `kingdon` has for it.
+
+    The algebra performs it where it has it, since only the algebra takes the operands in the order
+    torch had them: :code:`tensor | mv` is the inner product as much as :code:`mv | tensor` is.
+    Whatever else `func` offers, the kingdon operation has no room for, and says so. Note that torch
+    forwards the defaults it was not given, :func:`torch.norm` among them, so those are compared
+    rather than counted.
+    """
+    try:
+        defaults = {p.name: p.default for p in inspect.signature(func).parameters.values()
+                    if p.default is not inspect.Parameter.empty}
+    except (TypeError, ValueError):  # A builtin without a signature, which forwards nothing.
+        defaults = {}
+
+    def handler(*operands, **kwargs):
+        if given := [key for key, value in kwargs.items() if value is not defaults.get(key)]:
+            raise TypeError(f'{name} of a MultiVector is its {kingdon}, which takes no '
+                            f'{given[0]}. Use mv.values() if you mean the coefficients.')
+        mv = next(operand for operand in operands if isinstance(operand, MultiVector))
+        return getattr(mv.algebra, kingdon, getattr(MultiVector, kingdon))(*operands)
     return handler
 
 
-#: How torch spells each operator that a multivector defines for itself, as
-#: :code:`{torch name: algebra operator}`. Torch has no name of its own for :code:`|` and the
-#: others, so those are its dunders, which exist on :class:`torch.Tensor` alone.
-_OPERATORS = {'add': 'add', 'sub': 'sub', 'subtract': 'sub', 'mul': 'gp', 'multiply': 'gp',
-              'div': 'div', 'divide': 'div', 'true_divide': 'div', 'neg': 'neg', 'negative': 'neg',
-              'matmul': 'proj', '__or__': 'ip', '__xor__': 'op', '__and__': 'rp',
-              '__rshift__': 'sw'}
-
 #: The functions with a handler of their own, as :code:`{torch function: handler}`.
-_HANDLED = {func: _operator(operator)
-            for name, operator in _OPERATORS.items() for namespace in (torch, torch.Tensor)
+_HANDLED = {func: _operation(name, kingdon, func)
+            for name, kingdon in _OPERATIONS.items() for namespace in (torch, torch.Tensor)
             if (func := getattr(namespace, name, None)) is not None}
 
 
@@ -173,27 +200,39 @@ _pytree_registered = set()
 
 def register_pytree_nodes(types):
     """
-    Register multivector `types` with :mod:`torch.utils._pytree`, so that :func:`torch.compile`
-    can trace a function that takes or returns a multivector instead of breaking its graph on one.
+    Register multivector `types` with :mod:`torch.utils._pytree`, so that :func:`torch.export` can
+    take and give back a multivector rather than refuse it as a type it does not know how to
+    flatten.
+
+    :func:`torch.compile` needs none of this: dynamo traces straight through a multivector as the
+    plain python object it is, and reaches one graph with no breaks either way. Export is the one
+    that flattens whatever crosses its boundary, and it wants the keyed flatten besides.
 
     The coefficients are the only child, since they are the tensor to trace; the type, the algebra
     and the keys are static context, which is what makes the sparsity pattern of a multivector a
-    compile time constant that the graph specializes on. Types are registered per algebra, because
-    :class:`~kingdon.algebra.Algebra` generates classes of its own for the layouts it is given.
+    compile time constant that the graph specializes on. Export hashes that context, which is why
+    :class:`~kingdon.algebra.Algebra` defines :meth:`~kingdon.algebra.Algebra.__hash__`. Types are
+    registered per algebra, because :class:`~kingdon.algebra.Algebra` generates classes of its own
+    for the layouts it is given.
 
     :param types: multivector classes to register. Registering one twice is a no-op.
     """
-    from torch.utils._pytree import register_pytree_node
+    from torch.utils._pytree import SequenceKey, register_pytree_node
+
+    def flatten(mv):
+        return [mv._values], (type(mv), mv.algebra, mv._keys)
+
+    def flatten_with_keys(mv):
+        return [(SequenceKey(0), mv._values)], (type(mv), mv.algebra, mv._keys)
+
+    def unflatten(values, context):
+        cls, algebra, keys = context
+        return cls.fromkeysvalues(algebra, keys, next(iter(values)))
 
     for cls in types:
-        if cls in _pytree_registered:
-            continue
-        register_pytree_node(
-            cls,
-            lambda mv: ([mv._values], (type(mv), mv.algebra, mv._keys)),
-            lambda values, context: context[0].fromkeysvalues(context[1], context[2], next(iter(values))),
-        )
-        _pytree_registered.add(cls)
+        if cls not in _pytree_registered:
+            register_pytree_node(cls, flatten, unflatten, flatten_with_keys_fn=flatten_with_keys)
+            _pytree_registered.add(cls)
 
 
 # ---------------------------------------------------------------------------------------------

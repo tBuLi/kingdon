@@ -143,7 +143,7 @@ class GraphWidget(anywidget.AnyWidget):
 
     @traitlets.default('signature')
     def get_signature(self):
-        return self.algebra.signature
+        return list(self.algebra.signature)
 
     @traitlets.default('basis')
     def get_basis(self):

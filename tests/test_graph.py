@@ -39,7 +39,7 @@ def test_widget(alg):
 
     # Test if graph has the right basis, signature, and default style.
     assert g.basis == [b if b != 'e' else '1' for b in alg.canon2bin]
-    assert g.signature == alg.signature
+    assert g.signature == list(alg.signature)   # the widget syncs JSON, which has no tuples
     assert g.options['style'] == {
         'width': 'min( 100%, 1024px )',
         'height': 'auto',

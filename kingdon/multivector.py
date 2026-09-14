@@ -543,11 +543,11 @@ class MultiVector(metaclass=MultiVectorType):
         if func is None:
             func = self.algebra.simp_func
         if hasattr(func, '__code__') and func.__code__.co_argcount == 2:
-            if map: keysvalues = tuple((k, fv) for k, v in self.items() if (fv := func(k, v)))
-            else:   keysvalues = tuple((k, v) for k, v in self.items() if func(k, v))
+            if map: keysvalues = tuple((k, fv) for k, v in self.items() if _nonzero(fv := func(k, v)))
+            else:   keysvalues = tuple((k, v) for k, v in self.items() if _nonzero(func(k, v)))
         else:
-            if map: keysvalues = tuple((k, fv) for k, v in self.items() if (fv := func(v)))
-            else:   keysvalues = tuple((k, v) for k, v in self.items() if func(v))
+            if map: keysvalues = tuple((k, fv) for k, v in self.items() if _nonzero(fv := func(v)))
+            else:   keysvalues = tuple((k, v) for k, v in self.items() if _nonzero(func(v)))
         if not keysvalues:
             return self.fromkeysvalues(self.algebra, keys=tuple(), values=list(), raw=self.issymbolic)
         keys, values = zip(*keysvalues)
@@ -919,6 +919,14 @@ class Translation(Bireflection):
         q = Point.layout(algebra, f'{name}_2')
         qr = ops.reverse(q)
         return ops.gp(p, qr)
+
+
+def _nonzero(value) -> bool:
+    """
+    Whether `value` is a coefficient worth keeping, for :meth:`MultiVector.filter`. An array counts
+    if any of it does, since the truth of one with more than one element is otherwise ambiguous and raises.
+    """
+    return bool(value.any()) if hasattr(value, 'any') else bool(value)
 
 
 def _zeros_like(x):

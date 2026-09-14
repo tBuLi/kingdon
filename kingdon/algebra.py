@@ -31,7 +31,7 @@ operation_field = partial(field, default_factory=dict, init=False, repr=False, c
 KVECTORS = [Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector]
 
 
-@dataclass
+@dataclass(unsafe_hash=True)
 class Algebra:
     """
     A Geometric (Clifford) algebra with :code:`p` positive dimensions,
@@ -43,10 +43,11 @@ class Algebra:
     :param p:  number of positive dimensions.
     :param q:  number of negative dimensions.
     :param r:  number of null dimensions.
-    :param signature: Optional signature of the algebra, e.g. [0, 1, 1] for 2DPGA.
+    :param signature: Optional signature of the algebra, e.g. [0, 1, 1] for 2DPGA. Kept as a tuple.
         Mutually exclusive with `p`, `q`, `r`.
     :param start_index: Optionally set the start index of the dimensions. For PGA this defaults to `0`, otherwise `1`.
-    :param basis: Custom basis order, e.g. `["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"]` for 2DPGA.
+    :param basis: Custom basis order, e.g. `["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"]`
+        for 2DPGA. Kept as a tuple.
     :param cse: If :code:`True` (default), attempt Common Subexpression Elimination (CSE)
         on symbolically optimized expressions.
     :param full_layout: If :code:`True` (default is :code:`False`), every multivector carries the full layout of its
@@ -84,9 +85,9 @@ class Algebra:
     q: int = field(default=0, repr=False, compare=False)
     r: int = field(default=0, repr=False, compare=False)
     d: int = field(init=False, repr=False, compare=False)  # Total number of dimensions
-    signature: list[int] = field(default=None)
+    signature: tuple[int, ...] = field(default=None)
     start_index: int = field(default=None, repr=False, compare=False)
-    basis: list[str] = field(default_factory=list)
+    basis: tuple[str, ...] = field(default_factory=tuple)
 
     # Clever dictionaries that cache previously symbolically optimized lambda functions between elements.
     gp: OperatorDict = operation_field(metadata={'codegen': ops.gp,})  # geometric product
@@ -166,6 +167,9 @@ class Algebra:
         if self.lambdifier is None:
             self.lambdifier = lambdify
 
+        self.signature = self.signature if self.signature is None else tuple(self.signature)
+        self.basis = tuple(self.basis)
+
         if self.signature is not None:
             counts = Counter(self.signature)
             self.p, self.q, self.r = counts[1], counts[-1], counts[0]
@@ -173,9 +177,9 @@ class Algebra:
                 raise TypeError('Unsupported signature.')
         else:
             if self.r == 1:  # PGA, so put r first.
-                self.signature = [0] * self.r + [1] * self.p + [-1] * self.q
+                self.signature = (0,) * self.r + (1,) * self.p + (-1,) * self.q
             else:
-                self.signature = [1] * self.p + [-1] * self.q + [0] * self.r
+                self.signature = (1,) * self.p + (-1,) * self.q + (0,) * self.r
 
         if self.start_index is None:
             self.start_index = 0 if self.r == 1 else 1
@@ -199,7 +203,7 @@ class Algebra:
         # Setup mapping from binary to canonical string rep and vise versa
         if self.basis:
             assert len(self.basis) == len(self)
-            assert self.basis == sorted(self.basis, key=len)  # The basis has to be ordered by grade.
+            assert self.basis == tuple(sorted(self.basis, key=len))  # The basis has to be ordered by grade.
             assert all(eJ[0] == 'e' for eJ in self.basis)
             vecs = [eJ[1:] for eJ in self.basis if len(eJ) == 2]
             self.start_index = int(min(vecs))

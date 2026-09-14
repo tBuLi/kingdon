@@ -33,7 +33,8 @@ A multivector over an array of shape :code:`(blades, ..., channels)` has shape
 :attr:`~kingdon.multivector.MultiVector.shape` does not expose it.
 
 A torch function is handed :code:`mv.values()`, and its result becomes the coefficients of the
-multivector that comes back. That is all of it, and it is enough because the blade axis *leads*:
+multivector that comes back -- unless the multivector has an operation of that name itself, see
+`The operators`_. That is all of it, and it is enough because the blade axis *leads*:
 everything :code:`torch.nn` is built out of treats leading axes as batch axes. A :code:`Linear`
 with weights of :code:`(channels, channels_out)` therefore acts on all blades in a single call, and
 so do the activation functions, :code:`LayerNorm` and :code:`Dropout`. Nothing is translated, and
@@ -55,7 +56,7 @@ Beyond that you may do to the coefficients whatever you like, sensible or not.
 .. note::
     Torch integration makes it very easy to write GA based equivariant neural networks, but it is
     also a loaded footgun: do not assume torch's builtin modules are equivariant! Typically they are not!
-    For equivariant modules, see https://tbuli.github.io/gato/.
+    For equivariant modules, see https://tbuli.github.io/rotorch/.
 
 Addressing the axes with einops
 ===============================
@@ -79,10 +80,15 @@ patterns refer to :code:`mv.shape` and leave the blade axis out of it. See :doc:
 The operators
 =============
 
-The operators are the exception to "torch is handed the coefficients". However torch spells one, it
-is handed to the algebra, and on whichever side of it the multivector sits: :code:`tensor | mv` is
-the inner product as much as :code:`mv | tensor` is. This allows the Cayley table of the geometric
-algebra to be "injected" into torch code without any changes having to be made on the torch side.
+There is one rule for when a torch name does not mean the coefficients:
+
+.. note::
+    If a multivector has an operation of that name, torch's name means the multivector's.
+
+However torch spells an operator, it is therefore handed to the algebra, and on whichever side of it
+the multivector sits: :code:`tensor | mv` is the inner product as much as :code:`mv | tensor` is.
+This allows the Cayley table of the geometric algebra to be "injected" into torch code without any
+changes having to be made on the torch side.
 
 ================  =========================  ================================  ====================
 operator          torch spells it            kingdon                           which is
@@ -104,14 +110,28 @@ The aliases go along: :func:`torch.subtract`, :func:`torch.multiply`, :func:`tor
 of their own, only the dunder, so those are reached by :code:`tensor ^ mv` alone; with the
 multivector on the left python never asks torch in the first place.
 
-No other name in the torch namespace means geometric algebra:
+The same rule reaches the operations that torch has a name for but no operator. A multivector has
+an :code:`exp`, so :func:`torch.exp` is the exponential *of the multivector*:
+
+==================  =============================================  ==================================
+torch               kingdon                                        which is
+==================  =============================================  ==================================
+:func:`torch.exp`   :meth:`~kingdon.multivector.MultiVector.exp`   the exponential of a simple element
+:func:`torch.sqrt`  :meth:`~kingdon.multivector.MultiVector.sqrt`  the root of a Study number
+:func:`torch.norm`  :meth:`~kingdon.multivector.MultiVector.norm`  the norm under the metric
+==================  =============================================  ==================================
 
 .. code-block::
 
-    >>> torch.exp(points).keys() == points.keys()   # the exponential of the coefficients
-    True
-    >>> alg.bivector(e12=torch.tensor(0.3)).exp()   # the exponential of the multivector: a rotor
+    >>> B = alg.bivector(e12=torch.tensor(0.3))
+    >>> torch.exp(B)                  # the exponential of the multivector: a rotor
     tensor(0.9553) + tensor(0.2955) 𝐞₁₂
+    >>> torch.exp(B.values())         # the exponential of its coefficients
+    tensor([1.3499])
+
+A name a multivector does not have is handed the coefficients as ever, so :code:`torch.relu(mv)` is
+the relu of every one of them. And :code:`mv.values()` is always there when the coefficients are
+what you mean.
 
 Gradients
 =========
@@ -154,3 +174,19 @@ generates, after its own symbolic optimization and cse:
 .. code-block::
 
     >>> alg = Algebra.fromname("3DPGA", backend="torch", wrapper=torch.compile)
+
+A module that takes and gives back multivectors can also be exported whole, since the backend
+registers the multivector types with :code:`torch.utils._pytree`:
+
+.. code-block::
+
+    >>> model = torch.nn.Sequential(torch.nn.Linear(4, 10), torch.nn.GELU())
+    >>> torch.export.export(model, (points,)).module()(points).shape
+    Point[(32, 10)]
+
+.. note::
+    An operation that has to look at the *value* of a coefficient cannot be exported, since export
+    guards on shapes rather than values. :meth:`~kingdon.multivector.MultiVector.exp` is one of
+    those: it checks that the element squares to a scalar, which for array coefficients is a
+    question about their values, so a layer that builds a rotor inside its :code:`forward` exports
+    no further than :code:`GuardOnDataDependentSymNode`.

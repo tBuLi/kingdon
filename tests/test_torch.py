@@ -4,6 +4,8 @@ Tests for the torch backend, see :doc:`docs/backends/torch.rst`.
 Every test here stands for a claim that page makes, and there is deliberately nothing beyond that:
 what is not promised is free to change.
 """
+import warnings
+
 import pytest
 
 torch = pytest.importorskip('torch')
@@ -98,10 +100,21 @@ def test_the_operators_where_coefficient_by_coefficient_would_not_do(x):
     assert same(torch.multiply(x, y), x * y)                       # the aliases go along
 
 
-def test_no_other_torch_name_means_geometric_algebra(alg, x):
-    """ torch.exp exponentiates the coefficients; mv.exp() is the exponential of the multivector. """
-    assert same(torch.exp(x), x.map(torch.exp))
-    assert 0 in alg.bivector(e12=torch.tensor(0.3)).exp().keys()   # a rotor has a scalar part
+@pytest.mark.parametrize('name', ['exp', 'sqrt', 'norm'])
+def test_a_name_a_multivector_has_means_the_multivectors(alg, name):
+    """ A multivector has an exp, so torch.exp is the exponential of the multivector. """
+    B = alg.bivector(torch.randn(3, 8) * 0.1)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')                     # mv.sqrt warns about Study numbers
+        assert same(getattr(torch, name)(B), getattr(B, name)())
+    with pytest.raises(TypeError, match='takes no'):
+        getattr(torch, name)(B, out=torch.empty(1))         # meaningless for the operation
+
+
+def test_name_a_multivector_lacks_is_handed_the_coefficients(x):
+    """ There is no mv.relu, so torch.relu is the relu of every coefficient. """
+    assert same(torch.relu(x), x.map(torch.relu))
+    assert torch.equal(torch.exp(x.values()), x.map(torch.exp).values())
 
 
 def test_gradients_flow_through_a_module(alg):
@@ -161,6 +174,16 @@ def test_torch_compile(x):
     assert same(torch.compile(lambda a: a * a)(x), x * x)
     compiled = Algebra(3, backend='torch', wrapper=torch.compile)
     assert same(compiled.vector(x.values()) * compiled.vector(x.values()), x * x)
+
+
+def test_torch_export_round_trip(alg):
+    """
+    Registering the multivector types with torch.utils._pytree is what lets torch.export take and
+    give back one; torch.compile needs none of it, so this is the test that pins what it buys.
+    """
+    model = nn.Sequential(nn.Linear(5, 7), nn.GELU())
+    x = alg.vector(torch.randn(3, 4, 5))
+    assert same(torch.export.export(model, (x,)).module()(x), model(x))
 
 
 def test_a_kingdon_without_the_backend_never_meets_torch():
