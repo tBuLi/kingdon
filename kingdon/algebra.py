@@ -85,9 +85,9 @@ class Algebra:
     q: int = field(default=0, repr=False, compare=False)
     r: int = field(default=0, repr=False, compare=False)
     d: int = field(init=False, repr=False, compare=False)  # Total number of dimensions
-    signature: tuple[int, ...] = field(default=None)
+    signature: tuple = field(default=None)
     start_index: int = field(default=None, repr=False, compare=False)
-    basis: tuple[str, ...] = field(default_factory=tuple)
+    basis: tuple = field(default_factory=tuple)
 
     # Clever dictionaries that cache previously symbolically optimized lambda functions between elements.
     gp: OperatorDict = operation_field(metadata={'codegen': ops.gp,})  # geometric product

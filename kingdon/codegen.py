@@ -399,7 +399,7 @@ def lambdify(
     :param values_asarray: If given, the generated function applies it to the values it returns, so that
         the result is built inside the function rather than by its caller. For an array backend that
         means one buffer out instead of one per blade, which is what lets a compiler such as
-        :func:`torch.compile` fuse it. It is also called on symbolic values, so it has to leave those
+        :code:`torch.compile` fuse it. It is also called on symbolic values, so it has to leave those
         alone, as :func:`~kingdon.torch_backend.values_asarray` and the default :class:`list` both do.
     :return: Function that represents that can be used to calculate the values of exprs.
     """

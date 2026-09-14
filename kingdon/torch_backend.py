@@ -12,27 +12,27 @@ multivector over torch coefficients can be handed to a :code:`torch.nn` module d
     Point[(32, 10)]
 
 Asking for the backend is what imports this module, and importing it is what puts
-:meth:`~kingdon.multivector.MultiVector.__torch_function__` on a multivector to make multivectors
+:code:`MultiVector.__torch_function__` on a multivector to make multivectors
 work with :code:`torch`.
 
 A torch function is handed :code:`mv.values()`, and its result becomes the coefficients of the
 multivector that comes back. That is the whole of it, and it is enough because a multivector over
 an array of shape :code:`(blades, ..., channels)` has shape :code:`(..., channels)`: the blade axis
 is a *leading* axis, and everything :code:`torch.nn` is built out of treats leading axes as batch
-axes. So a :class:`~torch.nn.Linear` with weights of :code:`(channels, channels_out)` acts on the
+axes. So a :code:`torch.nn.Linear` with weights of :code:`(channels, channels_out)` acts on the
 coefficients of every blade at once and cannot reach the blades, and nothing here needs to keep a
 list of which functions those are.
 
 To address the axes of the multivector itself, :code:`einops` speaks multivector: use
-:func:`einops.reduce`, :func:`einops.rearrange`, :func:`einops.einsum` and :func:`einops.pack` on
+:code:`einops.reduce`, :code:`einops.rearrange`, :code:`einops.einsum` and :code:`einops.pack` on
 it, where the patterns refer to :code:`mv.shape` and the blade axis stays out of it. This module
 already registers :class:`~kingdon.einops_backend.KingdonBackend` for you if :code:`einops` is installed.
 
 The exception to all of the above is one rule: **if a multivector has an operation of that name,
-torch's name means the multivector's.** :data:`_OPERATIONS` is that rule as a table, and it holds on
+torch's name means the multivector's.** :code:`_OPERATIONS` is that rule as a table, and it holds on
 whichever side of an operator the multivector sits -- :code:`tensor | mv` is the inner product just
-as :code:`mv | tensor` is. So :func:`torch.mul` is the geometric product like :code:`*` is,
-:func:`torch.matmul` is the projection like :code:`@` is, and :func:`torch.exp` is the exponential
+as :code:`mv | tensor` is. So :code:`torch.mul` is the geometric product like :code:`*` is,
+:code:`torch.matmul` is the projection like :code:`@` is, and :code:`torch.exp` is the exponential
 of the multivector like :meth:`~kingdon.multivector.MultiVector.exp` is. A name a multivector does
 not have is handed the coefficients as ever, so :code:`torch.relu(mv)` is the relu of every one of
 them, and :code:`mv.values()` is there when the coefficients are what you mean::
@@ -67,9 +67,9 @@ def values_asarray(values):
     Coefficients that do not already agree are broadcast against each other, so that the plain
     python numbers a type's layout contributes -- the :code:`1.0` that a normalized :code:`Point`
     carries on :code:`e123`, say -- do not stop a multivector from having a shape. Which of the two
-    it is gets decided by inspecting the values, not by catching what :func:`torch.stack` raises:
+    it is gets decided by inspecting the values, not by catching what :code:`torch.stack` raises:
     an exception out of a torch call is a graph break, and one here would break the graph of every
-    :func:`torch.compile` that traces a multivector expression.
+    :code:`torch.compile` that traces a multivector expression.
 
     `values` that hold no tensor at all are returned untouched, leaving them to kingdon's default
     of a plain list. That is not an edge case: :class:`~kingdon.algebra.BladeDict` builds every
@@ -112,7 +112,7 @@ def _operation(name, kingdon, func):
     The algebra performs it where it has it, since only the algebra takes the operands in the order
     torch had them: :code:`tensor | mv` is the inner product as much as :code:`mv | tensor` is.
     Whatever else `func` offers, the kingdon operation has no room for, and says so. Note that torch
-    forwards the defaults it was not given, :func:`torch.norm` among them, so those are compared
+    forwards the defaults it was not given, :code:`torch.norm` among them, so those are compared
     rather than counted.
     """
     try:
@@ -138,8 +138,7 @@ _HANDLED = {func: _operation(name, kingdon, func)
 
 def torch_function(func, types, args=(), kwargs=None):
     """
-    Implementation of :meth:`MultiVector.__torch_function__
-    <kingdon.multivector.MultiVector.__torch_function__>`.
+    Implementation of :code:`MultiVector.__torch_function__`.
     """
     kwargs = kwargs or {}
     name = getattr(func, '__name__', func)
@@ -173,11 +172,10 @@ def torch_function(func, types, args=(), kwargs=None):
 
 def torch_getattr(mv: MultiVector, name: str):
     """
-    Implementation of the torch half of :meth:`MultiVector.__getattr__
-    <kingdon.multivector.MultiVector.__getattr__>`, called for an attribute that is not a basis
+    Implementation of the torch half of :code:`MultiVector.__getattr__`, called for an attribute that is not a basis
     blade once torch has been imported.
 
-    A tensor method never reaches :meth:`~kingdon.multivector.MultiVector.__torch_function__`,
+    A tensor method never reaches :code:`MultiVector.__torch_function__`,
     because the descriptor turns down a non-tensor before dispatch gets a chance. So :code:`mv.to`,
     :code:`mv.detach` and :code:`mv.relu` are resolved here instead, and go through
     :func:`torch_function` like their free function counterparts do. An attribute that is not a
@@ -200,18 +198,18 @@ _pytree_registered = set()
 
 def register_pytree_nodes(types):
     """
-    Register multivector `types` with :mod:`torch.utils._pytree`, so that :func:`torch.export` can
+    Register multivector `types` with :code:`torch.utils._pytree`, so that :code:`torch.export` can
     take and give back a multivector rather than refuse it as a type it does not know how to
     flatten.
 
-    :func:`torch.compile` needs none of this: dynamo traces straight through a multivector as the
+    :code:`torch.compile` needs none of this: dynamo traces straight through a multivector as the
     plain python object it is, and reaches one graph with no breaks either way. Export is the one
     that flattens whatever crosses its boundary, and it wants the keyed flatten besides.
 
     The coefficients are the only child, since they are the tensor to trace; the type, the algebra
     and the keys are static context, which is what makes the sparsity pattern of a multivector a
     compile time constant that the graph specializes on. Export hashes that context, which is why
-    :class:`~kingdon.algebra.Algebra` defines :meth:`~kingdon.algebra.Algebra.__hash__`. Types are
+    :class:`~kingdon.algebra.Algebra` defines :code:`Algebra.__hash__`. Types are
     registered per algebra, because :class:`~kingdon.algebra.Algebra` generates classes of its own
     for the layouts it is given.
 
@@ -243,7 +241,7 @@ _kingdon_getattr = MultiVector.__getattr__
 
 
 def _getattr(self, name):
-    """ :meth:`MultiVector.__getattr__`, with torch behind the basis blades. """
+    """ :code:`MultiVector.__getattr__`, with torch behind the basis blades. """
     try:
         return _kingdon_getattr(self, name)
     except AttributeError:
@@ -254,7 +252,7 @@ def _getattr(self, name):
 
 
 def _torch_function(cls, func, types, args=(), kwargs=None):
-    """ :meth:`MultiVector.__torch_function__`; the work is in :func:`torch_function`. """
+    """ :code:`MultiVector.__torch_function__`; the work is in :func:`torch_function`. """
     return torch_function(func, types, args, kwargs or {})
 
 

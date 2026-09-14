@@ -22,7 +22,7 @@ puts :code:`__torch_function__` on a multivector so that :code:`torch` can inter
 The backend also sets a :func:`~kingdon.torch_backend.values_asarray` that keeps the
 coefficients of a multivector in a single tensor.
 You can overwrite that by passing your own :code:`values_asarray`, but the one that ships with :code:`kingdon`
-was designed to be compatible with :func:`torch.compile` so it is probably the right choice.
+was designed to be compatible with :code:`torch.compile` so it is probably the right choice.
 
 
 Why it works
@@ -93,32 +93,32 @@ changes having to be made on the torch side.
 ================  =========================  ================================  ====================
 operator          torch spells it            kingdon                           which is
 ================  =========================  ================================  ====================
-:code:`x + y`     :func:`torch.add`          :func:`~kingdon.operators.add`     addition
-:code:`x - y`     :func:`torch.sub`          :func:`~kingdon.operators.sub`     subtraction
-:code:`-x`        :func:`torch.neg`          :func:`~kingdon.operators.neg`     negation
-:code:`x * y`     :func:`torch.mul`          :func:`~kingdon.operators.gp`      geometric product
-:code:`x / y`     :func:`torch.div`          :func:`~kingdon.operators.div`     division
-:code:`x @ y`     :func:`torch.matmul`       :func:`~kingdon.operators.proj`    projection
+:code:`x + y`     :code:`torch.add`          :func:`~kingdon.operators.add`     addition
+:code:`x - y`     :code:`torch.sub`          :func:`~kingdon.operators.sub`     subtraction
+:code:`-x`        :code:`torch.neg`          :func:`~kingdon.operators.neg`     negation
+:code:`x * y`     :code:`torch.mul`          :func:`~kingdon.operators.gp`      geometric product
+:code:`x / y`     :code:`torch.div`          :func:`~kingdon.operators.div`     division
+:code:`x @ y`     :code:`torch.matmul`       :func:`~kingdon.operators.proj`    projection
 :code:`x | y`     :code:`Tensor.__or__`      :func:`~kingdon.operators.ip`      inner product
 :code:`x ^ y`     :code:`Tensor.__xor__`     :func:`~kingdon.operators.op`      outer product
 :code:`x & y`     :code:`Tensor.__and__`     :func:`~kingdon.operators.rp`      regressive product
 :code:`x >> y`    :code:`Tensor.__rshift__`  :func:`~kingdon.operators.sw`      sandwich product
 ================  =========================  ================================  ====================
 
-The aliases go along: :func:`torch.subtract`, :func:`torch.multiply`, :func:`torch.divide`,
-:func:`torch.true_divide` and :func:`torch.negative`. The last four operators have no torch function
+The aliases go along: :code:`torch.subtract`, :code:`torch.multiply`, :code:`torch.divide`,
+:code:`torch.true_divide` and :code:`torch.negative`. The last four operators have no torch function
 of their own, only the dunder, so those are reached by :code:`tensor ^ mv` alone; with the
 multivector on the left python never asks torch in the first place.
 
 The same rule reaches the operations that torch has a name for but no operator. A multivector has
-an :code:`exp`, so :func:`torch.exp` is the exponential *of the multivector*:
+an :code:`exp`, so :code:`torch.exp` is the exponential *of the multivector*:
 
 ==================  =============================================  ==================================
 torch               kingdon                                        which is
 ==================  =============================================  ==================================
-:func:`torch.exp`   :meth:`~kingdon.multivector.MultiVector.exp`   the exponential of a simple element
-:func:`torch.sqrt`  :meth:`~kingdon.multivector.MultiVector.sqrt`  the root of a Study number
-:func:`torch.norm`  :meth:`~kingdon.multivector.MultiVector.norm`  the norm under the metric
+:code:`torch.exp`   :meth:`~kingdon.multivector.MultiVector.exp`   the exponential of a simple element
+:code:`torch.sqrt`  :meth:`~kingdon.multivector.MultiVector.sqrt`  the root of a Study number
+:code:`torch.norm`  :meth:`~kingdon.multivector.MultiVector.norm`  the norm under the metric
 ==================  =============================================  ==================================
 
 .. code-block::
@@ -137,7 +137,7 @@ Gradients
 =========
 
 Gradients flow through the coefficients, so a multivector may be built and taken apart inside a
-:code:`forward`. Register the raw tensor as the :class:`~torch.nn.Parameter`; a multivector held as
+:code:`forward`. Register the raw tensor as the :code:`torch.nn.Parameter`; a multivector held as
 a module attribute is not visited by :code:`torch.nn.Module`, so its coefficients would not be
 registered.
 
