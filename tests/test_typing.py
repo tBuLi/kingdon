@@ -5,7 +5,7 @@ import pytest
 from kingdon import (
     Algebra,
     Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector, # k-vectors
-    Bireflection,
+    Bireflection, EvenMV, OddMV
 )
 from kingdon.multivector import (
     MultiVector, Direction, EVector,
@@ -608,5 +608,5 @@ def test_no_types_in_large_algebras():
 def test_no_types_above_octovector():
     """ Small algebras have no types beyond grade 8 either, and fall back to MultiVector. """
     alg = Algebra(9, large=False)
-    assert type(alg.pss) is MultiVector and alg.pss.keys() == (len(alg) - 1,)
+    assert type(alg.pss) is OddMV and alg.pss.keys() == (len(alg) - 1,)
     assert alg.purevector([1], grade=9).grades == (9,)

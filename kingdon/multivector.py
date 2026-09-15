@@ -8,9 +8,10 @@ from types import EllipsisType
 from itertools import product
 import re
 import math
+import sys
 
 
-from sympy import Expr, Symbol, sympify, sinc, cos
+from sympy import Expr, Symbol, sympify
 from sympy.utilities.iterables import iterable
 
 import kingdon.operators as ops
@@ -562,11 +563,11 @@ class MultiVector(metaclass=MultiVectorType):
         if func is None:
             func = self.algebra.simp_func
         if hasattr(func, '__code__') and func.__code__.co_argcount == 2:
-            if map: keysvalues = tuple((k, fv) for k, v in self.items() if (fv := func(k, v)))
-            else:   keysvalues = tuple((k, v) for k, v in self.items() if func(k, v))
+            if map: keysvalues = tuple((k, fv) for k, v in self.items() if _nonzero(fv := func(k, v)))
+            else:   keysvalues = tuple((k, v) for k, v in self.items() if _nonzero(func(k, v)))
         else:
-            if map: keysvalues = tuple((k, fv) for k, v in self.items() if (fv := func(v)))
-            else:   keysvalues = tuple((k, v) for k, v in self.items() if func(v))
+            if map: keysvalues = tuple((k, fv) for k, v in self.items() if _nonzero(fv := func(v)))
+            else:   keysvalues = tuple((k, v) for k, v in self.items() if _nonzero(func(v)))
         if not keysvalues:
             return self.fromkeysvalues(self.algebra, keys=tuple(), values=list(), raw=self.issymbolic)
         keys, values = zip(*keysvalues)
@@ -754,6 +755,7 @@ class MultiVector(metaclass=MultiVectorType):
         if sqrt is None and cosh is None and sinhc is None:
             if isinstance(ll, Expr):
                 sqrt = lambda x: (-x) ** 0.5
+                from sympy import sinc, cos
                 cosh = cos
                 sinhc = sinc
             elif isinstance(ll, (float, int)) and ll > 0:
@@ -763,14 +765,16 @@ class MultiVector(metaclass=MultiVectorType):
                 sinhc = lambda x: np.sinh(x) / x
             elif isinstance(ll, (float, int)) and ll == 0:
                 sqrt = lambda x: x ** 0.5
-                import numpy as np
                 cosh = sinhc = lambda x: self.algebra.blades.e
             else:
-                # Assume numpy
-                sqrt = lambda x: (-x) ** 0.5
+                # Assume an array type, for which only the trigonometric case is covered. Take cos
+                # and sinc from the namespace the coefficients came from if we can, since numpy
+                # would have to take e.g. a torch tensor off its device and out of its autograd graph.
                 import numpy as np
-                cosh = np.cos
-                sinhc = lambda x: np.sinc(x / np.pi)
+                sqrt = lambda x: (-x) ** 0.5
+                xp = sys.modules.get(type(ll).__module__.partition('.')[0], np)
+                cosh = getattr(xp, 'cos', np.cos)
+                sinhc = lambda x: getattr(xp, 'sinc', np.sinc)(x / math.pi)
 
         l = sqrt(ll)
         return self * sinhc(l) + cosh(l)
@@ -848,8 +852,21 @@ class Hexavector(KVector): layout_grades = (6,)
 class Heptavector(KVector): layout_grades = (7,)
 class Octovector(KVector): layout_grades = (8,)
 
+
+class EvenMV(MultiVector):
+    @classmethod
+    def layout(cls, algebra, name):
+        return MultiVector.fromname(algebra, name=name, grades=tuple(g for g in range(algebra.d + 1) if g % 2 == 0))
+
+
+class OddMV(MultiVector):
+    @classmethod
+    def layout(cls, algebra, name):
+        return MultiVector.fromname(algebra, name=name, grades=tuple(g for g in range(algebra.d + 1) if g % 2))
+
+
 # k-reflections
-class Bireflection(MultiVector):
+class Bireflection(EvenMV):
     r"""
     A bireflection :math:`R` is assumed to be identical to :math:`\mathbf{R} = p \widetilde{q}`
     with :math:`p` and :math:`q` normalized vectors, such that :math:`R \widetilde{R} = 1`.
@@ -922,6 +939,14 @@ class Translation(Bireflection):
         q = Point.layout(algebra, f'{name}_2')
         qr = ops.reverse(q)
         return ops.gp(p, qr)
+
+
+def _nonzero(value) -> bool:
+    """
+    Whether `value` is a coefficient worth keeping, for :meth:`MultiVector.filter`. An array counts
+    if any of it does, since the truth of one with more than one element is otherwise ambiguous and raises.
+    """
+    return bool(value.any()) if hasattr(value, 'any') else bool(value)
 
 
 def _zeros_like(x):

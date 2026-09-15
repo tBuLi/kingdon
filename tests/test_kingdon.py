@@ -798,8 +798,7 @@ def test_iteration():
 def test_fromsignature():
     alg = Algebra(signature=[0, -1, 1, 1])
     assert alg.start_index == 0
-    assert isinstance(alg.signature, list)
-    assert np.all(alg.signature == [0, -1, 1, 1])
+    assert alg.signature == (0, -1, 1, 1)   # a list is accepted, and kept as a tuple
     assert (alg.p, alg.q, alg.r) == (2, 1, 1)
     with pytest.raises(TypeError):
         alg = Algebra(signature=[0, -1, 1, 1, 2])
@@ -1179,7 +1178,7 @@ def test_custom_basis():
     alg311 = Algebra(3, 1, 1)
 
     for basis, pga, alg in [(basis_2dpga, pga2d, alg201), (basis_3dpga, pga3d, alg301), (basis_stap, stap, alg311)]:
-        assert pga.basis == basis
+        assert pga.basis == tuple(basis)   # a list is accepted, and kept as a tuple
         assert list(pga.canon2bin.keys()) == basis
 
         e20, e0, e2 = pga.blades.e20, pga.blades.e0, pga.blades.e2

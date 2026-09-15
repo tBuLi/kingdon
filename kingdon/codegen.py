@@ -151,8 +151,11 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
     keys, exprs = tuple(res.keys()), list(res.values())
     if output_mv_idx is not None:
         keys = ()
+    # Only a lambdifier that asks for values_asarray is given it, so that one which forwards its
+    # keyword arguments elsewhere, to sympy.lambdify say, keeps working.
+    asarray = {'values_asarray': values_asarray} if 'values_asarray' in inspect.signature(lambdifier).parameters else {}
     func = lambdifier(
-        args, exprs, funcname=funcname, cse=algebra.cse, output_mv_idx=output_mv_idx
+        args, exprs, funcname=funcname, cse=algebra.cse, output_mv_idx=output_mv_idx, **asarray
     )
     return CompiledExpression(
         algebra, keys, func, MVType or algebra.mvtype, output_mv_idx, wrapper(func) if wrapper else func, values_asarray=values_asarray
@@ -279,7 +282,8 @@ def unflatten(template, flat):
     return walk(template)
 
 
-def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, denom_simplified, output_mv_idx=None):
+def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, denom_simplified, output_mv_idx=None,
+                       values_asarray=None):
     """
     Build a Python function from pre-computed polynomial CSE results.
 
@@ -290,6 +294,7 @@ def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, 
     :param numer_simplified: simplified numerator poly_args per expression.
     :param denom_simplified: simplified denominator poly_args, or None.
     :param output_mv_idx: index into the argument list of the MV to write the result into (for set-style codegen).
+    :param values_asarray: applied to the returned values inside the generated function, see :func:`lambdify`.
     :return: compiled function with docstring containing op counts.
     """
     names = list(args_dict)
@@ -327,18 +332,21 @@ def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, 
         for e, simp in zip(flatten(exprs), numer_simplified)
     ]
     ret_parts = unflatten(exprs, ret_parts)
+    asarray = 'values_asarray' if values_asarray else None
     if output_mv_idx is not None:
         output_name = names[output_mv_idx]
         for i, part in enumerate(ret_parts):
             part_str = str(part).replace("'", "")
             body_lines.append(f'    {output_name}[{i}] = {part_str}')
         body_lines.append('    return ()')
+        asarray = None  # The result is written into an argument, there is nothing to build.
     else:
         ret_str = str(ret_parts).replace("'", "")
-        body_lines.append(f'    return {ret_str}')
+        body_lines.append(f'    return {ret_str}' if asarray is None else f'    return {asarray}({ret_str})')
 
     header = f'def {funcname}({", ".join(names)}):'
-    return _build_and_cache_func(header, body_lines, funcname)
+    namespace = None if asarray is None else {'builtins': builtins, 'range': range, asarray: values_asarray}
+    return _build_and_cache_func(header, body_lines, funcname, namespace=namespace)
 
 def lambdify(
         args: dict,
@@ -348,6 +356,7 @@ def lambdify(
         func_printer=None,
         cse=False,
         output_mv_idx: int = None,
+        values_asarray=None,
     ):
     """
     Function that turns symbolic expressions into Python functions. Heavily inspired by
@@ -391,6 +400,11 @@ def lambdify(
         This typically greatly improves performance and reduces numba's initialization time.
     :param output_mv_idx: Index of the multivector that stores the result returned by the codegen function.
         If :code:`None`, the generated function will return the values of the multivector.
+    :param values_asarray: If given, the generated function applies it to the values it returns, so that
+        the result is built inside the function rather than by its caller. For an array backend that
+        means one buffer out instead of one per blade, which is what lets a compiler such as
+        :code:`torch.compile` fuse it. It is also called on symbolic values, so it has to leave those
+        alone, as :func:`~kingdon.torch_backend.values_asarray` and the default :class:`list` both do.
     :return: Function that represents that can be used to calculate the values of exprs.
     """
     cses, _exprs = [], exprs
@@ -406,7 +420,7 @@ def lambdify(
 
                 if printer is None and func_printer is None:
                     return _lambdify_poly_cse(args, exprs, funcname, cse_pairs, numer_simplified, denom_simplified,
-                                              output_mv_idx=output_mv_idx)
+                                              output_mv_idx=output_mv_idx, values_asarray=values_asarray)
 
     tosympy = lambda x: x.tosympy() if hasattr(x, 'tosympy') else sympify(x)
     if cse_pairs is not None:
@@ -441,10 +455,14 @@ def lambdify(
 
     names = tuple(arg if isinstance(arg, str) else arg.name for arg in args.keys())
     iterable_args = tuple(args.values())
-    funcstr = func_printer.doprint(funcname, iterable_args, names, _exprs, cses=cses, output_mv_idx=output_mv_idx)
+    asarray = 'values_asarray' if values_asarray else None
+    funcstr = func_printer.doprint(funcname, iterable_args, names, _exprs, cses=cses,
+                                   output_mv_idx=output_mv_idx, asarray=asarray)
 
     # Provide lambda expression with builtins, and compatible implementation of range
     namespace = {'builtins': builtins, 'range': range, **(printer.namespace if hasattr(printer, 'namespace') else {})}
+    if asarray is not None:
+        namespace[asarray] = values_asarray
 
     func = _compile_and_cache(funcstr, funcname, namespace)
     func.__module__ = __name__
@@ -472,7 +490,7 @@ class KingdonPrinter:
         # Used to print the generated function arguments in a standard way
         self._argrepr = LambdaPrinter().doprint
 
-    def doprint(self, funcname, args, names, expr, *, cses=(), output_mv_idx=None):
+    def doprint(self, funcname, args, names, expr, *, cses=(), output_mv_idx=None, asarray=None):
         """
         Returns the function definition code as a string.
         """
@@ -531,7 +549,7 @@ class KingdonPrinter:
             str_expr = _recursive_to_string(self._exprrepr, expr)
             if '\n' in str_expr:
                 str_expr = '({})'.format(str_expr)
-            funcbody.append('return {}'.format(str_expr))
+            funcbody.append('return {}'.format(f'{asarray}({str_expr})' if asarray else str_expr))
 
         funclines = [funcsig]
         funclines.extend(['    ' + line for line in funcbody])

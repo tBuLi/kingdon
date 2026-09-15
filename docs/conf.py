@@ -62,7 +62,8 @@ nitpick_ignore = [
     ('py:class', 't.Any'),
 ]
 
-autodoc_mock_imports = ["sympy"]
+# torch is an optional dependency of kingdon, and a heavy one to install just to build docs.
+autodoc_mock_imports = ["sympy", "torch"]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -114,7 +115,7 @@ todo_include_todos = False
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'alabaster'
+html_theme = 'furo'
 
 # Theme options are theme-specific and customize the look and feel of a
 # theme further.  For a list of options available for each theme, see the
