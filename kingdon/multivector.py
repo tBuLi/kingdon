@@ -368,6 +368,16 @@ class MultiVector(metaclass=MultiVectorType):
         normsq = self.normsq()
         return normsq.sqrt()
 
+    def __abs__(self):
+        """Absolute (positive scalar) magnitude of this multivector.
+
+        Returns ``abs(self.norm().e)`` so the result is a non-negative scalar
+        coefficient rather than a (possibly signed or study) multivector.
+        This matches the expectation of ``abs()`` and allows numeric
+        comparisons such as ``points[abs(lines) < 1]``.
+        """
+        return abs(self.norm().e)
+
     def normalized(self):
         """ Normalized version of this multivector. """
         return self / self.norm()

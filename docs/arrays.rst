@@ -73,7 +73,7 @@ This can be done using the standard masking syntax:
     >>> l.shape
     Bivector[(5,)]
     >>> d = l.norm()                     # Length of the line segments [p, O] for p in points
-    >>> target_points = points[d.e < 1]  # all points within the unit sphere
+    >>> target_points = points[abs(l) < 1]  # all points within the unit sphere
 
 You see that our algorithm expresses the geometry of the problem very compactly; the broadcasting is all
 done automatically by the array types we are working over.
@@ -243,13 +243,13 @@ we can use numpy's masking syntax to do
 
 .. code-block::
 
-    >>> large_x = x[d.e > 1]
+    >>> large_x = x[abs(x) > 1]
     >>> large_x
     [0.95071431 0.73199394] 𝐞₁ + [0.05808361 0.86617615] 𝐞₂ + [0.96990985 0.83244264] 𝐞₃
 
-First, :code:`d.e` selects the scalar coefficient of the multivector :code:`d`.
-Then, :code:`d.e > 1` creates the boolean array :code:`[False  True  True False False]`, indicating
-which elements satisfy the condition. Lastly, :code:`x[d.e > 1]` passes this condition on to the
+First, :code:`abs(x)` takes the non-negative scalar magnitude of each vector in :code:`x`.
+Then, :code:`abs(x) > 1` creates the boolean array :code:`[False  True  True False False]`, indicating
+which elements satisfy the condition. Lastly, :code:`x[abs(x) > 1]` passes this condition on to the
 multivector coefficients, which are all arrays of shape :code:`(5,)`.
 Importantly, :code:`kingdon` passes the thing between the square brackets (:code:`x[...]`) on to the
 coefficients *unseen*, thus enabling not only numpy style indexing and masking, but also
