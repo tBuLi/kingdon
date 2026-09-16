@@ -1,3 +1,7 @@
+import pathlib
+import subprocess
+import sys
+
 from kingdon import Algebra
 import numpy as np
 import pytest
@@ -155,3 +159,119 @@ def test_graph_types(alg, types):
         return
     g = alg.graph()
     assert g.types == types
+
+
+@pytest.fixture(scope='module')
+def ip():
+    """
+    A throwaway IPython shell with the %%graph magic registered.
+
+    kingdon registers its magics when it is imported into a running shell, but by the time this
+    shell is created the test session has long since imported kingdon, so load it as an extension
+    instead. :func:`test_magic_registered_on_import` covers the notebook's import order.
+    """
+    ipy = pytest.importorskip('IPython.testing.globalipapp').start_ipython()
+    ipy.run_cell(
+        '%load_ext kingdon\n'
+        'from kingdon import Algebra\n'
+        'alg = Algebra(2, 0, 1)\n'
+        'A = alg.vector([1, 1, 1]).dual()\n'
+        'B = alg.vector([1, -1, 1]).dual()\n'
+    )
+    return ipy
+
+
+def run_magic(ip, cell):
+    """ Run a %%graph cell and return the GraphWidget it produced. """
+    result = ip.run_cell(cell)
+    result.raise_error()
+    return result.result
+
+
+def test_cell_magic(ip):
+    """ Every top level expression is a subject, and the argument line holds the options. """
+    g = run_magic(ip, '%%graph -grid -pointRadius 4 -width 600px\nA')
+    assert g.algebra is ip.user_ns['alg']
+    assert g.subjects == ip.user_ns['alg'].graph(ip.user_ns['A']).subjects
+    # A flag without a value is True, and a value which is not valid python stays a string.
+    assert g.options['grid'] is True
+    assert g.options['pointRadius'] == 4
+    assert g.options['width'] == '600px'
+
+
+def test_cell_magic_subjects(ip):
+    """ Subjects are graphed in order, and a top level tuple is unpacked into several subjects. """
+    A, B, alg = (ip.user_ns[name] for name in ('A', 'B', 'alg'))
+    g = run_magic(ip, '%%graph\n0xD0FFE1, [A, B]\n0x224488, A, "A"')
+    assert g.subjects == alg.graph(0xD0FFE1, [A, B], 0x224488, A, "A").subjects
+
+
+def test_cell_magic_kwargs(ip):
+    """ Options can also be written as keyword arguments. """
+    alg = ip.user_ns['alg']
+    camera = alg.blades.e + 0.5 * alg.blades.e12
+    g = run_magic(ip, '%%graph pointRadius=4, camera=alg.blades.e + 0.5*alg.blades.e12\nA')
+    assert g.options['pointRadius'] == 4
+    assert g.options['camera'] == alg.graph(camera=camera).options['camera']
+
+
+def test_cell_magic_statements(ip):
+    """ Statements which are not expressions are executed, which is what animations are made of. """
+    g = run_magic(ip, '%%graph -animate\ndef frame():\n    return [A, B]\n\nframe')
+    assert g.options['animate'] is True
+    assert g.raw_subjects == [ip.user_ns['frame']]
+    assert g.subjects == ip.user_ns['alg'].graph(ip.user_ns['frame']).subjects
+
+
+def test_cell_magic_semicolon(ip):
+    """ Whatever an assignment assigns is a subject, unless the line ends in a semicolon. """
+    A, alg = ip.user_ns['A'], ip.user_ns['alg']
+    g = run_magic(ip, '%%graph\nL = A.dual()\nA;  # left out of the scene')
+    assert ip.user_ns['L'] == A.dual()
+    assert g.subjects == alg.graph(A.dual()).subjects
+    g = run_magic(ip, '%%graph\nM = A.dual();\nA')
+    assert ip.user_ns['M'] == A.dual()
+    assert g.subjects == alg.graph(A).subjects
+
+
+def test_cell_magic_explicit_algebra(ip):
+    """ Without a multivector to learn it from, the algebra is named on the argument line. """
+    from IPython.core.error import UsageError
+
+    with pytest.raises(UsageError):
+        run_magic(ip, '%%graph\n0x224488')
+    g = run_magic(ip, '%%graph alg -grid\n0x224488')
+    assert g.algebra is ip.user_ns['alg']
+    assert g.subjects == [0x224488]
+
+
+def test_magic_registered_on_import():
+    """ Importing kingdon into a running kernel is enough to get the %%graph magic. """
+    pytest.importorskip('IPython')
+    script = (
+        "from IPython.testing.globalipapp import start_ipython;"
+        "ip = start_ipython();"
+        "ip.run_cell('import kingdon');"
+        "print(ip.find_cell_magic('graph') is not None)"
+    )
+    out = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True,
+                         cwd=pathlib.Path(__file__).parent.parent)
+    assert out.stdout.strip().endswith('True'), out.stderr
+
+
+def test_cell_magic_rerun_updates(ip):
+    """ Rerunning a cell updates the widget it made before, instead of making a new one. """
+    A, B, alg = (ip.user_ns[name] for name in ('A', 'B', 'alg'))
+    try:
+        ip.parent_header = {'metadata': {'cellId': 'a-cell'}}
+        first = run_magic(ip, '%%graph -grid\nA')
+        again = run_magic(ip, '%%graph\nA\nB')
+        ip.parent_header = {'metadata': {'cellId': 'another-cell'}}
+        other = run_magic(ip, '%%graph\nA')
+    finally:
+        del ip.parent_header
+    assert again is first
+    assert first.subjects == alg.graph(A, B).subjects
+    assert 'grid' not in first.options  # Dropping a flag takes effect on a rerun.
+    assert other is not first  # Another cell gets its own widget,
+    assert run_magic(ip, '%%graph\nA') is not first  # and so does a run without a cell id.

@@ -23,7 +23,6 @@ from kingdon.multivector import (
     Bireflection, # compositions
     Direction, EVector, UPoint, Point, Translation,  # PGA Types.
 )
-from kingdon.graph import GraphWidget
 from kingdon.codegen import resolve_layout, CompiledExpression, lambdify
 
 operation_field = partial(field, default_factory=dict, init=False, repr=False, compare=False)
@@ -528,7 +527,7 @@ class Algebra:
             return self.mvtype(self, *args, grades=(grade,), **kwargs)
         return self._kvectors[grade](self, *args, **kwargs)
 
-    def graph(self, *subjects, graph_widget=GraphWidget, **options):
+    def graph(self, *subjects, graph_widget=None, **options):
         """
         The graph function outputs :code:`ganja.js` renders and is meant
         for use in jupyter notebooks. The syntax of the graph function will feel
@@ -656,6 +655,7 @@ class Algebra:
         :param gl: Force the WebGL renderer (the default in 3D), which supports raytraced surfaces.
         :param spin: Rotate the camera continuously at the given rate (WebGL only).
         :param thresh: Threshold used by the raymarcher to decide when a surface is hit.
+        :param graph_widget: The graph widget to use. Defaults to :class:`kingdon.graph.GraphWidget`.`
         :param `**options`: Any other option supported by :code:`ganja.js`'s
             :code:`Algebra.graph`, such as :code:`alpha`, :code:`cull`, :code:`noZ`,
             :code:`htmlText`, :code:`devicePixelRatio`, :code:`clip`, :code:`still`.
@@ -663,7 +663,8 @@ class Algebra:
         :return: A :class:`~kingdon.graph.GraphWidget` displaying the scene with :code:`ganja.js`.
             The :meth:`~kingdon.graph.GraphWidget.update` method can be used to redraw an existing figure.
         """
-        return graph_widget(
+        from kingdon.graph import GraphWidget  # Local import to keep import kingdon faster for users who do not intend to use graph
+        return (graph_widget or GraphWidget)(
             algebra=self,
             raw_subjects=subjects,
             options=options,

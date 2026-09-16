@@ -397,6 +397,46 @@ See :meth:`~kingdon.algebra.Algebra.graph` for more details.
     kingdon supports :code:`ganja.js`'s animation and interactivity in jupyter notebooks,
     `try kingdon in your browser <https://tbuli.github.io/teahouse/>`_ to give it a go!
 
+The :code:`%%graph` cell magic
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Importing :code:`kingdon` into a jupyter kernel registers the :code:`%%graph` cell magic, which
+enables a more convenient notation: every top level expression in the cell is a subject
+to be graphed, and the argument line holds the options. So the example above can also be written as
+
+.. code-block::
+
+    %%graph -lineWidth 3 -grid -labels
+    0xD0FFE1, [A, B, C]
+    0x224488, A, "A", B, "B", C, "C"
+
+Options are written either as flags (:code:`-grid -pointRadius 4`) or as keyword arguments
+(:code:`grid=1, pointRadius=4`), and a flag without a value is :code:`True`.
+
+Whatever an assignment assigns is a subject as well, and a line which ends in a semicolon is
+evaluated but left out of the scene, which is a quick way to drop a subject without deleting the
+line. Any other statement is simply executed, which means a scene can be built up in the cell
+itself:
+
+.. code-block::
+
+    %%graph -animate
+    L = A & B    # graphed
+    M = A & C;   # not graphed
+
+    def frame():
+        return [0x224488, A, B, L]
+
+    frame
+
+The algebra is that of the first multivector among the subjects. If the subjects hold no
+multivector at all, as can happen for an animation, then name the algebra at the start of the
+argument line instead: :code:`%%graph alg -animate`.
+
+Rerunning a cell redraws the widget that cell made before with
+:meth:`~kingdon.graph.GraphWidget.update`, rather than making a new one, so a scene can be
+built more organically.
+
 Meshes and point clouds
 ~~~~~~~~~~~~~~~~~~~~~~~
 
