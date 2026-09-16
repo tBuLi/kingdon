@@ -1,5 +1,6 @@
 -r requirements.txt
 sphinx
+furo
 nbsphinx
 ipykernel
 symfit

@@ -43,7 +43,7 @@ def test_widget(alg):
 
     # Test if graph has the right basis, signature, and default style.
     assert g.basis == [b if b != 'e' else '1' for b in alg.canon2bin]
-    assert g.signature == alg.signature
+    assert g.signature == list(alg.signature)   # the widget syncs JSON, which has no tuples
     assert g.options['style'] == {
         'width': 'min( 100%, 1024px )',
         'height': 'auto',
@@ -134,7 +134,9 @@ def test_update_125():
       'bivector': {},
       'scalar': {},
       'trivector': {},
-      'vector': {}}
+      'vector': {},
+      'evenmv': {},
+      'oddmv': {}}
      ),
     (Algebra.fromname('2DPGA'),
      {'bireflection': {},
@@ -146,7 +148,9 @@ def test_update_125():
       'translation': {0: 1.0},
       'trivector': {},
       'upoint': {4: 1.0},
-      'vector': {}}
+      'vector': {},
+      'evenmv': {},
+      'oddmv': {}}
      )
 ])
 def test_graph_types(alg, types):

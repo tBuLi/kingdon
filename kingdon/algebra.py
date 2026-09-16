@@ -20,7 +20,7 @@ from kingdon.matrixreps import matrix_rep
 from kingdon.multivector import (
     MultiVector, MultiVectorType,
     Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector, # k-vectors
-    Bireflection, # compositions
+    Bireflection, EvenMV, OddMV, # compositions
     Direction, EVector, UPoint, Point, Translation,  # PGA Types.
 )
 from kingdon.codegen import resolve_layout, CompiledExpression, lambdify
@@ -30,7 +30,7 @@ operation_field = partial(field, default_factory=dict, init=False, repr=False, c
 KVECTORS = [Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector]
 
 
-@dataclass
+@dataclass(unsafe_hash=True)
 class Algebra:
     """
     A Geometric (Clifford) algebra with :code:`p` positive dimensions,
@@ -42,10 +42,11 @@ class Algebra:
     :param p:  number of positive dimensions.
     :param q:  number of negative dimensions.
     :param r:  number of null dimensions.
-    :param signature: Optional signature of the algebra, e.g. [0, 1, 1] for 2DPGA.
+    :param signature: Optional signature of the algebra, e.g. [0, 1, 1] for 2DPGA. Kept as a tuple.
         Mutually exclusive with `p`, `q`, `r`.
     :param start_index: Optionally set the start index of the dimensions. For PGA this defaults to `0`, otherwise `1`.
-    :param basis: Custom basis order, e.g. `["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"]` for 2DPGA.
+    :param basis: Custom basis order, e.g. `["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"]`
+        for 2DPGA. Kept as a tuple.
     :param cse: If :code:`True` (default), attempt Common Subexpression Elimination (CSE)
         on symbolically optimized expressions.
     :param full_layout: If :code:`True` (default is :code:`False`), every multivector carries the full layout of its
@@ -83,9 +84,9 @@ class Algebra:
     q: int = field(default=0, repr=False, compare=False)
     r: int = field(default=0, repr=False, compare=False)
     d: int = field(init=False, repr=False, compare=False)  # Total number of dimensions
-    signature: list[int] = field(default=None)
+    signature: tuple = field(default=None)
     start_index: int = field(default=None, repr=False, compare=False)
-    basis: list[str] = field(default_factory=list)
+    basis: tuple = field(default_factory=tuple)
 
     # Clever dictionaries that cache previously symbolically optimized lambda functions between elements.
     gp: OperatorDict = operation_field(metadata={'codegen': ops.gp,})  # geometric product
@@ -147,6 +148,8 @@ class Algebra:
     wrapper: Callable = field(default=None, repr=False, compare=False)
     # Constructor to be called on the values upon mv creation.
     values_asarray: Callable = field(default=list, repr=False, compare=False)
+    # Backend to opt in to, 'torch' or 'einops'. Opting in to 'torch' also sets values_asarray, unless one was given. See docs/backends/torch.rst.
+    backend: str = field(default='', repr=False, compare=False)
 
     # This simplify func is applied to every component after a symbolic expression is called, to simplify and filter by.
     simp_func: Callable = field(default=lambda v: v if not isinstance(v, sympy.Expr) else sympy.simplify(sympy.expand(v)), repr=False, compare=False)
@@ -163,6 +166,9 @@ class Algebra:
         if self.lambdifier is None:
             self.lambdifier = lambdify
 
+        self.signature = self.signature if self.signature is None else tuple(self.signature)
+        self.basis = tuple(self.basis)
+
         if self.signature is not None:
             counts = Counter(self.signature)
             self.p, self.q, self.r = counts[1], counts[-1], counts[0]
@@ -170,9 +176,9 @@ class Algebra:
                 raise TypeError('Unsupported signature.')
         else:
             if self.r == 1:  # PGA, so put r first.
-                self.signature = [0] * self.r + [1] * self.p + [-1] * self.q
+                self.signature = (0,) * self.r + (1,) * self.p + (-1,) * self.q
             else:
-                self.signature = [1] * self.p + [-1] * self.q + [0] * self.r
+                self.signature = (1,) * self.p + (-1,) * self.q + (0,) * self.r
 
         if self.start_index is None:
             self.start_index = 0 if self.r == 1 else 1
@@ -196,7 +202,7 @@ class Algebra:
         # Setup mapping from binary to canonical string rep and vise versa
         if self.basis:
             assert len(self.basis) == len(self)
-            assert self.basis == sorted(self.basis, key=len)  # The basis has to be ordered by grade.
+            assert self.basis == tuple(sorted(self.basis, key=len))  # The basis has to be ordered by grade.
             assert all(eJ[0] == 'e' for eJ in self.basis)
             vecs = [eJ[1:] for eJ in self.basis if len(eJ) == 2]
             self.start_index = int(min(vecs))
@@ -211,6 +217,18 @@ class Algebra:
                 for eJ in range(2 ** self.d)
             }
             self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
+
+        # Opt in to a backend, before anything that captures values_asarray is built.
+        if self.backend == 'einops':
+            import kingdon.einops_backend  # noqa: F401  Registers multivectors with einops.
+        elif self.backend == 'torch':
+            # This registers the einops backend too, and brings a values_asarray that keeps the
+            # coefficients of a multivector in one tensor. `list` is the default, i.e. not chosen.
+            import kingdon.torch_backend as torch_backend
+            if self.values_asarray is list:
+                self.values_asarray = torch_backend.values_asarray
+        elif self.backend:
+            raise ValueError(f"Unknown backend {self.backend!r}; kingdon has 'torch' and 'einops'.")
 
         self.signs = DefaultKeyDict(self._compute_sign)
 
@@ -229,6 +247,7 @@ class Algebra:
             setattr(self, name, op)
 
         self._kvectors = []
+        self._evenoddmv = [EvenMV, OddMV]
         if self.large:
             if self.types or extra_types or self.full_layout:
                 raise TypeError('A large algebra has no multivector types, so `types`, `extra_types` and '
@@ -241,7 +260,7 @@ class Algebra:
             if not self.types:
                 self._kvectors = KVECTORS[:self.d+1]
                 self.types = [*self._kvectors]
-                if self.d >= 2: self.types.extend([Bireflection])
+                if self.d >= 2: self.types.extend([Bireflection, *self._evenoddmv])
                 if extra_types: self.types.extend(extra_types)
             # Dynamically generate classes for types if they are not already.
             self.types = [type(t['name'], (self.mvtype,), {'layout': t['layout']}) if isinstance(t, dict) else t
@@ -249,11 +268,15 @@ class Algebra:
             self._type_layouts = {cls: layout for cls in self.types
                                   if (layout := self._bind_layout(cls, name='x'))}  # an empty layout matches an empty result at zero cost in resolve_layout, and would beat every other type.
 
+            if self.backend == 'torch':
+                torch_backend.register_pytree_nodes([self.mvtype, *self._type_layouts])
+
             # Add mv constructors to the algebra
             for cls in self._type_layouts: setattr(self, cls.__name__.lower(), partial(cls, self))
             for k, cls in enumerate(self._kvectors):
                 if self.d - k < len(self._kvectors):
                     setattr(self, f"pseudo{cls.__name__.lower()}", partial(self._kvectors[self.d - k], self))
+
 
         # Blades are not precomputed for large algebras, except for basis vectors.
         self.blades = BladeDict(algebra=self, lazy=self.large)
@@ -507,15 +530,13 @@ class Algebra:
 
     def evenmv(self, *args, **kwargs) -> MultiVector:
         """ Create a new :class:`~kingdon.multivector.MultiVector` in the even subalgebra. """
-        grades = tuple(filter(lambda x: x % 2 == 0, range(self.d + 1)))
-        return self.mvtype(self, *args, grades=grades, **kwargs)
+        return self._evenoddmv[0](self, *args, **kwargs)
 
     def oddmv(self, *args, **kwargs) -> MultiVector:
         """
         Create a new :class:`~kingdon.multivector.MultiVector` of odd grades.
         """
-        grades = tuple(filter(lambda x: x % 2 == 1, range(self.d + 1)))
-        return self.mvtype(self, *args, grades=grades, **kwargs)
+        return self._evenoddmv[1](self, *args, **kwargs)
 
     def purevector(self, *args, grade, **kwargs) -> MultiVector:
         """
