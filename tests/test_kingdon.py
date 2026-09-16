@@ -69,6 +69,8 @@ def test_MultiVector(ga101):
     X = MultiVector(values={0: 2.2, 'e12': 1.2}, algebra=ga101)
     assert dict(X.items()) == {0: 2.2, 3: 1.2}
 
+    assert ga101.vector(e1=1, e2=0) == ga101.vector(e1=1, e2=0, e3=0)
+
 def test_anticommutation(ga101, vga11, vga2d):
     for alg in [ga101, vga11, vga2d]:
         X = alg.multivector({1: 1})
