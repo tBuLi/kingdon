@@ -13,6 +13,20 @@ from kingdon.powers import power_supply
 # ---------------------------------------------------------------------------
 
 
+def _atom(text):
+    """
+    `text` made safe to embed in any larger expression. A symbol or a number literal already is an
+    atom, everything else gets parentheses: a redundant pair costs nothing, while a missing one is
+    a silent precedence bug, as in ``s*t`` under a square root reading back as ``s*(t**0.5)``.
+    """
+    if text.isidentifier():
+        return text
+    try:
+        float(text)
+    except ValueError:
+        return f'({text})'
+    return text
+
 
 def poly_format(poly_args):
     """Format a raw polynomial args list (or 0) to a Python code string."""
@@ -665,6 +679,22 @@ class Polynomial:
         return result
 
 
+class Root(str):
+    """
+    The symbol standing for the square root of `base`.
+
+    A root has no representation as a polynomial, so it travels through one as an opaque symbol.
+    Being a :class:`str` it *is* that symbol, indistinguishable from any other in arithmetic,
+    sorting and formatting, and it spells valid python. The base rides along on the symbol itself,
+    which is what lets :meth:`RationalPolynomial.diff` and the code generators reach the expression
+    underneath it without having to look it up anywhere.
+    """
+    def __new__(cls, base: "RationalPolynomial"):
+        self = super().__new__(cls, f'{base}**0.5')
+        self.base = base
+        return self
+
+
 class RationalPolynomial:
     __slots__ = ('numer', 'denom')
 
@@ -787,16 +817,15 @@ class RationalPolynomial:
             *_, last = power_supply(self, -power)
             return 1 / last
         if power == 0.5:
-            return self.fromname(f'{self}**0.5')
+            return self.fromname(Root(self))
         *_, last = power_supply(self, power)
         return last
 
     def __str__(self):
-        numer_str = f"({self.numer})" if len(self.numer) > 1 else f"{self.numer}"
+        numer_str = _atom(str(self.numer))
         if self.denom.args == ((1,),):
             return numer_str
-        denom_str = f"({self.denom})" if len(self.denom) > 1 else f"{self.denom}"
-        return f"(({numer_str}) / ({denom_str}))"
+        return f'({numer_str} / {_atom(str(self.denom))})'
 
     __repr__ = __str__
 
@@ -804,8 +833,8 @@ class RationalPolynomial:
         """ Return a sympy version of this Polynomial. """
         return self.numer.tosympy() / self.denom.tosympy()
 
-    def diff(self, var):
-        """Differentiate with respect to var (string or Polynomial.fromname(string))."""
+    def _quotient_diff(self, var):
+        """The quotient rule, treating every symbol including a root as an independent one."""
         f, g = self.numer, self.denom
         fp = f.diff(var)
         gp = g.diff(var)
@@ -815,5 +844,73 @@ class RationalPolynomial:
         denom = g * g
         return self.__class__(numer, denom)
 
+    def diff(self, var):
+        """
+        Differentiate with respect to var (string or Polynomial.fromname(string)).
+
+        A square root is carried as an opaque symbol named after its base, so the quotient rule
+        alone would miss it. Each one contributes a chain rule term, with
+        :math:`\\mathrm{d}\\sqrt{b} = \\mathrm{d}b / 2\\sqrt{b}`; the base is differentiated in
+        turn, so a root of a root is handled too.
+        """
+        result = self._quotient_diff(var)
+        for root in (s for s in self.symbols() if isinstance(s, Root)):
+            gradient = root.base.diff(var)
+            if gradient:
+                half = self.__class__([[0.5]])
+                result = result + self._quotient_diff(root) * gradient * half / self.fromname(root)
+        return result
+
+    def symbols(self):
+        """Names of the symbols this expression is built from."""
+        return {factor for part in (self.numer, self.denom) for monomial in part.args
+                for factor in monomial[1:] if isinstance(factor, str)}
+
+    @property
+    def roots(self) -> set[Root]:
+        """
+        Every :class:`Root` this expression is built on, the ones nested in the base of another
+        included, so that a code generator emitting them has the whole nest in hand.
+        """
+        found = set()
+        for root in (s for s in self.symbols() if isinstance(s, Root)):
+            found.add(root)
+            found |= root.base.roots
+        return found
+
     def __bool__(self):
         return self.numer.__bool__()
+
+
+def rp_var_name(v):
+    """Return the variable name string for a simple :class:`RationalPolynomial` symbol, or ``'_'``."""
+    numer_args = getattr(getattr(v, 'numer', None), 'args', None)
+    if (numer_args and len(numer_args) == 1
+            and len(numer_args[0]) == 2
+            and numer_args[0][0] == 1):
+        return str(numer_args[0][1])
+    return '_'
+
+
+def rational_cse(exprs: list[RationalPolynomial], common_denom: Polynomial | None = None):
+    """
+    Run CSE on a list of :class:`RationalPolynomial` expressions.
+
+    :param exprs: list of :class:`RationalPolynomial` expressions.
+    :param common_denom: optional :class:`Polynomial` common denominator.
+    :return: (cse_pairs, numer_simplified, denom_simplified) where:
+        - cse_pairs: list of (name, poly_args) tuples for each extracted subexpression.
+        - numer_simplified: list of poly_args lists for simplified numerators.
+        - denom_simplified: poly_args list for the simplified denominator, or None.
+    """
+    poly_args_list = [e.numer.args for e in exprs]
+    if common_denom is not None:
+        poly_args_list.append(common_denom.args)
+
+    all_vars = {f for pl in poly_args_list for m in pl for f in m[1:] if isinstance(f, str)}
+    cse_pairs, simplified = poly_cse(poly_args_list, prot=None, iso=[2] + sorted(all_vars))
+
+    numer_simplified = simplified[:-1] if common_denom is not None else simplified
+    denom_simplified = simplified[-1] if common_denom is not None else None
+
+    return cse_pairs, numer_simplified, denom_simplified

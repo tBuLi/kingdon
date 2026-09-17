@@ -17,7 +17,9 @@ from sympy.printing.lambdarepr import LambdaPrinter
 from sympy.simplify.cse_main import numbered_symbols
 from sympy import Symbol, sympify
 
-from kingdon.polynomial import poly_cse, poly_format, Polynomial, RationalPolynomial
+from kingdon.polynomial import (
+    poly_cse, poly_format, rational_cse, rp_var_name, Polynomial, RationalPolynomial
+)
 from kingdon.multivector import MultiVector, MultiVectorType
 
 
@@ -147,11 +149,14 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
     keys, exprs = tuple(res.keys()), list(res.values())
     if output_mv_idx is not None:
         keys = ()
-    # Only a lambdifier that asks for values_asarray is given it, so that one which forwards its
-    # keyword arguments elsewhere, to sympy.lambdify say, keeps working.
-    asarray = {'values_asarray': values_asarray} if 'values_asarray' in inspect.signature(lambdifier).parameters else {}
+    # Only a lambdifier that asks for values_asarray or shapes is given them, so that one which
+    # forwards its keyword arguments elsewhere, to sympy.lambdify say, keeps working.
+    accepted = inspect.signature(lambdifier).parameters
+    extra = {'values_asarray': values_asarray} if 'values_asarray' in accepted else {}
+    if 'shapes' in accepted:
+        extra['shapes'] = {arg_name: mv.shape for arg_name, mv in zip(string.ascii_uppercase, mvs)}
     func = lambdifier(
-        args, exprs, funcname=funcname, cse=algebra.cse, output_mv_idx=output_mv_idx, **asarray
+        args, exprs, funcname=funcname, cse=algebra.cse, output_mv_idx=output_mv_idx, **extra
     )
     return CompiledExpression(
         algebra, keys, func, MVType or algebra.mvtype, output_mv_idx, wrapper(func) if wrapper else func, values_asarray=values_asarray
@@ -236,41 +241,6 @@ def _build_and_cache_func(header, body_lines, funcname, namespace=None, count_op
     return _compile_and_cache('\n'.join(all_lines), funcname, namespace)
 
 
-def _poly_cse_compute(exprs: list[RationalPolynomial], common_denom: Polynomial | None = None):
-    """
-    Run CSE on a list of :class:`~kingdon.polynomial.RationalPolynomial` expressions.
-
-    :param exprs: list of :class:`~kingdon.polynomial.RationalPolynomial` expressions.
-    :param common_denom: optional :class:`~kingdon.polynomial.Polynomial` common denominator.
-    :return: (cse_pairs, numer_simplified, denom_simplified) where:
-        - cse_pairs: list of (name, poly_args) tuples for each extracted subexpression.
-        - numer_simplified: list of poly_args lists for simplified numerators.
-        - denom_simplified: poly_args list for the simplified denominator, or None.
-    """
-    # Build CSE input: numerators of all exprs, plus the common denominator as last entry.
-    poly_args_list = [e.numer.args for e in exprs]
-    if common_denom is not None:
-        poly_args_list.append(common_denom.args)
-
-    all_vars = {f for pl in poly_args_list for m in pl for f in m[1:] if isinstance(f, str)}
-    cse_pairs, simplified = poly_cse(poly_args_list, prot=None, iso=[2] + sorted(all_vars))
-
-    numer_simplified = simplified[:-1] if common_denom is not None else simplified
-    denom_simplified = simplified[-1] if common_denom is not None else None
-
-    return cse_pairs, numer_simplified, denom_simplified
-
-
-def _rp_var_name(v):
-    """Return the variable name string for a simple :class:`~kingdon.polynomial.RationalPolynomial` symbol, or ``'_'``."""
-    numer_args = getattr(getattr(v, 'numer', None), 'args', None)
-    if (numer_args and len(numer_args) == 1
-            and len(numer_args[0]) == 2
-            and numer_args[0][0] == 1):
-        return str(numer_args[0][1])
-    return '_'
-
-
 def unflatten(template, flat):
     it = iter(flat)
     def walk(t):
@@ -286,7 +256,7 @@ def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, 
     :param args_dict: dict mapping arg name (str) to list of :class:`~kingdon.polynomial.RationalPolynomial` values.
     :param exprs: list of :class:`~kingdon.polynomial.RationalPolynomial` expressions (for denom checks).
     :param funcname: name for the generated function.
-    :param cse_pairs: list of (name, poly_args) from :func:`_poly_cse_compute`.
+    :param cse_pairs: list of (name, poly_args) from :func:`rational_cse`.
     :param numer_simplified: simplified numerator poly_args per expression.
     :param denom_simplified: simplified denominator poly_args, or None.
     :param output_mv_idx: index into the argument list of the MV to write the result into (for set-style codegen).
@@ -302,11 +272,11 @@ def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, 
             body_lines.append(f'    [{", ".join(temp_names)}] = {name}')
             for temp_name, v in zip(temp_names, values):
                 if isinstance(v, (list, tuple)):
-                    body_lines.append(f'    [{", ".join(_rp_var_name(sv) for sv in v)}] = {temp_name}')
+                    body_lines.append(f'    [{", ".join(rp_var_name(sv) for sv in v)}] = {temp_name}')
                 else:
-                    body_lines.append(f'    {_rp_var_name(v)} = {temp_name}')
+                    body_lines.append(f'    {rp_var_name(v)} = {temp_name}')
         else:
-            body_lines.append(f'    [{", ".join(_rp_var_name(v) for v in values)}] = {name}')
+            body_lines.append(f'    [{", ".join(rp_var_name(v) for v in values)}] = {name}')
 
     for cse_name, poly_args in cse_pairs:
         body_lines.append(f'    {cse_name}={poly_format(poly_args)}')
@@ -412,7 +382,7 @@ def lambdify(
             non_unit = [e for e in flattened_exprs if e.denom != 1]
             if not non_unit or all(e.denom == non_unit[0].denom for e in non_unit):
                 common_denom = non_unit[0].denom if non_unit else None
-                cse_pairs, numer_simplified, denom_simplified = _poly_cse_compute(flattened_exprs, common_denom)
+                cse_pairs, numer_simplified, denom_simplified = rational_cse(flattened_exprs, common_denom)
 
                 if printer is None and func_printer is None:
                     return _lambdify_poly_cse(args, exprs, funcname, cse_pairs, numer_simplified, denom_simplified,

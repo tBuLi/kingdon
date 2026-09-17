@@ -149,7 +149,8 @@ class Algebra:
     wrapper: Callable = field(default=None, repr=False, compare=False)
     # Constructor to be called on the values upon mv creation.
     values_asarray: Callable = field(default=list, repr=False, compare=False)
-    # Backend to opt in to, 'torch' or 'einops'. Opting in to 'torch' also sets values_asarray, unless one was given. See docs/backends/torch.rst.
+    # Backend to opt in to: 'torch', 'triton' or 'einops'. The first two set values_asarray and
+    # 'triton' also sets the lambdifier, unless either was given. See docs/backends/torch.rst.
     backend: str = field(default='', repr=False, compare=False)
 
     # This simplify func is applied to every component after a symbolic expression is called, to simplify and filter by.
@@ -164,6 +165,7 @@ class Algebra:
             warnings.warn("The graded argument has been renamed to full_layout.", FutureWarning, stacklevel=2)
             self.full_layout = graded
 
+        chosen_lambdifier = self.lambdifier is not None
         if self.lambdifier is None:
             self.lambdifier = lambdify
 
@@ -222,14 +224,17 @@ class Algebra:
         # Opt in to a backend, before anything that captures values_asarray is built.
         if self.backend == 'einops':
             import kingdon.einops_backend  # noqa: F401  Registers multivectors with einops.
-        elif self.backend == 'torch':
+        elif self.backend in ('torch', 'triton'):
             # This registers the einops backend too, and brings a values_asarray that keeps the
             # coefficients of a multivector in one tensor. `list` is the default, i.e. not chosen.
             import kingdon.torch_backend as torch_backend
             if self.values_asarray is list:
                 self.values_asarray = torch_backend.values_asarray
+            if self.backend == 'triton' and not chosen_lambdifier:
+                from kingdon.triton_codegen import triton_lambdify
+                self.lambdifier = triton_lambdify
         elif self.backend:
-            raise ValueError(f"Unknown backend {self.backend!r}; kingdon has 'torch' and 'einops'.")
+            raise ValueError(f"Unknown backend {self.backend!r}; kingdon has 'torch', 'triton' and 'einops'.")
 
         self.signs = DefaultKeyDict(self._compute_sign)
 
@@ -269,7 +274,7 @@ class Algebra:
             self._type_layouts = {cls: layout for cls in self.types
                                   if (layout := self._bind_layout(cls, name='x'))}  # an empty layout matches an empty result at zero cost in resolve_layout, and would beat every other type.
 
-            if self.backend == 'torch':
+            if self.backend in ('torch', 'triton'):
                 torch_backend.register_pytree_nodes([self.mvtype, *self._type_layouts])
 
             # Add mv constructors to the algebra

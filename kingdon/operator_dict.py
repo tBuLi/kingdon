@@ -131,9 +131,12 @@ class OperatorDict(Mapping):
         depth = mvtypehint[1] if isinstance(mvtypehint, tuple) else 0  # Must come from the type-hint.
         if depth is None: depth = shape[0]  # If the type hint was MultiVector[None] than the depth should be taken from the input
         if not depth:
-            return mvtype.fromname(self.algebra, name, keys, symbolcls=self.codegen_symbolcls)
-        return stack([mvtype.fromname(self.algebra, f'{name}_{k}', keys, symbolcls=self.codegen_symbolcls)
-                      for k in range(depth)])
+            mv = mvtype.fromname(self.algebra, name, keys, symbolcls=self.codegen_symbolcls)
+        else:
+            mv = stack([mvtype.fromname(self.algebra, f'{name}_{k}', keys, symbolcls=self.codegen_symbolcls)
+                        for k in range(depth)])
+        mv.shape = shape
+        return mv
 
     def make_symbolic_mvs(self, types_in: tuple[tuple[type, tuple[int]]], shapes_in: tuple[tuple[int]]) -> tuple[MultiVector]:
         return tuple(

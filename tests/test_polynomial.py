@@ -168,3 +168,13 @@ def test_no_arrays(cls):
 
     # Numbers are still fine, including the numpy scalars that are float subclasses.
     assert cls(0.5) == cls(np.float64(0.5))
+
+
+def test_root_differentiates():
+    from kingdon.polynomial import RationalPolynomial as RP
+    s, t = RP.fromname('s'), RP.fromname('t')
+    assert str((s ** 0.5).diff('s')) == '(0.5 / (s**0.5))'
+    assert not (s ** 0.5).diff('t')
+    assert str((s * s).diff('s')) == '(2*s)'
+    assert str((s * t) ** 0.5) == '((s*t)**0.5)'
+    assert str(((s * t) ** 0.5).diff('s')) == '((0.5*t) / ((s*t)**0.5))'
