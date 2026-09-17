@@ -115,6 +115,9 @@ class MultiVector(metaclass=MultiVectorType):
                     if not re.match(r'^e[0-9a-fA-Z]*$', key):
                         raise KeyError(f'The key {key} does not refer to a valid basis blade.')
                     target, swaps = algebra._blade2canon(key)
+                    if target not in algebra.canon2bin:
+                        items.pop(key)
+                        continue
                     items[target] = - items.pop(key) if swaps % 2 else items.pop(key); key = target
                     items[algebra.canon2bin[key]] = items.pop(key)  # Switch to binary key
 
