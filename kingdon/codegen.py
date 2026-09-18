@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import string
 from itertools import chain
-from typing import NamedTuple
+from dataclasses import dataclass
 from collections.abc import Callable
 import linecache
 import inspect
@@ -23,7 +23,8 @@ from kingdon.polynomial import (
 from kingdon.multivector import MultiVector, MultiVectorType
 
 
-class CompiledExpression(NamedTuple):
+@dataclass(eq=False)
+class CompiledExpression:
     """
     Output of a codegen function.
 
