@@ -87,6 +87,11 @@ def _numel(shape):
     return total
 
 
+def _cover(extent):
+    """The smallest power of two that spans the extent, since a tile axis is a ``tl.arange`` and has to be one."""
+    return 1 << (extent - 1).bit_length()
+
+
 def _body(exprs):
     """CSE'd assignment lines and one formatted expression per output."""
     exprs = list(exprs)
@@ -312,6 +317,8 @@ def _source(funcname, plan, ptrs, lines, outs, grad_lines, grads):
 
     batched_arg = next(name for name, _, kind, _ in plan if kind == 'batch')
     data_shape = next(shape for _, _, kind, shape in plan if kind == 'batch')
+    feat = data_shape[-1]
+    batch = _numel(data_shape) // feat
     weights = [(name, len(names)) for name, names, kind, _ in plan if kind == 'feature']
     saves = ', '.join(ptrs)
     call = _params(plan)
@@ -337,7 +344,7 @@ class _Fn(torch.autograd.Function):
     def forward(ctx, {saves}):
         {"; ".join(f"{p} = {p}.contiguous()" for p in arrays)}
         {scalar_unpack if scalars else "pass"}
-        batch, feat = {_numel(data_shape) // data_shape[-1]}, {data_shape[-1]}
+        batch, feat = {batch}, {feat}
         out = torch.empty(({n_out}, {", ".join(str(d) for d in data_shape)}), device={batched_arg}.device, dtype={batched_arg}.dtype)
         {funcname}_fwd[_grid]({", ".join(call)}, out, batch=batch, feat=feat)
         ctx.save_for_backward({", ".join(arrays)})
@@ -349,9 +356,9 @@ class _Fn(torch.autograd.Function):
         {", ".join(arrays)}, = ctx.saved_tensors
         ({", ".join(scalars)}{"," if scalars else ""}) = ctx.scalars
         gout = gout.contiguous()
-        batch, feat = {_numel(data_shape) // data_shape[-1]}, {data_shape[-1]}
+        batch, feat = {batch}, {feat}
         tile_bb, tile_fb, warps, stages = _tile()
-        BB, FB = min(tile_bb, batch), min(tile_fb, feat)
+        BB, FB = min(tile_bb, {_cover(batch)}), min(tile_fb, {_cover(feat)})
         blocks = triton.cdiv(batch, BB)
         {"; ".join(f"d{p} = torch.zeros_like({p})" for p, _, k, _ in plan if k == "batch")}
         {"; ".join(f"d{p} = torch.empty((blocks, {k}, feat), device={batched_arg}.device, dtype={batched_arg}.dtype)" for p, k in weights)}
