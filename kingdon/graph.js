@@ -25,17 +25,13 @@ function render({ model, el }) {
             var types = model.get('types') || {};
             var options = model.get('options');
             var layouts = Object.fromEntries(
-                Object.entries(types).map(([name, L])=>[name, Object.entries(L).map(([k, v])=>[k|0, v])])
+                Object.entries(types).map(([name, L])=>[name, Object.entries(L)])
             );
 
-            // Define helper functions.
+            // Define helper functions. Blade identity crosses the widget boundary as strings;
+            // their grade is semantic metadata and does not require reconstructing a bit mask.
             function grade(key) {
-                var count = 0;
-                while (key) {
-                    count += key & 1;
-                    key >>= 1;
-                }
-                return count;
+                return key === 'e' ? 0 : key.length - 1;
             }
             var layout = (o)=>layouts[o['type']] || [];
             var TYPED_ARRAYS = {

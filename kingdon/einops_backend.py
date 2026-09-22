@@ -158,7 +158,7 @@ class KingdonBackend(AbstractBackend):
         of scalars, which multiply every blade.
         """
         mvs = [op for op in operands if isinstance(op, MultiVector)]
-        base = next((mv for mv in mvs if mv._keys != (0,)), mvs[0])
+        base = next((mv for mv in mvs if mv._keys != ('e',)), mvs[0])
         keys = base._keys
 
         is_mv, values = [], []
@@ -169,7 +169,7 @@ class KingdonBackend(AbstractBackend):
             elif op._keys == keys:
                 is_mv.append(True)
                 values.append(self._as_tensor(op))
-            elif op._keys == (0,):
+            elif op._keys == ('e',):
                 # A scalar has no blade axis to speak of, so it enters as a plain tensor.
                 is_mv.append(False)
                 values.append(op._values[0])

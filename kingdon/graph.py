@@ -90,7 +90,7 @@ class GraphWidget(anywidget.AnyWidget):
     # Properties derived from the required arguments which have to be available to js.
     signature = traitlets.List([]).tag(sync=True)  # Signature of the algebra
     basis = traitlets.List([]).tag(sync=True)      # Basis of the algebra
-    key2idx = traitlets.Dict({}).tag(sync=True)    # Conversion from binary keys to indices
+    key2idx = traitlets.Dict({}).tag(sync=True)    # Conversion from blade-string keys to indices
     graded = traitlets.Bool({}).tag(sync=True)     # Run ganja.js in graded mode if an up function was provided
     types = traitlets.Dict({}).tag(sync=True)      # Types on the algebra, to use on the js side
 
@@ -126,7 +126,7 @@ class GraphWidget(anywidget.AnyWidget):
     @traitlets.default('key2idx')
     def get_key2idx(self):
         d = self.algebra.d
-        allkeys = list(self.algebra.canon2bin.values())
+        allkeys = list(self.algebra.blade2mask)
         if ('up' not in self.options) and d <= 6:
             return {k: i for i, k in enumerate(allkeys)}
         # From >6D, ganja wants graded input. In this case we return indices by grade
@@ -147,7 +147,7 @@ class GraphWidget(anywidget.AnyWidget):
 
     @traitlets.default('basis')
     def get_basis(self):
-        return [b if b != 'e' else '1' for b in self.algebra.canon2bin]
+        return [b if b != 'e' else '1' for b in self.algebra.blade2mask]
 
     @traitlets.default('types')
     def get_types(self):

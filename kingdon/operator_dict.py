@@ -78,7 +78,7 @@ def do_operation(*mvs, codegen, algebra, MVType=None) -> MultiVector:
     The result is the multivector resulting from :code:`codegen(*mvs)`.
     """
     MVType = MVType or algebra.mvtype
-    mvs = [mv if isinstance(mv, MultiVector) else algebra.mvtype.fromkeysvalues(algebra, (0,), [mv,])
+    mvs = [mv if isinstance(mv, MultiVector) else algebra.mvtype.fromkeysvalues(algebra, ('e',), [mv,])
            for mv in mvs]
     if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
         raise AlgebraError("Cannot multiply elements of different algebra's.")
@@ -136,7 +136,7 @@ class OperatorDict(Mapping):
         return stack([mvtype.fromname(self.algebra, f'{name}_{k}', keys, symbolcls=self.codegen_symbolcls, full_layout=False)
                       for k in range(depth)])
 
-    def make_symbolic_mvs(self, types_in: tuple[tuple[type, tuple[int]]], shapes_in: tuple[tuple[int]]) -> tuple[MultiVector]:
+    def make_symbolic_mvs(self, types_in: tuple[tuple[type, tuple[str, ...]]], shapes_in: tuple[tuple[int]]) -> tuple[MultiVector]:
         return tuple(
             self._make_symbolic_mv(name, keys, shape, MVtype, MVTypeHint)
             for (name, MVTypeHint), (MVtype, keys), shape in zip(self.codegen_input_types.items(), types_in, shapes_in)
@@ -187,15 +187,15 @@ class OperatorDict(Mapping):
         """
         if len(mvs) == 1:
             mv = mvs[0]
-            mv = mv if isinstance(mv, MultiVector) else Scalar.fromkeysvalues(self.algebra, (0,), [mv])
+            mv = mv if isinstance(mv, MultiVector) else Scalar.fromkeysvalues(self.algebra, ('e',), [mv])
             return (mv,)
         if len(mvs) == 2:
             mv1, mv2 = mvs
-            mv1 = mv1 if isinstance(mv1, MultiVector) else Scalar.fromkeysvalues(self.algebra, (0,), [mv1])
-            mv2 = mv2 if isinstance(mv2, MultiVector) else Scalar.fromkeysvalues(self.algebra, (0,), [mv2])
+            mv1 = mv1 if isinstance(mv1, MultiVector) else Scalar.fromkeysvalues(self.algebra, ('e',), [mv1])
+            mv2 = mv2 if isinstance(mv2, MultiVector) else Scalar.fromkeysvalues(self.algebra, ('e',), [mv2])
             mvs = (mv1, mv2)
         else:
-            mvs = [mv if isinstance(mv, MultiVector) else Scalar.fromkeysvalues(self.algebra, (0,), [mv])
+            mvs = [mv if isinstance(mv, MultiVector) else Scalar.fromkeysvalues(self.algebra, ('e',), [mv])
                    for mv in mvs]
         if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
             raise AlgebraError("Cannot multiply elements of different algebra's.")
@@ -290,7 +290,7 @@ class Registry(OperatorDict):
             return TapeRecorder(self.algebra, mvtype=compiled_expr.mvtype, keys=compiled_expr.keys_out, expr=expr)
 
         # Make sure all inputs are multivectors. If an input is not, assume its scalar.
-        mvs = [mv if isinstance(mv, MultiVector) else self.algebra.mvtype.fromkeysvalues(self.algebra, (0,), (mv,))
+        mvs = [mv if isinstance(mv, MultiVector) else self.algebra.mvtype.fromkeysvalues(self.algebra, ('e',), (mv,))
                for mv in mvs]
         if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
             raise AlgebraError("Cannot multiply elements of different algebra's.")
@@ -305,7 +305,7 @@ class Registry(OperatorDict):
             return TapeRecorder.fromname(self.algebra, name, keys, mvtype=mvtype)
         return TapeRecorder.fromname(self.algebra, name, keys, mvtype=mvtype, shape=(depth,))
 
-    def make_symbolic_mvs(self, types_in: tuple[tuple[type, tuple[int]]], shapes_in: tuple[tuple[int]]) -> tuple[TapeRecorder]:
+    def make_symbolic_mvs(self, types_in: tuple[tuple[type, tuple[str, ...]]], shapes_in: tuple[tuple[int]]) -> tuple[TapeRecorder]:
         return tuple(
             self._make_symbolic_mv(name, keys, shape, MVType, MVTypeHint)
             for (name, MVTypeHint), (MVType, keys), shape in zip(self.codegen_input_types.items(), types_in, shapes_in)

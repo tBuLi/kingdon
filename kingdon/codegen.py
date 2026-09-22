@@ -25,14 +25,14 @@ class CompiledExpression(NamedTuple):
     """
     Output of a codegen function.
 
-    :param keys_out: tuple with the output blades in binary rep.
+    :param keys_out: tuple of output blade-string keys.
     :param func: callable that takes (several) sequence(s) of values
         returns a tuple of :code:`len(keys_out)`.
     :param wrapped_func: decorated func if a wrapper was provided, else identical to func.
     :param mvtype: type of the output multivector. Defaults to :code:`MultiVector`.
     """
     algebra: "Algebra"
-    keys_out: tuple[int]
+    keys_out: tuple[str, ...]
     func: Callable
     mvtype: MultiVectorType
     output_mv_idx: int | None = None
@@ -54,7 +54,7 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None, default
     Look up the best-matching MVType for a given result layout from a set of registered types.
 
     :param layouts: mapping from MVType (class) to a layout dict. A layout is a
-        dict from blade key (integer) to either ``...`` for a free component, or
+        dict from blade-string key to either ``...`` for a free component, or
         a number for a fixed constant (e.g. the homogeneous coordinate ``1.0``
         of a point).
     :param res_layout: the layout dict of the result whose type we are trying to
@@ -170,7 +170,7 @@ def do_compile(codegen, *tapes, wrapper=None, values_asarray=None) -> CompiledEx
 
     func = _build_and_cache_func(header, body_lines, funcname, namespace=namespace, count_ops=False)
     return CompiledExpression(
-        algebra, res.keys() if not isinstance(res, str) else (0,), func, res.mvtype, wrapped_func=wrapper(func) if wrapper else func, values_asarray=values_asarray
+        algebra, res.keys() if not isinstance(res, str) else ('e',), func, res.mvtype, wrapped_func=wrapper(func) if wrapper else func, values_asarray=values_asarray
     )
 
 
