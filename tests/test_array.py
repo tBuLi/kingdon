@@ -17,7 +17,7 @@ import kingdon.einops_backend  # registers KingdonBackend with einops. Do not re
 
 # A small algebra used throughout these tests.
 alg = Algebra(2)  # 4 blades: e, e1, e2, e12
-KEYS = tuple(alg.canon2bin.values())
+KEYS = tuple(alg.blade2mask)
 
 # The array libraries these tests run against: those that einops has a backend for and that
 # array-api-compat can wrap into an array API namespace. Any that is not installed is skipped.

@@ -3,6 +3,7 @@ import subprocess
 import sys
 
 from kingdon import Algebra
+from kingdon.multivector import Direction, EVector, Point, Translation, UPoint
 import numpy as np
 import pytest
 
@@ -42,7 +43,8 @@ def test_widget(alg):
     assert g.subjects == subjects
 
     # Test if graph has the right basis, signature, and default style.
-    assert g.basis == [b if b != 'e' else '1' for b in alg.canon2bin]
+    assert g.basis == [b if b != 'e' else '1' for b in alg.blade2mask]
+    assert list(g.key2idx) == list(alg.blade2mask)
     assert g.signature == alg.signature
     assert g.options['style'] == {
         'width': 'min( 100%, 1024px )',
@@ -55,7 +57,7 @@ def test_widget(alg):
     # Simulte dragging a point and see if the point updates. Ganja supplies a full multivector.
     x_prime = alg.vector([1, 1.01, 1]).dual().asfullmv()
     g.draggable_points = [{'keys': x_prime.keys(), 'mv': x_prime.values()}]
-    assert all(getattr(x_prime, alg.bin2canon[k]) == v for k, v in x.items())
+    assert all(getattr(x_prime, blade) == v for blade, v in x.items())
 
 def test_up_function():
     """ Issue 93 implements the up function in graph, which enables OPNS rendering for exotic algebras like 2D CSGA. """
@@ -136,16 +138,16 @@ def test_update_125():
       'trivector': {},
       'vector': {}}
      ),
-    (Algebra.fromname('2DPGA'),
+    (Algebra(2, 0, 1, extra_types=[Direction, EVector, UPoint, Point, Translation]),
      {'bireflection': {},
       'bivector': {},
       'direction': {},
       'evector': {},
-      'point': {3: 1.0},
+      'point': {'e12': 1.0},
       'scalar': {},
-      'translation': {0: 1.0},
+      'translation': {'e': 1.0},
       'trivector': {},
-      'upoint': {4: 1.0},
+      'upoint': {'e0': 1.0},
       'vector': {}}
      )
 ])

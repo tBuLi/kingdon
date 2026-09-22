@@ -142,7 +142,7 @@ def expr_as_matrix(expr: Callable, *inputs, res_like: "MultiVector" = None):
     numerical = all(not r.issymbolic for r in rest)
     y = expr(*inputs)
     if res_like is not None:
-        y = alg.multivector({k: sympy.sympify(getattr(y, alg.bin2canon[k])) for k in res_like.keys()})
+        y = alg.multivector({blade: sympy.sympify(getattr(y, blade)) for blade in res_like.keys()})
 
     A = sympy.zeros(len(y.keys()), len(x.keys())) if not numerical else np.zeros((len(y.keys()), len(x.keys())))
     for i, (blade_y, yi) in enumerate(y.items()):

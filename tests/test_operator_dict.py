@@ -81,7 +81,7 @@ def test_codegen_weights(codegen_symbolcls):
     assert weighted_gp_grad.codegen_output_type == (MultiVector, 18)
     go = alg.multivector(name='go')
     grads = weighted_gp_grad(x, y, weights, go)
-    assert grads.keys() == (0,)  # scalar
+    assert grads.keys() == ('e',)  # scalar
     assert grads.shape == (18,)
     go_wgp = go.sp(weighted_gp_output)
     for s, grad in zip([*x.values(), *y.values(), *weights.e], grads.e):

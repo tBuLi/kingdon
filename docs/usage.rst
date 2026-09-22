@@ -130,9 +130,11 @@ but with specific blades, we can do so by providing the :code:`keys` argument.
     >>> x = alg.multivector(name='x', keys=('e1', 'e12'))
     >>> x1 𝐞₁ + x12 𝐞₁₂
 
-This can be done either by providing a tuple of strings which indicate which basis-vectors should be present,
-or by passing them as integers, i.e. :code:`keys=(0b01, 0b11)` is equivalent to the example above.
-Internally, :code:`kingdon` uses the binary representation.
+The canonical key representation is a tuple of blade strings. The scalar blade is ``"e"``.
+Legacy integer bit masks such as ``keys=(0b01, 0b11)`` are accepted as constructor input and
+converted immediately, but :meth:`~kingdon.multivector.MultiVector.keys` and
+:meth:`~kingdon.multivector.MultiVector.items` always expose blade strings. Kingdon derives bit
+masks internally where they are useful for product, sign, and grade computations.
 
 Numerical Multivectors
 ----------------------

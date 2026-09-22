@@ -9,7 +9,7 @@ class TapeRecorder:
     #TODO: Create common baseclass for TapeRecorder and Multivector?
     algebra: "Algebra"
     expr: str
-    _keys: tuple = field(default_factory=tuple)
+    _keys: tuple[str, ...] = field(default_factory=tuple)
     mvtype: MultiVectorType = None  # Defaults to algebra.mvtype, see __new__.
     _shape: tuple = ()
 
@@ -17,7 +17,7 @@ class TapeRecorder:
         obj = object.__new__(cls)
         obj.algebra = algebra
         obj.expr = expr
-        obj._keys = keys
+        obj._keys = tuple(keys)
         obj.mvtype = mvtype if mvtype is not None else algebra.mvtype
         obj._shape = shape
         return obj
@@ -31,7 +31,8 @@ class TapeRecorder:
 
     @cached_property
     def type_number(self) -> int:
-        return int(''.join('1' if i in self.keys() else '0' for i in reversed(self.algebra.canon2bin.values())), 2)
+        return int(''.join('1' if blade in self._keys else '0'
+                           for blade in reversed(self.algebra.blade2mask)), 2)
 
     def __len__(self):
         return self.shape[0] if len(self.shape) else 0
@@ -44,30 +45,34 @@ class TapeRecorder:
     def __getattr__(self, basis_blade):
         if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
             raise AttributeError(f'{self.__class__.__name__} object has no attribute or basis blade {basis_blade}')
-        if basis_blade not in self.algebra.canon2bin:
+        basis_blade, swaps = self.algebra._blade2canon(basis_blade)
+        if basis_blade not in self.algebra.blade2mask:
             return self.__class__(
                 algebra=self.algebra,
-                expr=f"(0,)",
+                expr="(0,)",
                 mvtype=Scalar,
-                keys=(0,),
+                keys=('e',),
                 shape=self.shape,
             )
         try:
-            idx = self.keys().index(self.algebra.canon2bin[basis_blade])
+            idx = self.keys().index(basis_blade)
         except ValueError:
             return self.__class__(
                 algebra=self.algebra,
-                expr=f"(0,)",
+                expr="(0,)",
                 mvtype=Scalar,
-                keys=(0,),
+                keys=('e',),
                 shape=self.shape,
             )
         else:
+            value = f"{self.expr}[{idx}]"
+            if swaps % 2:
+                value = f"-{value}"
             return self.__class__(
                 algebra=self.algebra,
-                expr=f"({self.expr}[{idx}],)",
+                expr=f"({value},)",
                 mvtype=Scalar,
-                keys=(self.keys()[idx],),
+                keys=('e',),
                 shape=self.shape,
             )
 
@@ -78,7 +83,7 @@ class TapeRecorder:
             raise IndexError(f'Index {item} out of range for a multivector with shape={self.shape}')
         return self.__class__(
             algebra=self.algebra,
-            expr=f"[{self.expr}[idx][{item}] for idx in {self.keys()}]",
+            expr=f"[{self.expr}[idx][{item}] for idx in range({len(self.keys())})]",
             keys=self.keys(),
             mvtype=self.mvtype,
         )
@@ -106,7 +111,7 @@ class TapeRecorder:
         operator_dict = getattr(self.algebra, operator)
         if not isinstance(other, self.__class__):
             # Assume scalar
-            mvs = operator_dict.make_symbolic_mvs(((self.mvtype, self.keys()), (Scalar, (0,))), (self.shape, (1,)))
+            mvs = operator_dict.make_symbolic_mvs(((self.mvtype, self.keys()), (Scalar, ('e',))), (self.shape, (1,)))
             compiled_expr = operator_dict[mvs]
             expr = f'{compiled_expr.func.__name__}({self.expr}, ({other},))'
         else:
@@ -141,7 +146,7 @@ class TapeRecorder:
 
     def __pow__(self, power, modulo=None):
         if power == 0:
-            return self.__class__(self.algebra, expr='(1,)', keys=(0,))
+            return self.__class__(self.algebra, expr='(1,)', keys=('e',))
 
         res = self
         for i in range(1, power):

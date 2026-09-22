@@ -32,15 +32,15 @@ def is_zero(v) -> bool:
 
 
 def dict_to_multivector(res: dict, algebra) -> "MultiVector":
-    # Drop zeros and put the remaining keys back in canon2bin order.
+    # Drop zeros and put the remaining blade names back in basis order.
     nonzero = {k: v for k, v in res.items() if not is_zero(v)}
-    items = [(k, nonzero[k]) for k in algebra.canon2bin.values() if k in nonzero]
+    items = [(k, nonzero[k]) for k in algebra.blade2mask if k in nonzero]
     keys, values = zip(*items) if items else ((), [])
     return algebra.mvtype.fromkeysvalues(algebra, keys, list(values), raw=True)
 
 
 def scalar(algebra, value) -> "MultiVector":
-    return algebra.mvtype.fromkeysvalues(algebra, (0,), [value], raw=True)
+    return algebra.mvtype.fromkeysvalues(algebra, ('e',), [value], raw=True)
 
 
 def product(
@@ -61,14 +61,21 @@ def product(
         for metric dependent products. Input: 2-tuple of blade indices, e.g. (ei, ej).
     :param keyout_func:
     """
-    sign_func = sign_func or (lambda pair: x.algebra.signs[pair])
+    algebra = x.algebra
+    sign_func = sign_func or (lambda pair: algebra.signs[pair])
 
+    # Blade strings carry semantic identity. Convert them to masks once here and do all
+    # Clifford product/sign/grade logic on integers.
+    x_terms = ((algebra.blade2mask[key], value) for key, value in x.items())
+    y_terms = tuple((algebra.blade2mask[key], value) for key, value in y.items())
     res = {}
-    for (kx, vx), (ky, vy) in itertools.product(x.items(), y.items()):
+    for (kx, vx), (ky, vy) in itertools.product(x_terms, y_terms):
         if (sign := sign_func((kx, ky))):
-            key_out = keyout_func(kx, ky)
-            if filter_func and not filter_func(kx, ky, key_out): continue
-            termstr = vx * vy if sign > 0 else (- vx * vy)
+            mask_out = keyout_func(kx, ky)
+            if filter_func and not filter_func(kx, ky, mask_out):
+                continue
+            key_out = algebra.mask2blade[mask_out]
+            termstr = vx * vy if sign > 0 else (-vx * vy)
             res[key_out] = res[key_out] + termstr if key_out in res else termstr
     return dict_to_multivector(res, x.algebra)
 
@@ -79,8 +86,7 @@ def gp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
 
     :param x: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
     :param y: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
-    :return: tuple with integers indicating the basis blades present in the
-        product in binary convention, and a lambda function that perform the product.
+    :return: multivector with blade-string keys.
     """
     return product(x, y)
 
@@ -100,7 +106,7 @@ def sw(x: "MultiVector", y: "MultiVector") -> "MultiVector":
 
     :param x: The versor (k-reflection), i.e. a multivector satisfying :math:`x \widetilde{x} = 1`.
     :param y: The multivector to be conjugated.
-    :return: tuple of keys in binary representation and a lambda function.
+    :return: multivector with blade-string keys.
     :raises TypeError: If :code:`x` is not a versor (k-reflection) and thus neither even nor odd.
     """
     if len(set((g % 2 for g in x.grades))) != 1:
@@ -117,7 +123,7 @@ def cp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     Generate the commutator product of :code:`x` and :code:`y`: :code:`x.cp(y) = 0.5*(x*y-y*x)`.
 
-    :return: tuple of keys in binary representation and a lambda function.
+    :return: multivector with blade-string keys.
     """
     algebra = x.algebra
     filter_func = lambda kx, ky, k_out: (algebra.signs[kx, ky] - algebra.signs[ky, kx])
@@ -128,7 +134,7 @@ def acp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     Generate the anti-commutator product of :code:`x` and :code:`y`: :code:`x.acp(y) = 0.5*(x*y+y*x)`.
 
-    :return: tuple of keys in binary representation and a lambda function.
+    :return: multivector with blade-string keys.
     """
     algebra = x.algebra
     filter_func = lambda kx, ky, k_out: (algebra.signs[kx, ky] + algebra.signs[ky, kx])
@@ -139,10 +145,10 @@ def ip(x: "MultiVector", y: "MultiVector", diff_func: Callable=abs) -> "MultiVec
     """
     Generate the inner product of :code:`x` and :code:`y`.
 
-    :param diff_func: How to treat the difference between the binary reps of the basis blades.
+    :param diff_func: How to treat the difference between the internal blade masks.
         if :code:`abs`, compute the symmetric inner product. When :code:`lambda x: -x` this
         function generates left-contraction, and when :code:`lambda x: x`, right-contraction.
-    :return: tuple of keys in binary representation and a lambda function.
+    :return: multivector with blade-string keys.
     """
     filter_func = lambda kx, ky, k_out: k_out == diff_func(kx - ky)
     return product(x, y, filter_func=filter_func)
@@ -152,7 +158,7 @@ def lc(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     Generate the left-contraction of :code:`x` and :code:`y`.
 
-    :return: tuple of keys in binary representation and a lambda function.
+    :return: multivector with blade-string keys.
     """
     return ip(x, y, diff_func=lambda x: -x)
 
@@ -161,7 +167,7 @@ def rc(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     Generate the right-contraction of :code:`x` and :code:`y`.
 
-    :return: tuple of keys in binary representation and a lambda function.
+    :return: multivector with blade-string keys.
     """
     return ip(x, y, diff_func=lambda x: x)
 
@@ -170,7 +176,7 @@ def sp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     """
     Generate the scalar product of :code:`x` and :code:`y`.
 
-    :return: tuple of keys in binary representation and a lambda function.
+    :return: multivector with blade-string keys.
     """
     return ip(x, y, diff_func=lambda x: 0)
 
@@ -182,7 +188,7 @@ def proj(x: "MultiVector", y: "MultiVector") -> "MultiVector":
 
     :param x: The multivector to be projected.
     :param y: The versor (k-reflection) onto which :code:`x` is projected.
-    :return: tuple of keys in binary representation and a lambda function.
+    :return: multivector with blade-string keys.
     :raises TypeError: If :code:`y` is not a versor (k-reflection).
     """
     if len(set((g % 2 for g in y.grades))) != 1:
@@ -197,8 +203,7 @@ def op(x: "MultiVector", y: "MultiVector") -> "MultiVector":
 
     :x: "MultiVector"
     :y: "MultiVector"
-    :return: dictionary with integer keys indicating the corresponding basis blade in binary convention,
-        and values which are a 3-tuple of indices in `x`, indices in `y`, and a lambda function.
+    :return: multivector with blade-string keys.
     """
     filter_func = lambda kx, ky, k_out: k_out == kx + ky
     return product(x, y, filter_func=filter_func)
@@ -211,7 +216,7 @@ def rp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
 
     :param x:
     :param y:
-    :return: tuple of keys in binary representation and a lambda function.
+    :return: multivector with blade-string keys.
     """
     algebra = x.algebra
     key_pss = len(algebra) - 1
@@ -236,7 +241,7 @@ def grade(x: "MultiVector", *grades) -> "MultiVector":
     """ Select grade g part of x. """
     if len(grades) == 1 and isinstance(grades[0], tuple):
         grades = grades[0]
-    res = {k: v for k, v in x.items() if k.bit_count() in grades}
+    res = {k: v for k, v in x.items() if x.algebra.blade2mask[k].bit_count() in grades}
     return dict_to_multivector(res, x.algebra)
 
 
@@ -430,7 +435,7 @@ def involutions(x: "MultiVector", invert_grades: tuple[int, int] = (2, 3)) -> "M
 
     :param invert_grades: The grades that flip sign under this involution mod 4, e.g. (2, 3) for reversion.
     """
-    res = {k: -v if bin(k).count('1') % 4 in invert_grades else v
+    res = {k: -v if x.algebra.blade2mask[k].bit_count() % 4 in invert_grades else v
            for k, v in x.items()}
     return dict_to_multivector(res, x.algebra)
 
@@ -472,7 +477,8 @@ def sqrt(x: "MultiVector") -> "MultiVector":
 
 def polarity(x: "MultiVector", undual: bool = False) -> "MultiVector":
     # The pseudoscalar, kept raw for the same reason as the constants in :func:`scalar`.
-    pss = x.algebra.mvtype.fromkeysvalues(x.algebra, (len(x.algebra) - 1,), [1], raw=True)
+    pss_key = x.algebra.mask2blade[len(x.algebra) - 1]
+    pss = x.algebra.mvtype.fromkeysvalues(x.algebra, (pss_key,), [1], raw=True)
     if undual:
         return gp(x, pss)
     key_pss = len(x.algebra) - 1
@@ -487,13 +493,15 @@ def unpolarity(x: "MultiVector") -> "MultiVector":
 
 
 def hodge(x: "MultiVector", undual: bool = False) -> "MultiVector":
-    if undual:
-        res = {(key_dual := len(x.algebra) - 1 - eI): -v if x.algebra.signs[key_dual, eI] < 0 else v
-               for eI, v in x.items()}
-    else:
-        res = {(key_dual := len(x.algebra) - 1 - eI): -v if x.algebra.signs[eI, key_dual] < 0 else v
-               for eI, v in x.items()}
-    return dict_to_multivector(res, x.algebra)
+    algebra = x.algebra
+    pss_mask = len(algebra) - 1
+    res = {}
+    for blade, value in x.items():
+        mask = algebra.blade2mask[blade]
+        dual_mask = pss_mask - mask
+        sign_pair = (dual_mask, mask) if undual else (mask, dual_mask)
+        res[algebra.mask2blade[dual_mask]] = -value if algebra.signs[sign_pair] < 0 else value
+    return dict_to_multivector(res, algebra)
 
 
 def unhodge(x: "MultiVector") -> "MultiVector":

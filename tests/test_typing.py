@@ -63,8 +63,9 @@ def test_pga_layouts(alg_name, MVType, layout, grades, bases):
         else:
             remap = direct
         remapped = {k2: v for k, v in layout.items() if (k2 := remap(k)) is not None}
-        layout = {k: remapped[k] for k in alg.canon2bin.values() if k in remapped}
+        layout = {mask: remapped[mask] for mask in alg.blade2mask.values() if mask in remapped}
     if max(grades) > alg.d: return
+    layout = {alg.mask2blade[mask]: value for mask, value in layout.items()}
 
     # These types should have a layout on the algebra.
     alg_layout = alg._type_layouts[MVType]
@@ -121,7 +122,7 @@ def test_layout(pga3d):
     # Let's also test a point with a subset of keys.
     pz = pga3d.point(e012=3)
     assert isinstance(pz, Point)
-    assert pz.keys() == (11,)  # e021 = 8 + 2 + 1
+    assert pz.keys() == ('e021',)
     assert pz.values() == [-3]  # e021 = -e012.
     assert pz.shape == ()
     assert str(pz) == '-3 𝐞₀₂₁ + 1.0 𝐞₁₂₃'
@@ -193,40 +194,48 @@ def test_translations(alg_name):
     "res_layout, layouts, expected",
     [
         # exact float beats loose
-        ({1: ..., 2: ..., 8: 1.0},
-         {'PseudoVector': {1: ..., 2: ..., 8: ...}, 'Point': {1: ..., 2: ..., 8: 1.0}},
+        ({'e1': ..., 'e2': ..., 'e0': 1.0},
+         {'PseudoVector': {'e1': ..., 'e2': ..., 'e0': ...},
+          'Point': {'e1': ..., 'e2': ..., 'e0': 1.0}},
          'Point'),
         # among exact matches, least excess wins
-        ({1: ..., 2: ...},
-         {'Big': {1: ..., 2: ..., 4: ..., 8: ...}, 'Small': {1: ..., 2: ...}, 'Mid': {1: ..., 2: ..., 4: ...}},
+        ({'e1': ..., 'e2': ...},
+         {'Big': {'e1': ..., 'e2': ..., 'e3': ..., 'e0': ...},
+          'Small': {'e1': ..., 'e2': ...}, 'Mid': {'e1': ..., 'e2': ..., 'e3': ...}},
          'Small'),
         # reject fixed values outside res_layout
-        ({1: ..., 2: ...},
-         {'WithStrayFixed': {1: ..., 2: ..., 4: 0.0}, 'Free': {1: ..., 2: ..., 4: ...}},
+        ({'e1': ..., 'e2': ...},
+         {'WithStrayFixed': {'e1': ..., 'e2': ..., 'e3': 0.0},
+          'Free': {'e1': ..., 'e2': ..., 'e3': ...}},
          'Free'),
         # reject missing/non-free ellipsis slot
-        ({1: ..., 2: ..., 4: ...},
-         {'NoSlot4': {1: ..., 2: ...}, 'Fixed4': {1: ..., 2: ..., 4: 5.0}, 'Ok': {1: ..., 2: ..., 4: ...}},
+        ({'e1': ..., 'e2': ..., 'e3': ...},
+         {'NoSlot3': {'e1': ..., 'e2': ...},
+          'Fixed3': {'e1': ..., 'e2': ..., 'e3': 5.0},
+          'Ok': {'e1': ..., 'e2': ..., 'e3': ...}},
          'Ok'),
         # reject conflicting fixed float
-        ({1: ..., 8: 1.0},
-         {'Wrong': {1: ..., 8: 2.0}, 'Right': {1: ..., 8: 1.0}},
+        ({'e1': ..., 'e0': 1.0},
+         {'Wrong': {'e1': ..., 'e0': 2.0}, 'Right': {'e1': ..., 'e0': 1.0}},
          'Right'),
         # no feasible candidate
-        ({1: ..., 8: 1.0},
-         {'Wrong': {1: ..., 8: 2.0}, 'Stray': {1: ..., 8: 1.0, 4: 3.0}},
+        ({'e1': ..., 'e0': 1.0},
+         {'Wrong': {'e1': ..., 'e0': 2.0},
+          'Stray': {'e1': ..., 'e0': 1.0, 'e3': 3.0}},
          None),
         # loose cost dominates excess cost
-        ({1: ..., 8: 1.0},
-         {'LooseTight': {1: ..., 8: ...}, 'ExactBigger': {1: ..., 8: 1.0, 4: ..., 2: ...}},
+        ({'e1': ..., 'e0': 1.0},
+         {'LooseTight': {'e1': ..., 'e0': ...},
+          'ExactBigger': {'e1': ..., 'e0': 1.0, 'e3': ..., 'e2': ...}},
          'ExactBigger'),
         # tie breaks by insertion order
-        ({1: ..., 2: ...},
-         {'First': {1: ..., 2: ...}, 'Second': {1: ..., 2: ...}},
+        ({'e1': ..., 'e2': ...},
+         {'First': {'e1': ..., 'e2': ...}, 'Second': {'e1': ..., 'e2': ...}},
          'First'),
         # reject layout with no entry for a fixed key in res (e.g. Direction vs Point when e_w=1.0 is present)
-        ({14: ..., 13: ..., 11: ..., 7: 1.0},
-         {'Direction': {14: ..., 13: ..., 11: ...}, 'Point': {14: ..., 13: ..., 11: ..., 7: 1.0}},
+        ({'e032': ..., 'e013': ..., 'e021': ..., 'e123': 1.0},
+         {'Direction': {'e032': ..., 'e013': ..., 'e021': ...},
+          'Point': {'e032': ..., 'e013': ..., 'e021': ..., 'e123': 1.0}},
          'Point'),
     ],
 )
@@ -265,21 +274,22 @@ def test_asmvtype_incompatible(pga3d, source_type, target_type):
 @pytest.mark.parametrize(
     "source_type, target_type, target_grades, expected_keys, expected_fixed",
     [
-        (Scalar,       MultiVector,  (0,),   (0,),                     {}),
-        (Vector,       MultiVector,  (1,),   (1, 2, 4, 8),             {}),
-        (Bivector,     MultiVector,  (2,),   (9, 10, 12, 3, 5, 6),     {}),
-        (Trivector,    MultiVector,  (3,),  (14, 13, 11, 7),          {}),
-        (Direction,    MultiVector,  (3,),  (14, 13, 11),             {}),
-        (EVector,      MultiVector,  (1,),   (1, 2, 4),                {}),
-        (UPoint,       MultiVector,  (1,),   (1, 2, 4, 8),             {8: 1.0}),
-        (Point,        MultiVector,  (3,),  (14, 13, 11, 7),          {7: 1.0}),
-        (Translation,  MultiVector,  (0, 2),  (0, 9, 10, 12),           {0: 1.0}),
-        (Bireflection, MultiVector,  (0, 2),  (0, 9, 10, 12, 3, 5, 6),  {}),
-        (Point,        Trivector, (3,),  (14, 13, 11, 7),          {7: 1.0}),
-        (Direction,    Trivector, (3,),  (14, 13, 11),             {}),
-        (UPoint,       Vector,       (1,),   (1, 2, 4, 8),             {8: 1.0}),
-        (EVector,      Vector,       (1,),   (1, 2, 4),                {}),
-        (Translation,  Bireflection,  (0, 2),  (0, 9, 10, 12),           {0: 1.0}),
+        (Scalar, MultiVector, (0,), ('e',), {}),
+        (Vector, MultiVector, (1,), ('e1', 'e2', 'e3', 'e0'), {}),
+        (Bivector, MultiVector, (2,), ('e01', 'e02', 'e03', 'e12', 'e31', 'e23'), {}),
+        (Trivector, MultiVector, (3,), ('e032', 'e013', 'e021', 'e123'), {}),
+        (Direction, MultiVector, (3,), ('e032', 'e013', 'e021'), {}),
+        (EVector, MultiVector, (1,), ('e1', 'e2', 'e3'), {}),
+        (UPoint, MultiVector, (1,), ('e1', 'e2', 'e3', 'e0'), {'e0': 1.0}),
+        (Point, MultiVector, (3,), ('e032', 'e013', 'e021', 'e123'), {'e123': 1.0}),
+        (Translation, MultiVector, (0, 2), ('e', 'e01', 'e02', 'e03'), {'e': 1.0}),
+        (Bireflection, MultiVector, (0, 2),
+         ('e', 'e01', 'e02', 'e03', 'e12', 'e31', 'e23'), {}),
+        (Point, Trivector, (3,), ('e032', 'e013', 'e021', 'e123'), {'e123': 1.0}),
+        (Direction, Trivector, (3,), ('e032', 'e013', 'e021'), {}),
+        (UPoint, Vector, (1,), ('e1', 'e2', 'e3', 'e0'), {'e0': 1.0}),
+        (EVector, Vector, (1,), ('e1', 'e2', 'e3'), {}),
+        (Translation, Bireflection, (0, 2), ('e', 'e01', 'e02', 'e03'), {'e': 1.0}),
     ],
 )
 def test_asmvtype(pga3d, source_type, target_type, target_grades, expected_keys, expected_fixed):
@@ -292,11 +302,10 @@ def test_asmvtype(pga3d, source_type, target_type, target_grades, expected_keys,
     assert result is not source
     assert result.grades == target_grades
     assert result.keys() == expected_keys
-    for k, v in expected_fixed.items():
-        assert getattr(result, alg.bin2canon[k]) == v
+    for blade, value in expected_fixed.items():
+        assert getattr(result, blade) == value
     # Free values carried from source must survive the conversion.
-    for k in result.keys():
-        blade = pga3d.bin2canon[k]
+    for blade in result.keys():
         assert getattr(result, blade) == getattr(source, blade)
 
 
@@ -522,16 +531,20 @@ def test_custom_types_with_layout(full_layout):
         assert mv.values() == mv_values
 
     evec = 2*e1 + 3*e2
-    test_custom_type(evec, MyEVector, keys=(4, 2), values=[3, 2], mv_keys=(2, 4), mv_values=[2, 3])
+    test_custom_type(evec, MyEVector, keys=('e2', 'e1'), values=[3, 2],
+                     mv_keys=('e1', 'e2'), mv_values=[2, 3])
 
     up1 = e0 + evec
-    test_custom_type(up1, MyUPoint, keys=(2, 4), values=[2, 3], mv_keys=(1, 2, 4), mv_values=[1, 2, 3])
+    test_custom_type(up1, MyUPoint, keys=('e1', 'e2'), values=[2, 3],
+                     mv_keys=('e0', 'e1', 'e2'), mv_values=[1, 2, 3])
 
     p1 = up1.dual()  # The layout has different order compared to the lexical basis and also corrects for the sign swap.
-    test_custom_type(p1, MyPoint, keys=(5, 3), values=[-2, 3], mv_keys=(3, 5, 6), mv_values=[3, -2, 1])
+    test_custom_type(p1, MyPoint, keys=('e02', 'e01'), values=[-2, 3],
+                     mv_keys=('e01', 'e02', 'e12'), mv_values=[3, -2, 1])
 
     direction = evec.dual()
-    test_custom_type(direction, MyDirection, keys=(3, 5), values=[3, -2], mv_keys=(3, 5), mv_values=[3, -2])
+    test_custom_type(direction, MyDirection, keys=('e01', 'e02'), values=[3, -2],
+                     mv_keys=('e01', 'e02'), mv_values=[3, -2])
     origin = e0.dual()
     assert type(origin) is MyPoint
     p2 = origin + direction
@@ -560,12 +573,12 @@ def test_custom_types_from_layout():
             assert t.layout == layout
 
     up = alg.mypoint(['x', 'y'])
-    assert {3: 1, 6: ..., 5: ...} == up.type_layout  # Check if this property is correctly populated.
+    assert {'e12': 1, 'e20': ..., 'e01': ...} == up.type_layout
 
 
 def test_layout_must_use_the_basis_blades():
     """
-    The keys of a multivector are the binary reps of the basis blades, so a layout may only use
+    The keys of a multivector are the basis blade strings, so a layout may only use
     those blades. Which of the two orientations of a blade we work in is a property of the basis
     of the algebra and not of a single type, since a free component holds the values of the user
     by reference and thus offers nothing to absorb the sign of a swap into.
@@ -576,14 +589,14 @@ def test_layout_must_use_the_basis_blades():
 
     # Permuting the basis blades is fine, it is only their orientation that the basis fixes.
     alg = Algebra(2, extra_types=[{'name': 'Flipped', 'layout': {'e2': ..., 'e1': ...}}])
-    assert alg.flipped([2., 1.]).keys() == (2, 1)
+    assert alg.flipped([2., 1.]).keys() == ('e2', 'e1')
 
     # Give the algebra the basis that the layout asks for, and the same type is accepted.
     alg = Algebra(2, 0, 1, basis=["e", "e1", "e2", "e0", "e20", "e01", "e12", "e012"],
                   extra_types=[{'name': 'MyPoint', 'layout': layout}])
     coeffs = [2., 3.]
     p = alg.mypoint(coeffs)
-    assert p.keys() == (6, 5)  # In the order of the layout, and never negative.
+    assert p.keys() == ('e20', 'e01')  # In the order of the layout.
     assert p.values() is coeffs  # Held by reference, no sign swaps.
     assert p.e12 == 1 and p.e21 == -1  # A fixed component may swap, its sign goes into the value.
 
@@ -594,8 +607,8 @@ def test_no_types_in_large_algebras():
     assert not alg.types and not alg._type_layouts
     assert all(type(x) is MultiVector
                for x in (v, v * w, -v, v + w, (v * w).grade(2), alg.pss, alg.blades.e123456789))
-    assert all(list(alg.blades[alg.bin2canon[k]].items()) == [(k, 1)] for k in range(len(alg)))
-    assert alg.pss.keys() == (len(alg) - 1,) and (alg.pss * alg.pss).e == -1
+    assert all(list(alg.blades[blade].items()) == [(blade, 1)] for blade in alg.blade2mask)
+    assert alg.pss.keys() == (alg.mask2blade[len(alg) - 1],) and (alg.pss * alg.pss).e == -1
     assert alg.scalar([1]).grades == (0,) and alg.pseudovector(range(10)).grades == (9,)
     assert alg.purevector([1], grade=0).grades == (0,) and alg.purevector(range(10), grade=9).grades == (9,)
     assert not hasattr(Algebra(6, 0, 1), 'point')
@@ -608,5 +621,5 @@ def test_no_types_in_large_algebras():
 def test_no_types_above_octovector():
     """ Small algebras have no types beyond grade 8 either, and fall back to MultiVector. """
     alg = Algebra(9, large=False)
-    assert type(alg.pss) is MultiVector and alg.pss.keys() == (len(alg) - 1,)
+    assert type(alg.pss) is MultiVector and alg.pss.keys() == (alg.mask2blade[len(alg) - 1],)
     assert alg.purevector([1], grade=9).grades == (9,)

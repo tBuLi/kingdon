@@ -13,14 +13,14 @@ For how to *use* the type system, see :doc:`types`. What follows is how it works
 Binding layouts
 ~~~~~~~~~~~~~~~
 
-The single representation of a type is its *layout*: a dict from blade key (the binary rep of a basis
-blade) to either :code:`...` for a free component, or a number for a structural constant. Every
+The single representation of a type is its *layout*: a dict from semantic blade-string key to either
+:code:`...` for a free component, or a number for a structural constant. Every
 registered type is bound to a layout once, when the algebra is created, by
 :code:`Algebra._bind_layout`, and the result is cached on
 :code:`Algebra._type_layouts`.
 
-A type that defines :code:`layout` as a dict needs no more than a translation from canonical blade names
-to (binary) keys. A type that defines :code:`layout` as a classmethod gets it evaluated: the expression is run
+A type that defines :code:`layout` as a dict already uses the same blade names as a multivector.
+A type that defines :code:`layout` as a classmethod gets it evaluated: the expression is run
 with symbolic coefficients and the result is read off blade by blade. A coefficient that came out
 numerical is a structural constant of the type, anything still symbolic is a free component. This is
 also why such layouts must be written with :mod:`kingdon.operators` directly: they run during
@@ -35,11 +35,11 @@ the free components are actually stored:
     >>> pga = Algebra.fromname('3DPGA')
     >>> p = pga.point(name='p')
     >>> p.type_layout
-    {14: Ellipsis, 13: Ellipsis, 11: Ellipsis, 7: 1.0}
+    {'e032': Ellipsis, 'e013': Ellipsis, 'e021': Ellipsis, 'e123': 1.0}
     >>> p.keys()
-    (14, 13, 11)
+    ('e032', 'e013', 'e021')
 
-:math:`\mathbf{e}_{123}` (key :code:`7`) is in the layout but not in :code:`keys()`:
+:math:`\mathbf{e}_{123}` (key :code:`"e123"`) is in the layout but not in :code:`keys()`:
 codegen substitutes it as a constant when compiling functions involving points,
 but it never becomes an argument or a value in memory.
 

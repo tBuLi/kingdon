@@ -121,9 +121,10 @@ class Algebra:
     registry: dict = field(default_factory=dict, repr=False, compare=False)  # Dict of all operator dicts. Should be extended using Algebra.add_operator
     numspace: dict = field(default_factory=dict, repr=False, compare=False)  # Namespace for numerical functions
 
-    # Mappings from binary to canonical reps. e.g. 0b01 = 1 <-> 'e1', 0b11 = 3 <-> 'e12'.
-    canon2bin: dict = field(init=False, repr=False, compare=False)
-    bin2canon: dict = field(init=False, repr=False, compare=False)
+    # Derived computational metadata for semantic blade names.
+    # MultiVectors and layouts use blade strings; products use these masks internally.
+    blade2mask: dict[str, int] = field(init=False, repr=False, compare=False)
+    mask2blade: dict[int, str] = field(init=False, repr=False, compare=False)
 
     # Options for the algebra
     cse: bool = field(default=True, repr=False, compare=False)  # Common Subexpression Elimination (CSE)
@@ -193,24 +194,30 @@ class Algebra:
                 'V': 'ⱽ', 'W': 'ᵂ', 'X': 'ˣ', 'Y': 'ʸ', 'Z': 'ᶻ'
             }
 
-        # Setup mapping from binary to canonical string rep and vise versa
+        # Set up the mapping between semantic blade names and computational bit masks.
         if self.basis:
             assert len(self.basis) == len(self)
             assert self.basis == sorted(self.basis, key=len)  # The basis has to be ordered by grade.
             assert all(eJ[0] == 'e' for eJ in self.basis)
             vecs = [eJ[1:] for eJ in self.basis if len(eJ) == 2]
             self.start_index = int(min(vecs))
-            vec2bin = {vec: 2 ** j for j, vec in enumerate(vecs)}
-            self.canon2bin = {eJ: reduce(operator.xor, (vec2bin[v] for v in eJ[1:]), 0)
-                              for eJ in self.basis}
-            self.bin2canon = {J: eJ for eJ, J in sorted(self.canon2bin.items(), key=lambda x: x[1])}
+            vec2mask = {vec: 2 ** j for j, vec in enumerate(vecs)}
+            self.blade2mask = {eJ: reduce(operator.xor, (vec2mask[v] for v in eJ[1:]), 0)
+                               for eJ in self.basis}
+            self.mask2blade = {
+                mask: blade
+                for blade, mask in sorted(self.blade2mask.items(), key=lambda item: item[1])
+            }
         else:
             digits = list(self.pretty_digits)
-            self.bin2canon = {
-                eJ: 'e' + ''.join(digits[ei + self.start_index] for ei in range(0, self.d) if eJ & 2**ei)
-                for eJ in range(2 ** self.d)
+            self.mask2blade = {
+                mask: 'e' + ''.join(digits[ei + self.start_index] for ei in range(0, self.d) if mask & 2**ei)
+                for mask in range(2 ** self.d)
             }
-            self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
+            self.blade2mask = dict(sorted(
+                ((blade, mask) for mask, blade in self.mask2blade.items()),
+                key=lambda item: (len(item[0]), item[0]),
+            ))
 
         self.signs = DefaultKeyDict(self._compute_sign)
 
@@ -257,7 +264,7 @@ class Algebra:
 
         # Blades are not precomputed for large algebras, except for basis vectors.
         self.blades = BladeDict(algebra=self, lazy=self.large)
-        self.pss = self.blades[self.bin2canon[2 ** self.d - 1]]
+        self.pss = self.blades[self.mask2blade[2 ** self.d - 1]]
 
     @classmethod
     def fromname(cls, name: str, extra_types=None, **kwargs):
@@ -287,35 +294,40 @@ class Algebra:
     def __len__(self):
         return 2 ** self.d
 
+    # Compatibility aliases for code that explicitly needs the old conversion maps.
+    # Blade strings, not these masks, are the identity used by MultiVectors and layouts.
+    @property
+    def canon2bin(self):
+        return self.blade2mask
+
+    @property
+    def bin2canon(self):
+        return self.mask2blade
+
     def indices_for_grade(self, grade: int):
         """
-        Function that returns a generator for all the indices for a given grade. E.g. in 2D VGA, this returns
+        Return the blade names for a given grade in basis order.
 
         .. code-block ::
 
             >>> alg = Algebra(2)
             >>> tuple(alg.indices_for_grade(1))
-            (1, 2)
-
-        The indices are returned in the same order as the basis blades.
+            ('e1', 'e2')
         """
-        return (k for k in self.canon2bin.values() if k.bit_count() == grade)
+        return (blade for blade, mask in self.blade2mask.items() if mask.bit_count() == grade)
 
     def indices_for_grades(self, grades: tuple[int, ...]):
         """
-        Function that returns a generator for all the indices from a sequence of grades.
-        E.g. in 2D VGA, this returns
+        Return the blade names for a sequence of grades in basis order.
 
         .. code-block ::
 
             >>> alg = Algebra(2)
             >>> tuple(alg.indices_for_grades((1, 2)))
-            (1, 2, 3)
-
-        The indices are returned in the same order as the basis blades.
+            ('e1', 'e2', 'e12')
         """
         grades = tuple(sorted(grades))
-        return (k for k in self.canon2bin.values() if k.bit_count() in grades)
+        return (blade for blade, mask in self.blade2mask.items() if mask.bit_count() in grades)
 
     @cached_property
     def matrix_basis(self):
@@ -327,7 +339,7 @@ class Algebra:
         The set of orthogonal basis vectors, :math:`\{ e_i \}`. Note that for a frame linear independence suffices,
         but we already have orthogonal basis vectors so why not use those?
         """
-        return [self.blades[self.bin2canon[2**j]] for j in range(0, self.d)]
+        return [self.blades[self.mask2blade[2**j]] for j in range(0, self.d)]
 
     @cached_property
     def reciprocal_frame(self) -> list:
@@ -337,12 +349,12 @@ class Algebra:
         """
         return [v.inv() for v in self.frame]
 
-    def _compute_sign(self, bin_pair: tuple[int, int]):
-        """ Computes the sign between two basis blades in binary rep. """
-        I, J = bin_pair
-        eI, eJ = self.bin2canon[I], self.bin2canon[J]
+    def _compute_sign(self, mask_pair: tuple[int, int]):
+        """Compute the product sign between two internal blade bit masks."""
+        I, J = mask_pair
+        eI, eJ = self.mask2blade[I], self.mask2blade[J]
         # Compute the number of swaps of orthogonal vectors needed to order the basis vectors.
-        swaps, prod, eliminated = _swap_blades(eI[1:], eJ[1:], self.bin2canon[I ^ J][1:])
+        swaps, prod, eliminated = _swap_blades(eI[1:], eJ[1:], self.mask2blade[I ^ J][1:])
 
         # Remove even powers of basis-vectors.
         sign = -1 if swaps % 2 else 1
@@ -354,10 +366,10 @@ class Algebra:
     def cayley(self):
         """ Cayley table of the algebra. """
         cayley = {}
-        for (eI, I), (eJ, J) in product(self.canon2bin.items(), repeat=2):
+        for (eI, I), (eJ, J) in product(self.blade2mask.items(), repeat=2):
             if sign := self.signs[I, J]:
                 sign = '-' if sign == -1 else ''
-                cayley[eI, eJ] = f'{sign}{self.bin2canon[I ^ J]}'
+                cayley[eI, eJ] = f'{sign}{self.mask2blade[I ^ J]}'
             else:
                 cayley[eI, eJ] = f'0'
         return cayley
@@ -672,11 +684,11 @@ class Algebra:
 
     def _blade2canon(self, basis_blade: str):
         """ Retrieve the canonical blade for a given blade, and the number of sign swaps required. """
-        if basis_blade in self.canon2bin:
+        if basis_blade in self.blade2mask:
             return basis_blade, 0
-        # if a generator isn't found, return a generator outside of the current space.
-        bin = reduce(operator.or_, (self.canon2bin.get(f'e{i}', 2 ** self.d) for i in basis_blade[1:]))
-        canon_blade = self.bin2canon.get(bin, False)
+        # If a generator isn't found, return a generator outside of the current space.
+        mask = reduce(operator.or_, (self.blade2mask.get(f'e{i}', 2 ** self.d) for i in basis_blade[1:]))
+        canon_blade = self.mask2blade.get(mask, False)
         if canon_blade:
             swaps, *_ = _swap_blades(basis_blade, '', target=canon_blade)
             return canon_blade, swaps
@@ -719,22 +731,27 @@ class Algebra:
             layout = {}
             for blade, val in MVType.layout.items():
                 if isinstance(blade, int):
-                    if blade < 0:
-                        raise ValueError(f'The layout of {MVType.__name__} uses the key {blade}, but the keys of a '
-                                         f'multivector are the binary reps of the basis blades, and thus positive.')
-                    layout[blade] = val
-                else:
-                    canon, swaps = self._blade2canon(blade)
-                    if swaps % 2 and val == ...:
-                        suggestion = [blade if eJ == canon else eJ for eJ in self.basis]
+                    try:
+                        blade = self.mask2blade[blade]
+                    except KeyError:
                         raise ValueError(
-                            f"The layout of {MVType.__name__} declares the free component {blade!r}, but the basis "
-                            f"of this algebra has {canon!r}. A layout can only use the basis blades of its algebra. "
-                            f"To work in your own convention, give the algebra that basis:\n"
-                            f"    Algebra({self.p}, {self.q}, {self.r}, basis={suggestion})"
-                        )
-                    # A fixed value is a constant of the type, so there the sign of the swap goes into the value.
-                    layout[self.canon2bin[canon]] = val if not swaps % 2 else - val
+                            f'The layout of {MVType.__name__} uses the invalid bit mask {blade}.'
+                        ) from None
+                canon, swaps = self._blade2canon(blade)
+                if canon not in self.blade2mask:
+                    raise ValueError(
+                        f"The layout of {MVType.__name__} uses {blade!r}, which is not a blade of this algebra."
+                    )
+                if swaps % 2 and val == ...:
+                    suggestion = [blade if eJ == canon else eJ for eJ in self.basis]
+                    raise ValueError(
+                        f"The layout of {MVType.__name__} declares the free component {blade!r}, but the basis "
+                        f"of this algebra has {canon!r}. A layout can only use the basis blades of its algebra. "
+                        f"To work in your own convention, give the algebra that basis:\n"
+                        f"    Algebra({self.p}, {self.q}, {self.r}, basis={suggestion})"
+                    )
+                # A fixed value is a constant of the type, so the sign of a swap goes into the value.
+                layout[canon] = val if not swaps % 2 else -val
             return layout
 
         symbolic_mv = MVType.layout(self, name)
@@ -815,7 +832,7 @@ class BladeDict(Mapping):
     def __post_init__(self):
         if not self.lazy:
             # If not lazy, retrieve all blades once to force initiation.
-            for blade in self.algebra.canon2bin: self[blade]
+            for blade in self.algebra.blade2mask: self[blade]
         else:
             self.grade(1)  # Initiate basis vectors only.
 
@@ -825,15 +842,14 @@ class BladeDict(Mapping):
             raise AttributeError(f'{basis_blade} is not a valid basis blade.')
         basis_blade, swaps = self.algebra._blade2canon(basis_blade)
         if basis_blade not in self.blades:
-            bin_blade = self.algebra.canon2bin[basis_blade]
-            MVType, layout = resolve_layout(self.algebra._type_layouts, {bin_blade: 1}, default=self.algebra.mvtype)
+            MVType, layout = resolve_layout(self.algebra._type_layouts, {basis_blade: 1}, default=self.algebra.mvtype)
             if self.algebra.full_layout:
-                keysvalues = tuple((idx, int(bin_blade == idx))
-                                     for idx, value in layout.items() if value == ...)
+                keysvalues = tuple((blade, int(basis_blade == blade))
+                                     for blade, value in layout.items() if value == ...)
                 keys, values = zip(*keysvalues) if keysvalues else ((), [])
                 values = list(values)
             else:
-                if not layout or layout.get(bin_blade) == ...: keys, values = ((bin_blade,), [1])
+                if not layout or layout.get(basis_blade) == ...: keys, values = ((basis_blade,), [1])
                 else:                                          keys, values = ((), [])
             self.blades[basis_blade] = MVType.fromkeysvalues(self.algebra, keys=keys, values=values)
         return self.blades[basis_blade] if swaps % 2 == 0 else - self.blades[basis_blade]
@@ -856,5 +872,4 @@ class BladeDict(Mapping):
         if len(grades) == 1 and isinstance(grades[0], tuple):
             grades = grades[0]
 
-        return {(blade := self.algebra.bin2canon[k]): self[blade]
-                for k in self.algebra.indices_for_grades(grades)}
+        return {blade: self[blade] for blade in self.algebra.indices_for_grades(grades)}
