@@ -14,8 +14,6 @@ import functools
 import itertools
 import linecache
 import math
-import weakref
-from collections import Counter
 from dataclasses import dataclass, replace
 
 from kingdon.polynomial import RationalPolynomial, poly_format, rational_cse, rp_var_name
@@ -25,7 +23,6 @@ from kingdon.polynomial import RationalPolynomial, poly_format, rational_cse, rp
 #: from 0.92 to 2.09 -- so :func:`_widest_clean` compiles them and reads the spills instead.
 CONFIGS = [(1, 64, 8, 1), (1, 64, 4, 1), (2, 64, 4, 1), (4, 128, 16, 1), (4, 256, 16, 2)]
 
-_DISPATCHERS = weakref.WeakSet()
 _BUILDS = itertools.count()
 
 
@@ -60,23 +57,6 @@ class Operand:
     @property
     def live(self):
         return [(i, var) for i, var in enumerate(self.vars) if var != '_']
-
-
-def calls():
-    """Operator calls that reached a kernel, against those that fell back to torch.
-
-    A fallback is silent and costs the whole speedup, so a run can be triton in name and torch
-    in speed; only a count tells the two apart.
-    """
-    total = Counter(kernel=0, fallback=0)  # Counter addition would drop the zeros
-    for dispatch in _DISPATCHERS:
-        total.update(dispatch.calls)
-    return dict(total)
-
-
-def reset_calls():
-    for dispatch in _DISPATCHERS:
-        dispatch.calls.clear()
 
 
 def _load(tile):
@@ -329,7 +309,7 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
         linecache.cache[filename] = (len(src), None, src.splitlines(True), filename)
         exec(compile(src, filename, 'exec'), namespace)
         _choose_tiles(namespace, funcname, plan, values, len(outs))
-        return namespace[funcname], namespace, src
+        return namespace[funcname]
 
     def dispatch(*values):
         # Symbolic calls come through here too, during another operator's codegen, and carry
@@ -339,23 +319,16 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
             return plain(*values)
         key = signature(values)
         if key is None:
-            dispatch.calls['fallback'] += 1
             return plain(*values)
-        entry = built.get(key)
-        if entry is None:
+        if key not in built:
             try:
-                entry = built[key] = build(values)
-                dispatch.kernels[key], dispatch.source[key] = entry[1], entry[2]
+                built[key] = build(values)
             except Unsupported:
-                entry = built[key] = False
-        dispatch.calls['kernel' if entry else 'fallback'] += 1
-        return entry[0](*values) if entry else plain(*values)
+                built[key] = False
+        kernel = built[key]
+        return kernel(*values) if kernel else plain(*values)
 
     dispatch.__name__ = funcname
-    dispatch.calls = Counter()
-    dispatch.source = {}
-    dispatch.kernels = {}
-    _DISPATCHERS.add(dispatch)
     return dispatch
 
 
