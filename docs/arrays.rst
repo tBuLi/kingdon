@@ -527,15 +527,15 @@ latter an explicit zero on :math:`\mathbf{e}_2`:
 
     >>> c = alg.vector(e1=np.ones([3, 7, 5]))
     >>> c.keys()
-    (1,)
+    ('e1',)
     >>> packed, ps = pack([a, c], 'j * k')
     >>> packed.keys()
-    (1, 2)
+    ('e1', 'e2')
     >>> packed.shape
     Vector[(3, 8, 5)]
     >>> a2, c2 = unpack(packed, ps, 'j * k')
     >>> c2.keys(), c2.shape
-    ((1, 2), Vector[(3, 7, 5)])
+    (('e1', 'e2'), Vector[(3, 7, 5)])
     >>> bool(np.all(c2.e2 == 0))
     True
 
