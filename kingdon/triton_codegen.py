@@ -332,7 +332,7 @@ def _choose_tiles(namespace, funcname, plan, values, n_out, extents):
     grads = {f'd{op.name}': v if all(op.varies) else v.to(torch.promote_types(v.dtype, torch.float32)) for v, op in arrays}
     flags = {f'G{op.name}': True for _, op in arrays}
     stripes = _stripes(extents, candidates, reference.device)
-    namespace['_BACKWARD'] = _affordable(namespace[f'{funcname}_bwd'], candidates, reference.device, *call, *extents, wide, **grads, gout=out, STRIPES=stripes, **flags)
+    namespace['_BACKWARD'] = _affordable(namespace[f'{funcname}_bwd'], candidates, reference.device, *call, *extents, *grads.values(), out, stripes, WIDE=wide, **flags)
     # Gradients are summed by atomic adds, so every timed run has to start them from zero again.
     namespace[f'{funcname}_bwd'] = autotune(namespace[f'{funcname}_bwd'], namespace['_BACKWARD'], sizes + list(flags), reset_to_zero=[f'd{op.name}' for _, op in arrays if not all(op.varies)])
 
@@ -462,12 +462,14 @@ def _source(funcname, plan, n, lines, outs, grad_lines, grads, dtype):
     # launcher, so that the blocks along that axis do not all contend for the same one.
     shared = any(not op.varies[0] for op in arrays)
     full, tile = (True,) * n, f'[{", ".join(f"T{k}" for k in range(n))}]'
-    # WIDE precedes the tile so that :func:`_widest_clean` can pass it positionally.
-    tail = f'{", ".join(f"e{k}" for k in range(n))}, WIDE: tl.constexpr, {", ".join(f"T{k}: tl.constexpr" for k in range(n))}'
+    sizes = ", ".join(f"e{k}" for k in range(n))
+    # Every constexpr follows every runtime argument: inductor launches a user kernel without its constexprs, yet finds the gradients to zero between timed configs by
+    # their position in the whole signature. WIDE precedes the tile so that :func:`_widest_clean` can pass it positionally.
+    constexprs = f'WIDE: tl.constexpr, {", ".join(f"T{k}: tl.constexpr" for k in range(n))}'
     index = [*_blocks(n), *_address(n, dict.fromkeys([full, *(op.varies for op in arrays)]))]
 
     fwd = ['@triton.jit',
-           f'def {funcname}_fwd({", ".join(_params(plan))}, out, {tail}):',
+           f'def {funcname}_fwd({", ".join(_params(plan))}, out, {sizes}, {constexprs}):',
            *index, *_loads(arrays), *lines,
            *(f'    tl.store(out + {_at(full, k)}, {e}, mask=_m_{_tag(full)})' for k, e in enumerate(outs))]
 
@@ -486,9 +488,8 @@ def _source(funcname, plan, n, lines, outs, grad_lines, grads, dtype):
             stores.append(f'        tl.atomic_add(tl.broadcast_to({at}, {tile}), {grads[var]}, mask=_m_{_tag(full)}, sem="relaxed")')
 
     bwd = ['@triton.jit',
-           f'def {funcname}_bwd({", ".join(_params(plan))}, {tail}, '
-           f'{", ".join("d" + name for name in names)}, gout, STRIPES, '
-           f'{", ".join(f"{f}: tl.constexpr" for f in flags)}):',
+           f'def {funcname}_bwd({", ".join(_params(plan))}, {sizes}, {", ".join("d" + name for name in names)}, gout, STRIPES, '
+           f'{constexprs}, {", ".join(f"{f}: tl.constexpr" for f in flags)}):',
            *index, *_loads(arrays),
            *(f'    go{k} = tl.load(gout + {_at(full, k)}, mask=_m_{_tag(full)})' for k in range(n_out)),
            *grad_lines, *stores]
@@ -528,8 +529,8 @@ class _Fn(torch.autograd.Function):
         gout, extents = gout.contiguous(), ctx.extents
         stripes = {"_stripes(extents, _BACKWARD, gout.device)" if shared else "1"}
         {"; ".join(buffers)}
-        {funcname}_bwd[_grid]({", ".join(_params(plan))}, *extents, math.prod(extents) * {span} >= 2 ** 31,
-                              {", ".join(f"d{name}=d{name}" for name in names)}, gout=gout, STRIPES=stripes, {", ".join(f"{f}={f}" for f in flags)})
+        {funcname}_bwd[_grid]({", ".join(_params(plan))}, *extents, {", ".join(f"d{name}" for name in names)}, gout, stripes,
+                              WIDE=math.prod(extents) * {span} >= 2 ** 31, {", ".join(f"{f}={f}" for f in flags)})
         return {returns}
 
 
