@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import string
 from functools import lru_cache
+from itertools import groupby
 
 from einops._backends import AbstractBackend, get_backend
 
@@ -48,6 +49,25 @@ def _zeros_like(x):
     backend = get_backend(x)
     empty = backend.tile(backend.add_axis(x, 0), (0, *(1,) * len(backend.shape(x))))
     return backend.reduce(empty, 'sum', (0,))
+
+
+def _spread(mv: MultiVector, keys: tuple[int, ...]):
+    """
+    The values of `mv`, a single array, over `keys`, a superset of its own: slices of it where its blades run on in the order of `keys`, zeros where it has none.
+    A run at a time rather than a blade at a time, so that a sparse multivector joining a dense one costs a few operations rather than a few per blade.
+    """
+    if mv._keys == keys:
+        return mv._values
+    backend, at = get_backend(mv._values), {k: i for i, k in enumerate(mv._keys)}
+    zero = _zeros_like(mv._values[:1])
+    pieces = []
+    for offset, run in groupby(enumerate(keys), key=lambda jk: at[jk[1]] - jk[0] if jk[1] in at else None):
+        run = [j for j, _ in run]
+        if offset is None:
+            pieces.append(backend.tile(zero, (len(run), *(1,) * (len(backend.shape(zero)) - 1))))
+        else:
+            pieces.append(mv._values[run[0] + offset:run[-1] + offset + 1])
+    return backend.concat(pieces, 0)
 
 
 class KingdonBackend(AbstractBackend):
@@ -137,16 +157,12 @@ class KingdonBackend(AbstractBackend):
             raise TypeError('To concat all multivectors must have the same type.')
         keys = _union_keys(mvs)
         # The result holds its coefficients in a single array only if all the inputs do.
-        asarray = all(not isinstance(mv._values, (list, tuple)) for mv in mvs)
-
-        if asarray and all(mv._keys == keys for mv in mvs):
-            values = get_backend(mvs[0]._values).concat([mv._values for mv in mvs], axis + 1)
+        if all(mv._keys and not isinstance(mv._values, (list, tuple)) for mv in mvs):
+            values = get_backend(mvs[0]._values).concat([_spread(mv, keys) for mv in mvs], axis + 1)
         else:
             coefficients = [_coefficients(mv, keys, _zeros_like) for mv in mvs]
             backend = get_backend(coefficients[0][0])
             values = [backend.concat([c[i] for c in coefficients], axis) for i in range(len(keys))]
-            if asarray:
-                values = backend.stack_on_zeroth_dimension(values)
         return mvs[0].fromkeysvalues(mvs[0].algebra, keys, values)
 
     def einsum(self, pattern, *operands):

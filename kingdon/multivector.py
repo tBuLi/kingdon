@@ -589,10 +589,11 @@ class MultiVector(metaclass=MultiVectorType):
         if layout := self.type_layout:
             # Sort the layout to canonical order, since a layout may be in whatever order its type likes.
             layout = {k: layout[k] for k in self.algebra.canon2bin.values() if k in layout}
-            keysvalues = tuple((k, v if v != ... else getattr(self, self.algebra.bin2canon[k]))
-                               for k, v in layout.items() if k in self.keys() or v != ...)
-            keys, values = zip(*keysvalues) if keysvalues else (tuple(), list())
-            values = list(values)  # Values are always a list, e.g. so they can be updated inplace.
+            keys = tuple(k for k, v in layout.items() if k in self.keys() or v != ...)
+            if keys == self.keys() and all(layout[k] == ... for k in keys):
+                values = self.values()  # Nothing to fill in, so an array stays one rather than being taken apart blade by blade.
+            else:
+                values = [layout[k] if layout[k] != ... else getattr(self, self.algebra.bin2canon[k]) for k in keys]
         else:
             keys, values = self.keys(), self.values()
         if MVType == self.algebra.mvtype:

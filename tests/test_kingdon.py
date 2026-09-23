@@ -896,6 +896,29 @@ def test_compile_basics(symbolic):
     assert grade_select(u) == u.grade(1, 2)
     assert not (coupled(u, v) - ((u + v) ** 2 + 2 * u))
 
+
+def test_compile_several_outputs():
+    """ A symbolic operator may return a tuple of multivectors, which are then computed by one function. """
+    alg = Algebra(3, 0, 1)
+    # TODO: A more meaningful test would be a bivector split of B into b1 and b2
+
+    @alg.add_operator(symbolic=True)
+    def parts(x, y):
+        return (x * y).grade(0), x | y, (x ^ y).grade(2)
+
+    x, y = alg.multivector(np.random.randn(len(alg))), alg.multivector(np.random.randn(len(alg)))
+    for got, want in zip(parts(x, y), parts.codegen(x, y), strict=True):
+        assert type(got) is type(want) and got.keys() == want.keys() and np.allclose(got.values(), want.values())
+
+    @alg.add_operator(symbolic=True)
+    def nested(x, y):
+        scalar, _, bivector = parts(x, y)
+        return scalar + bivector
+
+    u, v = alg.multivector(name='u'), alg.multivector(name='v')
+    assert not (nested(u, v) - ((u * v).grade(0) + (u ^ v).grade(2)))
+
+
 def test_25():
     from kingdon import Algebra
     alg = Algebra(3, 0, 1)

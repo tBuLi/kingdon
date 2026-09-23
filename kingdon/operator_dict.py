@@ -208,7 +208,7 @@ class OperatorDict(Mapping):
             if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
                 mvs[output_mv_idx].set(mvs[output_mv_idx].filter(self.algebra.simp_func, map=True))
             else:
-                mv_out = mv_out.filter(self.algebra.simp_func, map=True)
+                mv_out = _simplified(mv_out, self.algebra.simp_func)
         return mv_out
 
     def _call_binary(self, mv1, mv2):
@@ -222,9 +222,15 @@ class OperatorDict(Mapping):
                 mvs = [mv1, mv2]
                 mvs[output_mv_idx].set(mvs[output_mv_idx].filter(self.algebra.simp_func, map=True))
             else:
-                mv_out = mv_out.filter(self.algebra.simp_func, map=True)
+                mv_out = _simplified(mv_out, self.algebra.simp_func)
 
         return mv_out
+
+
+def _simplified(mv_out, simp_func):
+    if isinstance(mv_out, tuple):
+        return tuple(mv.filter(simp_func, map=True) for mv in mv_out)
+    return mv_out.filter(simp_func, map=True)
 
 
 class UnaryOperatorDict(OperatorDict):

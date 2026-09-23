@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import string
-from itertools import chain
+from itertools import accumulate, chain
 from dataclasses import dataclass
 from collections.abc import Callable
 import linecache
@@ -28,11 +28,12 @@ class CompiledExpression:
     """
     Output of a codegen function.
 
-    :param keys_out: tuple with the output blades in binary rep.
+    :param keys_out: tuple with the output blades in binary rep, or one such tuple per multivector
+        for a codegen function that returns a tuple of them.
     :param func: callable that takes (several) sequence(s) of values
         returns a tuple of :code:`len(keys_out)`.
     :param wrapped_func: decorated func if a wrapper was provided, else identical to func.
-    :param mvtype: type of the output multivector. Defaults to :code:`MultiVector`.
+    :param mvtype: type of the output multivector, or a tuple of types alongside `keys_out`. Defaults to :code:`MultiVector`.
     """
     algebra: "Algebra"
     keys_out: tuple[int]
@@ -47,6 +48,12 @@ class CompiledExpression:
         values_in = tuple(mv.values() for mv in mvs)
         values_out = self.func(*values_in) if issymbolic else self.wrapped_func(*values_in)
         if self.output_mv_idx is not None: return None  # The function uses .set
+        if isinstance(self.mvtype, tuple):
+            sizes = [len(keys) for keys in self.keys_out]
+            # A tensor splits in one step and its backward joins in one, where a slice per output costs a zero-filled copy of the whole per output.
+            parts = values_out.split(sizes) if hasattr(values_out, 'split') else [values_out[end - size:end] for size, end in zip(sizes, accumulate(sizes))]
+            return tuple(mvtype.fromkeysvalues(self.algebra, keys, part, values_asarray=self.values_asarray, raw=issymbolic)
+                         for mvtype, keys, part in zip(self.mvtype, self.keys_out, parts))
         return self.mvtype.fromkeysvalues(
             self.algebra, self.keys_out, values_out, values_asarray=self.values_asarray, raw=issymbolic
         )
@@ -111,7 +118,8 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None, default
 def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asarray=None, lambdifier_kwargs: dict | None = None) -> CompiledExpression:
     """
     :param codegen: callable that performs codegen for the given :code:`mvs`. This can be any callable
-        that returns a :class:`~kingdon.multivector.MultiVector`.
+        that returns a :class:`~kingdon.multivector.MultiVector`, or a tuple of them, which are then
+        computed by one function: under the triton lambdifier, one kernel.
     :param mvs: Any remaining positional arguments are taken to be symbolic :class:`~kingdon.multivector.MultiVector`'s.
     :param lambdifier: The function that turns the symbolic expressions into a python function.
         Defaults to :func:`lambdify`.
@@ -136,18 +144,24 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
         def is_number(x):
             try: float(x); return True
             except (ValueError, TypeError): return False
-        res_layout = {k: float(f) if is_number(f := str(v)) else ... for k, v in res.items()}
-        MVType, layout = resolve_layout(algebra._type_layouts, res_layout, default=algebra.mvtype)
 
-        if layout:
-            res = dict(res.items())
-            res = {k: res[k] for k, v in layout.items() if v == ... and k in res}
+        def typed(res):
+            res_layout = {k: float(f) if is_number(f := str(v)) else ... for k, v in res.items()}
+            MVType, layout = resolve_layout(algebra._type_layouts, res_layout, default=algebra.mvtype)
+            if layout:
+                res = dict(res.items())
+                res = {k: res[k] for k, v in layout.items() if v == ... and k in res}
+            return MVType, res
+
+        MVType, res = zip(*map(typed, res)) if isinstance(res, tuple) else typed(res)
 
     funcname = f'{codegen.__name__}_' + '_x_'.join(f"{format(mv[0].type_number if isinstance(mv, list) else mv.type_number, 'X')}" for mv in mvs)
     args = {arg_name: [tuple(chain(*(x.values() for x in arg)))] if isinstance(arg, list) else arg.values()
             for arg_name, arg in zip(string.ascii_uppercase, mvs)}
 
-    keys, exprs = tuple(res.keys()), list(res.values())
+    outputs = res if isinstance(res, tuple) else (res,)
+    keys, exprs = tuple(tuple(r.keys()) for r in outputs), [e for r in outputs for e in r.values()]
+    keys = keys if isinstance(res, tuple) else keys[0]
     if output_mv_idx is not None:
         keys = ()
     # Only a lambdifier that asks for values_asarray or shapes is given them, so that one which

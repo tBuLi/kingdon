@@ -249,6 +249,15 @@ def test_pack_unpack_inhomogenous_asarray(xp):
     assert not xp.any(unpack(packed, ps, 'i * k')[1].e2)
 
 
+def test_pack_spreads_by_runs(xp):
+    """ A multivector lacking blades between those it has is spread around slices of its one array, its NaNs kept out of the zeros. """
+    sparse = alg.multivector(xp.full((2, 3, 7), xp.nan), keys=(0, 3))
+    packed, ps = pack([alg.multivector(randn(xp, 4, 3, 5)), sparse], 'i *')
+    assert packed.keys() == KEYS and tuple(packed.values().shape) == (4, 3, 12)
+    back = unpack(packed, ps, 'i *')[1]
+    assert not xp.any(back.e1) and not xp.any(back.e2) and xp.all(xp.isnan(back.e)) and xp.all(xp.isnan(back.e12))
+
+
 def test_pack_different_types(xp):
     """ Relaxing the keys is only allowed within one type, since the type fixes their meaning. """
     with pytest.raises(TypeError):
