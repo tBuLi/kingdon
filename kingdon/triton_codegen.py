@@ -18,10 +18,11 @@ from dataclasses import dataclass, replace
 
 from kingdon.polynomial import RationalPolynomial, poly_format, rational_cse, rp_var_name
 
-#: Tiles to consider, as (rows, columns, warps, stages). How many registers a tile needs is
+#: Tiles to consider, as (elements, warps, stages). How many registers a tile needs is
 #: not worth predicting -- measured against a count of the live coefficients the ratio ranged
 #: from 0.92 to 2.09 -- so :func:`_widest_clean` compiles them and reads the spills instead.
-CONFIGS = [(1, 64, 8, 1), (1, 64, 4, 1), (2, 64, 4, 1), (4, 128, 16, 1), (4, 256, 16, 2)]
+#: :func:`_fit` shapes each of these to the plane before any of that.
+CONFIGS = [(64, 8, 1), (64, 4, 1), (128, 4, 1), (512, 16, 1), (1024, 16, 2)]
 
 _BUILDS = itertools.count()
 
@@ -37,7 +38,8 @@ class Operand:
     name: str
     vars: tuple[str, ...]
     nested: bool
-    kind: str = ''
+    #: Which axes of the coalesced plane the coefficients vary along, see :func:`_layout`.
+    varies: tuple[bool, ...] | None = None
     #: The axes the coefficients carry past the blade axis, or ``None`` for a plain number.
     shape: tuple[int, ...] | None = None
 
@@ -52,7 +54,7 @@ class Operand:
 
     @property
     def array(self):
-        return self.kind != 'scalar'
+        return self.shape is not None
 
     @property
     def live(self):
@@ -60,10 +62,42 @@ class Operand:
 
 
 def _load(tile):
-    return tile[0] * tile[1] / tile[2]
+    return math.prod(tile[0]) / tile[1]
 
 
-def _widest_clean(kernel, sample):
+def _fit(tile, widths, outer=1):
+    """
+    Shape a tile to the plane: the innermost axis takes its width while the elements last, the outermost up to `outer` of them, the axes between their widths from the inside out, and the outermost the rest.
+
+    Filling from the inside keeps the lanes on real data -- a 64 wide row over the three columns of o3's first layer masks off 61 of them.
+    Keeping the count keeps both the register pressure :func:`_widest_clean` measures and the elements per warp :func:`_load` orders by.
+    A larger `outer` narrows the tile along the axes between, which only the backward wants: an operand shared along one of those, like the input to a fully connected product,
+    has every element of the tile along it add into the same coefficient, and those adds wait on each other.
+    """
+    elements, warps, stages = tile
+    inner = [min(elements, widths[-1])] if widths else []
+    elements //= math.prod(inner)
+    outer = min(outer, elements)
+    elements //= outer
+    shape = []
+    for width in reversed(widths[:-1]):
+        shape.insert(0, min(elements, width))
+        elements //= shape[0]
+    return (outer * elements, *shape, *inner), warps, stages
+
+
+def _widths(extents):
+    """All the tiles depend on: every axis but the outermost, rounded up to a power of two no larger than the largest tile."""
+    most = max(elements for elements, _, _ in CONFIGS)
+    return tuple(min(most, 1 << (extent - 1).bit_length()) for extent in extents[1:])
+
+
+def _tiles(widths, tiles, outers=(1,)):
+    """`tiles` shaped to the plane once per outer width in `outers`, less the duplicates the shaping creates."""
+    return list(dict.fromkeys(_fit(tile, widths, outer) for tile in tiles for outer in outers))
+
+
+def _widest_clean(kernel, sample, tiles):
     """
     The widest tile this kernel compiles for without spilling, and every narrower one.
 
@@ -74,16 +108,48 @@ def _widest_clean(kernel, sample):
     """
     from triton.errors import TritonError
 
-    ordered = sorted(CONFIGS, key=_load, reverse=True)
-    for i, (bb, fb, warps, stages) in enumerate(ordered):
+    ordered = sorted(tiles, key=_load, reverse=True)
+    for i, (shape, warps, stages) in enumerate(ordered):
         try:
-            compiled = kernel.warmup(*sample, BB=bb, FB=fb, num_warps=warps, num_stages=stages, grid=(1,))
+            compiled = kernel.warmup(*sample, **_sizes(shape), num_warps=warps, num_stages=stages, grid=(1,))
             compiled._init_handles()
         except TritonError:
             continue
         if compiled.n_spills == 0:
             return ordered[i:]
     return ordered[-1:]
+
+
+def _fastest(run, tiles, device):
+    """
+    The tile `run` -- a whole backward, zeroing and summing the stripes of the shared gradients included, since how many there are depends on the tile -- is fastest at.
+
+    Nothing is spill-free there for a large algebra, and a wide tile that spills a little beats a narrow one that does not, so the timing decides rather than :func:`_widest_clean`.
+    What it is not trusted with is a tile whose spills would not fit: the driver reserves local memory for them on behalf of every thread the card can hold, and a card that cannot find it resets.
+    So a tile that would need more than a sixteenth of the card that way is never run, unless nothing needs less.
+    A backward of a few microseconds is timed mostly by its launch and may be misjudged, which is where a wrong tile costs least.
+    Each run fills gradients of its own, so timing leaves none behind.
+    """
+    import torch
+    import triton
+    from triton.errors import TritonError
+
+    if len(tiles) == 1:
+        return tiles[0]
+    card = torch.cuda.get_device_properties(device)
+    threads = card.multi_processor_count * card.max_threads_per_multi_processor
+
+    def reserved(tile):
+        try:
+            compiled = run(*tile, warmup=True)
+            compiled._init_handles()
+        except TritonError:
+            return math.inf
+        return 4 * compiled.n_spills * threads
+
+    local = {tile: reserved(tile) for tile in tiles}
+    safe = [tile for tile in tiles if local[tile] <= card.total_memory / 16] or [min(tiles, key=local.get)]
+    return min(safe, key=lambda tile: triton.testing.do_bench(lambda: run(*tile), return_mode='median'))
 
 
 def _plane(shapes):
@@ -99,41 +165,39 @@ def _plane(shapes):
         raise Unsupported(f'{sized} do not broadcast') from error
 
 
-def _roles(shapes):
+@functools.lru_cache(maxsize=4096)
+def _layout(shapes):
     """
-    How each operand is addressed, from the shapes alone.
+    The plane the operands broadcast to, the same plane in as few axes as they allow, and which of those axes each operand varies along.
 
-    However many axes a multivector's coefficients carry, they are contiguous, so the kernel
-    reads each blade as a flat rows-by-columns plane. ``batch`` is indexed by both axes,
-    ``feature`` only by the last and is broadcast along the rows, ``scalar`` -- the
-    ``math.sqrt(2)`` a layer divides by -- rides along by value, and ``broadcast`` is anything
-    whose replication the flat offset cannot express, which the launcher spreads over the plane
-    and whose gradient sums back down.
-
-    Operands are right-aligned and broadcast against each other the way torch would, so a weight
-    is recognised by the axes it varies along rather than by its rank: ``(1, 32)`` and ``(32,)``
-    both address the last axis alone. The call path asks this too, to tell a shape the generated
-    code already covers from one that needs its own.
+    However many axes a multivector's coefficients carry they are contiguous, so two adjacent axes read as one wherever every operand varies along both or along neither.
+    What is left tells the operands apart by the axes they vary along rather than by their rank: an input varies along all of them, a weight along the last, and the input to a fully connected product along all but the output features it is shared over.
+    A plain number -- the ``math.sqrt(2)`` a layer divides by -- rides along by value and varies along nothing, as ``None``.
+    Operands are right-aligned and broadcast against each other the way torch would.
+    The call path asks this too, to tell a layout the generated code already covers from one that needs its own.
+    That is twice per call, which is why it is cached: working it out costs more than a small kernel takes to run.
     """
     plane = _plane(shapes)
-    roles = []
-    for shape in shapes:
-        if shape is None:
-            roles.append('scalar')
+    aligned = [None if shape is None else (1,) * (len(plane) - len(shape)) + tuple(shape) for shape in shapes]
+    extents, columns = [], []
+    for k, extent in enumerate(plane):
+        column = tuple(shape is not None and shape[k] != 1 for shape in aligned)
+        if extent == 1:
             continue
-        aligned = (1,) * (len(plane) - len(shape)) + tuple(shape)
-        if aligned == plane:
-            roles.append('batch')
-        elif aligned[-1] == plane[-1] and all(extent == 1 for extent in aligned[:-1]):
-            roles.append('feature')
+        if columns and columns[-1] == column:
+            extents[-1] *= extent
         else:
-            roles.append('broadcast')
-    return tuple(roles)
+            extents.append(extent)
+            columns.append(column)
+    if not extents:
+        extents, columns = [1], [tuple(shape is not None for shape in aligned)]
+    varies = [None if shape is None else tuple(column[i] for column in columns) for i, shape in enumerate(aligned)]
+    return plane, tuple(extents), tuple(varies)
 
 
 def _plan(bases, shapes):
-    return [replace(base, kind=kind, shape=shape)
-            for base, shape, kind in zip(bases, shapes, _roles(shapes))]
+    _, extents, varies = _layout(shapes)
+    return [replace(base, varies=v, shape=shape) for base, shape, v in zip(bases, shapes, varies)], extents
 
 
 def _body(exprs):
@@ -173,11 +237,61 @@ def _expand_roots(texts, roots):
     return texts
 
 
-def _loads(plan):
-    return [f'    {var} = tl.load({op.name} + {i} * feat + fi, mask=fmask)[None, :]'
-            if op.kind == 'feature' else
-            f'    {var} = tl.load({op.name} + {i} * plane + off, mask=mask)'
-            for op in plan if op.array for i, var in op.live]
+def _tag(varies):
+    return ''.join('1' if v else '0' for v in varies)
+
+
+def _at(varies, i):
+    """Where coefficient `i` of an operand varying along `varies` sits, past its pointer."""
+    return f'{i} * _n_{_tag(varies)} + _o_{_tag(varies)}'
+
+
+def _range(start, k, n):
+    """The block of axis `k` from `start`, promised contiguous along the innermost axis so that its loads vectorise."""
+    index = f'{start} + tl.arange(0, T{k})'
+    return f'tl.max_contiguous(tl.multiple_of({index}, T{k}), T{k})' if k == n - 1 else index
+
+
+def _blocks(n):
+    """
+    Where this program's block sits along each axis, the innermost varying fastest, leaving in `_pid` its block along the outermost -- which picks the stripe a shared gradient goes into.
+
+    What the kernel names for itself starts with an underscore, clear of the temporaries the expressions name.
+    """
+    lines = ['    _pid = tl.program_id(0)', '    if WIDE:', *(f'        e{k} = e{k}.to(tl.int64)' for k in range(n))]
+    for k in reversed(range(1, n)):
+        lines += [f'    _i{k} = {_range(f"(_pid % tl.cdiv(e{k}, T{k})) * T{k}", k, n)}', f'    _pid = _pid // tl.cdiv(e{k}, T{k})']
+    return lines + [f'    _i0 = {_range("_pid * T0", 0, n)}']
+
+
+def _address(n, patterns):
+    """
+    Per axis its offsets broadcast to the tile and its mask, and per pattern in `patterns` the offsets, mask and blade stride of an operand varying along it.
+
+    An operand is read at its own shape, so one shared along an axis is loaded once per block rather than once per element of it, and broadcasts in registers.
+    """
+    lines = []
+    for k in range(n):
+        lines += [f'    _x{k} = _i{k}' + (f'[{", ".join(":" if j == k else "None" for j in range(n))}]' if n > 1 else ''), f'    _m{k} = _x{k} < e{k}']
+    for varies in patterns:
+        along = [k for k, v in enumerate(varies) if v]
+        tag = _tag(varies)
+        lines += [f'    _o_{tag} = ' + (' + '.join(f'_x{k}' + ''.join(f' * e{j}' for j in along if j > k) for k in along) or '0'),
+                  f'    _n_{tag} = ' + (' * '.join(f'e{k}' for k in along) or '1'),
+                  f'    _m_{tag} = ' + (' & '.join(f'_m{k}' for k in along) or 'None')]
+    return lines
+
+
+def _loads(ops):
+    return [f'    {var} = tl.load({op.name} + {_at(op.varies, i)}, mask=_m_{_tag(op.varies)})' for op in ops for i, var in op.live]
+
+
+@functools.cache
+def _programs(device):
+    """Enough programs to fill the card several times over, and so as many copies of a shared gradient as are worth keeping apart."""
+    import torch
+
+    return 8 * torch.cuda.get_device_properties(device).multi_processor_count
 
 
 def _params(plan):
@@ -185,49 +299,32 @@ def _params(plan):
     return [var for op in plan for var in (op.vars if not op.array else [op.name])]
 
 
-def _call(plan):
-    return [var if not op.array else
-            (f'_spread({op.name}, data, {op.lead})' if op.kind == 'broadcast' else op.name)
-            for op in plan for var in (op.vars if not op.array else [op.name])]
+def _sizes(shape):
+    return {f'T{k}': size for k, size in enumerate(shape)}
 
 
-_HEADER = """
-    bi = tl.program_id(0) * BB + tl.arange(0, BB)
-    fi = tl.max_contiguous(tl.multiple_of(tl.program_id(1) * FB + tl.arange(0, FB), FB), FB)
-    if WIDE:
-        bi, fi = bi.to(tl.int64), fi.to(tl.int64)
-    fmask = fi < feat
-    mask = (bi < batch)[:, None] & fmask[None, :]
-    off = bi[:, None] * feat + fi[None, :]"""
-
-
-def _choose_tiles(namespace, funcname, plan, values, n_out):
-    """Autotune the forward over the tiles that do not spill, and give the backward the widest."""
+def _choose_tiles(namespace, funcname, plan, values, n_out, extents):
+    """
+    Autotune the forward over the tiles that do not spill, and leave the backward to :func:`_fastest` over the same sizes in every shape :func:`_fit` gives them.
+    The backward has no size of its own to start from: whatever the forward can hold without spilling is where its own spills are still worth timing.
+    """
     import torch
     import triton
 
-    data = _plane([op.shape for op in plan])
-    feat, batch = data[-1], math.prod(data[:-1])
     reference = next(v for v in values if torch.is_tensor(v))
-    call = [namespace['_spread'](v, data, op.lead) if op.kind == 'broadcast' else v if op.array else v[0]
-            for v, op in zip(values, plan)]
-    out = torch.empty((n_out, *data), device=reference.device, dtype=reference.dtype)
+    call = [x for v, op in zip(values, plan) for x in ((v,) if op.array else v)]
+    out = torch.empty((n_out, math.prod(extents)), device=reference.device, dtype=reference.dtype)
     span = max(n_out, *(op.slots for op in plan if op.array))
-    sample = (*call, out, batch, feat, batch * feat, batch * feat * span >= 2 ** 31)
+    sample = (*call, out, *extents, math.prod(extents) * span >= 2 ** 31)
 
-    clean = _widest_clean(namespace[f'{funcname}_fwd'], sample)
-    # Narrowing a tile to the data does not pay: the grid is unchanged, and a tile smaller than
-    # the warps it was tuned for leaves most of them idle. Measured on o3, whose first layer has
-    # three columns, clamping 256 down to 4 cost 10%. The autotuner picks per feat instead.
+    widths = _widths(extents)
+    clean = _widest_clean(namespace[f'{funcname}_fwd'], sample, _tiles(widths, CONFIGS))
     namespace[f'{funcname}_fwd'] = triton.autotune(
-        configs=[triton.Config({'BB': bb, 'FB': fb}, num_warps=w, num_stages=s)
-                 for bb, fb, w, s in clean],
-        key=['feat'])(namespace[f'{funcname}_fwd'])
+        configs=[triton.Config(_sizes(shape), num_warps=w, num_stages=s) for shape, w, s in clean],
+        key=[f'e{k}' for k in range(1, len(extents))])(namespace[f'{funcname}_fwd'])
 
-    # The backward takes whichever tile the forward timed fastest, read at call time. Nothing
-    # is spill-free for a large algebra there, and a wide tile that spills beats a narrow one
-    # that does not. A stale choice only costs speed, never correctness.
-    namespace['_FALLBACK'] = clean[0]
+    elements = [(math.prod(shape), w, s) for shape, w, s in clean]
+    namespace['_BACKWARD'] = _tiles(widths, elements, [1 << k for k in range(max(e for e, _, _ in elements).bit_length())])
 
 
 def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_asarray=None, shapes=None):
@@ -259,9 +356,10 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
 
     def signature(values):
         """
-        Everything the generated code depends on: how each operand is addressed, how many
-        coefficients it carries, and its dtype. Deliberately not the extents -- the kernel takes
-        those as arguments, so one build serves every size.
+        Everything the generated code depends on: the axes each operand varies along, how many
+        coefficients it carries, its dtype, and the widths its tiles are shaped to. Not the
+        extents themselves -- the kernel takes those as arguments, so one build serves every size
+        those tiles cover.
 
         The leading axes are still checked exactly, because a multivector torch would broadcast
         has to be turned away rather than read as though it had coefficients it does not have.
@@ -286,29 +384,30 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
                 shapes_in.append(datashape(value, base))
                 dtypes.append(value.dtype)
         try:
-            return tuple(zip(_roles(shapes_in), dtypes))
+            _, extents, varies = _layout(tuple(shapes_in))
         except Unsupported:
             return None
+        return tuple(zip(varies, dtypes)), _widths(extents)
 
     def build(values):
         """
-        Emit the kernel from the roles the operands actually arrive with.
+        Emit the kernel from the layout the operands actually arrive with.
 
         `shapes` cannot be trusted for this. An operator is cached on (type, keys), and the
         first call that creates it is often the symbolic one inside another operator's
         codegen, where every multivector is shapeless -- so whether an operator got a kernel
         would depend on the order codegen happened to reach it in.
         """
-        plan = _plan(bases, [datashape(value, base) for value, base in zip(values, bases)])
+        plan, extents = _plan(bases, tuple(datashape(value, base) for value, base in zip(values, bases)))
         dtype = functools.reduce(torch.promote_types,
                                  [v.dtype for v, op in zip(values, plan) if op.array])
         grad_lines, grads = _gradients(plan, exprs)
-        src = _source(funcname, plan, lines, outs, grad_lines, grads, dtype)
+        src = _source(funcname, plan, len(extents), lines, outs, grad_lines, grads, dtype)
         filename = f'{funcname}#{next(_BUILDS)}'
-        namespace = {}
+        namespace = {'_layout': _layout, '_programs': _programs, '_fastest': _fastest, '_TUNED': {}}
         linecache.cache[filename] = (len(src), None, src.splitlines(True), filename)
         exec(compile(src, filename, 'exec'), namespace)
-        _choose_tiles(namespace, funcname, plan, values, len(outs))
+        _choose_tiles(namespace, funcname, plan, values, len(outs), extents)
         return namespace[funcname]
 
     def dispatch(*values):
@@ -343,89 +442,72 @@ def _gradients(plan, exprs):
     return lines, dict(zip(names, formatted))
 
 
-def _source(funcname, plan, lines, outs, grad_lines, grads, dtype):
+def _source(funcname, plan, n, lines, outs, grad_lines, grads, dtype):
     n_out = len(outs)
     arrays = [op for op in plan if op.array]
     names = [op.name for op in arrays]
-    flags = [f'G{op.name}' for op in arrays]
+    flags = [f'G{name}' for name in names]
     span = max(n_out, *(op.slots for op in arrays))
+    # An operand shared along the outermost axis -- a weight, shared over the batch -- sums its gradient into one of several copies, picked by block and added up by the
+    # launcher, so that the blocks along that axis do not all contend for the same one.
+    shared = any(not op.varies[0] for op in arrays)
+    full, tile = (True,) * n, f'[{", ".join(f"T{k}" for k in range(n))}]'
     # WIDE precedes the tile so that :func:`_widest_clean` can pass it positionally.
-    tail = 'batch, feat, plane, WIDE: tl.constexpr, BB: tl.constexpr, FB: tl.constexpr'
+    tail = f'{", ".join(f"e{k}" for k in range(n))}, WIDE: tl.constexpr, {", ".join(f"T{k}: tl.constexpr" for k in range(n))}'
+    index = [*_blocks(n), *_address(n, dict.fromkeys([full, *(op.varies for op in arrays)]))]
 
     fwd = ['@triton.jit',
-           f'def {funcname}_fwd({", ".join(_params(plan))}, out, {tail}):', _HEADER.strip('\n'),
-           *_loads(plan), *lines,
-           *(f'    tl.store(out + {k} * plane + off, {e}, mask=mask)' for k, e in enumerate(outs))]
+           f'def {funcname}_fwd({", ".join(_params(plan))}, out, {tail}):',
+           *index, *_loads(arrays), *lines,
+           *(f'    tl.store(out + {_at(full, k)}, {e}, mask=_m_{_tag(full)})' for k, e in enumerate(outs))]
 
     stores = []
     for op in arrays:
         stores.append(f'    if G{op.name}:')
         for i, var in op.live:
-            if op.kind == 'feature':
-                # Padding rows are summed over too, so they are zeroed rather than trusted to
-                # evaluate to zero: a derivative with a denominator is 0/0 on a masked lane.
-                stores.append(f'        tl.store(d{op.name} + tl.program_id(0) * {op.slots} * feat '
-                              f'+ {i} * feat + fi, tl.sum(tl.where(mask, {grads[var]}, 0.0), axis=0), mask=fmask)')
-            else:
-                stores.append(f'        tl.store(d{op.name} + {i} * plane + off, {grads[var]}, mask=mask)')
+            at, mask = f'd{op.name} + {_at(op.varies, i)}', f'_m_{_tag(op.varies)}'
+            if all(op.varies):
+                stores.append(f'        tl.store({at}, {grads[var]}, mask={mask})')
+                continue
+            # A shared operand's gradient is summed by the adds themselves: every element of the tile adds into the coefficient it read. Summing the tile first would cost a
+            # trip through shared memory and a barrier per coefficient, since the axes it is shared along are spread over warps.
+            if not op.varies[0]:
+                at += f' + (_pid % STRIPES) * {op.slots} * _n_{_tag(op.varies)}'
+            stores.append(f'        tl.atomic_add(tl.broadcast_to({at}, {tile}), {grads[var]}, mask=_m_{_tag(full)}, sem="relaxed")')
 
     bwd = ['@triton.jit',
            f'def {funcname}_bwd({", ".join(_params(plan))}, {tail}, '
-           f'{", ".join("d" + n for n in names)}, gout, '
+           f'{", ".join("d" + name for name in names)}, gout, STRIPES, '
            f'{", ".join(f"{f}: tl.constexpr" for f in flags)}):',
-           _HEADER.strip('\n'), *_loads(plan),
-           *(f'    go{k} = tl.load(gout + {k} * plane + off, mask=mask)' for k in range(n_out)),
+           *index, *_loads(arrays),
+           *(f'    go{k} = tl.load(gout + {_at(full, k)}, mask=_m_{_tag(full)})' for k in range(n_out)),
            *grad_lines, *stores]
 
-    extents = ', '.join(f'{op.name}.shape[{op.lead}:]' for op in arrays)
-    buffers, folds = [], []
+    shapes = ', '.join(f'{op.name}.shape[{op.lead}:]' for op in arrays)
+    buffers = []
     for op, flag in zip(arrays, flags):
-        if op.kind == 'feature':
-            buffers.append(f'd{op.name} = torch.empty((blocks, {op.slots}, feat) if {flag} else (0,), device={op.name}.device, dtype={op.name}.dtype)')
-            folds.append(f'd{op.name} = d{op.name}.sum(0).reshape({op.name}.shape) if {flag} else None')
-        else:
-            buffers.append(f'd{op.name} = torch.empty((*{op.name}.shape[:{op.lead}], *data) if {flag} else (0,), device={op.name}.device, dtype={op.name}.dtype)')
-            folds.append(f'd{op.name} = _reduce(d{op.name}, {op.name}, {op.lead}) if {flag} else None')
+        # A gradient gathered from several blocks starts at zero and accumulates in at least single precision.
+        make = (f'torch.empty_like({op.name})' if all(op.varies) else
+                f'torch.zeros(({"" if op.varies[0] else "stripes, "}*{op.name}.shape,), device={op.name}.device, dtype=torch.promote_types({op.name}.dtype, torch.float32))')
+        buffers.append(f'd{op.name} = {make} if {flag} else {op.name}.new_empty(0)')
     scalars = [var for op in plan if not op.array for var in op.vars]
+    returns = ', '.join('None' if not op.array else f'(d{op.name}{"" if op.varies[0] else ".sum(0)"}.to({op.name}.dtype) if G{op.name} else None)' for op in plan)
 
-    launcher = f'''
+    launcher = f"""
 def _grid(meta):
-    return (triton.cdiv(meta["batch"], meta["BB"]), triton.cdiv(meta["feat"], meta["FB"]))
-
-
-def _extents(*shapes):
-    data = torch.broadcast_shapes(*shapes)
-    return data, math.prod(data[:-1]), data[-1]
-
-
-def _spread(operand, data, lead):
-    """Give a broadcast operand the whole plane, so the kernel reads it like any other."""
-    operand = operand.reshape(*operand.shape[:lead], *(1,) * (len(data) + lead - operand.ndim), *operand.shape[lead:])
-    return operand.expand(*operand.shape[:lead], *data).contiguous()
-
-
-def _reduce(grad, like, lead):
-    """Sum a whole-plane gradient back onto the shape the operand actually had."""
-    target = (*like.shape[:lead], *(1,) * (grad.ndim - like.ndim), *like.shape[lead:])
-    return grad.sum_to_size(target).reshape(like.shape)
-
-
-def _tile():
-    best = getattr({funcname}_fwd, 'best_config', None)
-    return (best.kwargs['BB'], best.kwargs['FB'], best.num_warps, best.num_stages) if best else _FALLBACK
+    return (math.prod(triton.cdiv(meta[f"e{{k}}"], meta[f"T{{k}}"]) for k in range({n})),)
 
 
 class _Fn(torch.autograd.Function):
     @staticmethod
     def forward(ctx, {", ".join(op.name for op in plan)}):
-        {"; ".join(f"{n} = {n}.contiguous()" for n in names)}
+        {"; ".join(f"{name} = {name}.contiguous()" for name in names)}
         {"; ".join(f"{', '.join(op.vars)}, = {op.name}" for op in plan if not op.array) or "pass"}
-        data, batch, feat = _extents({extents})
+        data, extents, _ = _layout(({shapes},))
         out = torch.empty(({n_out}, *data), device={names[0]}.device, dtype={dtype})
         ctx.save_for_backward({", ".join(names)})
-        ctx.scalars = ({", ".join(scalars)}{"," if scalars else ""})
-        {funcname}_fwd[_grid]({", ".join(_call(plan))}, out, batch=batch, feat=feat,
-            plane=batch * feat, WIDE=batch * feat * {span} >= 2 ** 31)
+        ctx.scalars, ctx.extents = ({", ".join(scalars)}{"," if scalars else ""}), extents
+        {funcname}_fwd[_grid]({", ".join(_params(plan))}, out, *extents, WIDE=math.prod(extents) * {span} >= 2 ** 31)
         return out
 
     @staticmethod
@@ -433,22 +515,26 @@ class _Fn(torch.autograd.Function):
         {", ".join(names)}, = ctx.saved_tensors
         ({", ".join(scalars)}{"," if scalars else ""}) = ctx.scalars
         {", ".join(flags)}, = {", ".join(f"ctx.needs_input_grad[{i}]" for i, op in enumerate(plan) if op.array)},
-        gout = gout.contiguous()
-        data, batch, feat = _extents({extents})
-        BB, FB, warps, stages = _tile()
-        blocks = triton.cdiv(batch, BB)
-        {"; ".join(buffers)}
-        {funcname}_bwd[(blocks, triton.cdiv(feat, FB))](
-            {", ".join(_call(plan))}, batch, feat, batch * feat,
-            batch * feat * {span} >= 2 ** 31, BB, FB,
-            {", ".join("d" + n for n in names)}, gout,
-            {", ".join(flags)}, num_warps=warps, num_stages=stages)
-        {"; ".join(folds)}
-        return {", ".join(('None' if not op.array else 'd' + op.name) for op in plan)}
+        gout, extents = gout.contiguous(), ctx.extents
+
+        def run(tile, warps, stages, warmup=False):
+            blocks = [triton.cdiv(extent, size) for extent, size in zip(extents, tile)]
+            stripes = {"max(1, min(blocks[0], _programs(gout.device) // math.prod(blocks[1:])))" if shared else "1"}
+            {"; ".join(buffers)}
+            compiled = {funcname}_bwd.run(
+                {", ".join(_params(plan))}, *extents, math.prod(extents) * {span} >= 2 ** 31, *tile,
+                {", ".join("d" + name for name in names)}, gout, stripes,
+                {", ".join(flags)}, grid=(math.prod(blocks),), warmup=warmup, num_warps=warps, num_stages=stages)
+            return compiled if warmup else ({returns})
+
+        key = extents[1:], {", ".join(flags)}
+        if key not in _TUNED:
+            _TUNED[key] = _fastest(run, _BACKWARD, gout.device)
+        return run(*_TUNED[key])
 
 
 def {funcname}(*values):
     return _Fn.apply(*values)
-'''
+"""
     return ('import math\nimport torch\nimport triton\nimport triton.language as tl\n\n\n'
             + '\n'.join(fwd) + '\n\n\n' + '\n'.join(bwd) + '\n\n' + launcher)

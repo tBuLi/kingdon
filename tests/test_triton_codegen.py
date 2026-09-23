@@ -47,13 +47,21 @@ def weighted_gp(algebra, x, y, w):
     return algebra.registry['wgp'](algebra.multivector(x), algebra.multivector(y), algebra.scalar(e=w))
 
 
+LAYOUTS = {
+    'feature': lambda n, k: [(n, 48, 16), (n, 48, 16), (k, 16)],
+    # A fully connected layer: the inputs are shared over the output features and the weights over the batch, so no operand varies along every axis.
+    'fully connected': lambda n, k: [(n, 48, 1, 16), (n, 48, 1, 16), (k, 8, 16)],
+}
+
+
 # Batch 48 spans several backward blocks, so a weight gradient that is only right for one block fails here.
+@pytest.mark.parametrize('layout', LAYOUTS)
 @pytest.mark.parametrize('dim', [2, 3, 4, 5])
-def test_matches_eager(dim):
+def test_matches_eager(dim, layout):
     algebra = Algebra(dim)
     n, k = len(algebra), n_weights(algebra)
     torch.manual_seed(0)
-    tensors = [torch.randn(n, 48, 16, device='cuda'), torch.randn(n, 48, 16, device='cuda'), torch.randn(k, 16, device='cuda')]
+    tensors = [torch.randn(*shape, device='cuda') for shape in LAYOUTS[layout](n, k)]
 
     want_values, want_grads = run(weighted_gp, dim, tensors, None)
     got_values, got_grads = run(weighted_gp, dim, tensors, triton_lambdify)

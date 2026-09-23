@@ -126,7 +126,7 @@ class MultiVector(metaclass=MultiVectorType):
         values = values if values is not None else list()
         if isinstance(values, tuple):  # Values are always a list, e.g. so they can be updated inplace.
             values = list(values)
-        if any(isinstance(v, str) for v in values):
+        if isinstance(values, list) and any(isinstance(v, str) for v in values):
             converter = symbolcls or sympify
             values = list(val if not isinstance(val, str) else converter(val)
                           for val in values)
@@ -303,19 +303,27 @@ class MultiVector(metaclass=MultiVectorType):
         if len(grades) == 1 and isinstance(grades[0], tuple):
             grades = grades[0]
 
-        items = {k: v for k, v in self.items() if k.bit_count() in grades}
+        at = [i for i, k in enumerate(self.keys()) if k.bit_count() in grades]
+        keys = tuple(self.keys()[i] for i in at)
+        if at and not isinstance(self._values, (list, tuple)) and at[-1] - at[0] + 1 == len(at):
+            # One view of the array, to preven splitting and stacking.
+            values = self._values[at[0]:at[-1] + 1]
+        else:
+            values = [self._values[i] for i in at]
         res_layout = {k: v for k, v in self.type_layout.items() if k.bit_count() in grades}
-        res_layout.update({k: ... for k in items})
+        res_layout.update({k: ... for k in keys})
         if res_layout:
             from .codegen import resolve_layout
             MVType, _ = resolve_layout(self.algebra._type_layouts, res_layout, default=self.algebra.mvtype)
         else:
             MVType = self.algebra.mvtype
-        return MVType.fromkeysvalues(self.algebra, tuple(items.keys()), list(items.values()), raw=self.issymbolic)
+        return MVType.fromkeysvalues(self.algebra, keys, values, raw=self.issymbolic)
 
     @staticmethod
     def _issymbolic(algebra, values) -> bool:
         """ True if any of the `values` is a Symbol, False otherwise. """
+        if getattr(values, 'dtype', object) != object:
+            return False  # A numeric array holds no symbols.
         symbol_classes = (Expr, RationalPolynomial)
         if algebra.codegen_symbolcls:
             # Allowed symbol classes. codegen_symbolcls might refer to a constructor (method): get the class instead.
