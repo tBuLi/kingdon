@@ -97,7 +97,20 @@ def _tiles(widths, tiles, outers=(1,)):
     return list(dict.fromkeys(_fit(tile, widths, outer) for tile in tiles for outer in outers))
 
 
-def _widest_clean(kernel, sample, tiles):
+def _spills(kernel, tile, *args, **kwargs):
+    """How many registers `kernel` spills per thread at `tile`, compiled for `args` and loaded, or infinitely many if it does not compile."""
+    from triton.errors import TritonError
+
+    shape, warps, stages = tile
+    try:
+        compiled = kernel.warmup(*args, **kwargs, **_sizes(shape), num_warps=warps, num_stages=stages, grid=(1,))
+        compiled._init_handles()
+    except TritonError:
+        return math.inf
+    return compiled.n_spills
+
+
+def _widest_clean(kernel, tiles, *args, **kwargs):
     """
     The widest tile this kernel compiles for without spilling, and every narrower one.
 
@@ -106,50 +119,35 @@ def _widest_clean(kernel, sample, tiles):
     tiles give each thread fewer elements and so cannot need more registers, which is why the
     search can stop at the first clean one.
     """
-    from triton.errors import TritonError
-
     ordered = sorted(tiles, key=_load, reverse=True)
-    for i, (shape, warps, stages) in enumerate(ordered):
-        try:
-            compiled = kernel.warmup(*sample, **_sizes(shape), num_warps=warps, num_stages=stages, grid=(1,))
-            compiled._init_handles()
-        except TritonError:
-            continue
-        if compiled.n_spills == 0:
+    for i, tile in enumerate(ordered):
+        if _spills(kernel, tile, *args, **kwargs) == 0:
             return ordered[i:]
     return ordered[-1:]
 
 
-def _fastest(run, tiles, device):
+def _affordable(kernel, tiles, device, *args, **kwargs):
     """
-    The tile `run` -- a whole backward, zeroing and summing the stripes of the shared gradients included, since how many there are depends on the tile -- is fastest at.
-
-    Nothing is spill-free there for a large algebra, and a wide tile that spills a little beats a narrow one that does not, so the timing decides rather than :func:`_widest_clean`.
-    What it is not trusted with is a tile whose spills would not fit: the driver reserves local memory for them on behalf of every thread the card can hold, and a card that cannot find it resets.
-    So a tile that would need more than a sixteenth of the card that way is never run, unless nothing needs less.
-    A backward of a few microseconds is timed mostly by its launch and may be misjudged, which is where a wrong tile costs least.
-    Each run fills gradients of its own, so timing leaves none behind.
+    `tiles` less those whose spills would not fit: the driver reserves local memory for them on behalf of every thread the card can hold, and a card that cannot find it resets.
+    So a tile that would need more than a sixteenth of the card that way is dropped, unless nothing needs less.
     """
     import torch
-    import triton
-    from triton.errors import TritonError
 
-    if len(tiles) == 1:
-        return tiles[0]
     card = torch.cuda.get_device_properties(device)
     threads = card.multi_processor_count * card.max_threads_per_multi_processor
+    local = {tile: 4 * _spills(kernel, tile, *args, **kwargs) * threads for tile in tiles}
+    return [tile for tile in tiles if local[tile] <= card.total_memory / 16] or [min(tiles, key=local.get)]
 
-    def reserved(tile):
-        try:
-            compiled = run(*tile, warmup=True)
-            compiled._init_handles()
-        except TritonError:
-            return math.inf
-        return 4 * compiled.n_spills * threads
 
-    local = {tile: reserved(tile) for tile in tiles}
-    safe = [tile for tile in tiles if local[tile] <= card.total_memory / 16] or [min(tiles, key=local.get)]
-    return min(safe, key=lambda tile: triton.testing.do_bench(lambda: run(*tile), return_mode='median'))
+def _stripes(extents, tiles, device):
+    """
+    How many copies a gradient shared along the outermost axis is summed into: one per block along that axis, as far as the card runs them at once.
+    The copies are allocated before the autotuner picks a tile, so there are as many as whichever of `tiles` needs the most, and the others leave some at zero.
+    """
+    import triton
+
+    # Lists rather than generators, which torch.compile cannot trace into math.prod or max.
+    return max([max(1, min(triton.cdiv(extents[0], shape[0]), _programs(device) // math.prod([triton.cdiv(e, t) for e, t in zip(extents[1:], shape[1:])]))) for shape, _, _ in tiles])
 
 
 def _plane(shapes):
@@ -181,7 +179,8 @@ def _layout(shapes):
     aligned = [None if shape is None else (1,) * (len(plane) - len(shape)) + tuple(shape) for shape in shapes]
     extents, columns = [], []
     for k, extent in enumerate(plane):
-        column = tuple(shape is not None and shape[k] != 1 for shape in aligned)
+        # Under torch.compile a size can be symbolic. Branching settles each test to a plain bool (bool() does not), where comparing columns of symbolic ones fails in sympy.
+        column = tuple(True if shape is not None and shape[k] != 1 else False for shape in aligned)
         if extent == 1:
             continue
         if columns and columns[-1] == column:
@@ -305,8 +304,9 @@ def _sizes(shape):
 
 def _choose_tiles(namespace, funcname, plan, values, n_out, extents):
     """
-    Autotune the forward over the tiles that do not spill, and leave the backward to :func:`_fastest` over the same sizes in every shape :func:`_fit` gives them.
+    Autotune the forward over the tiles that do not spill, and the backward over the same sizes in every shape :func:`_fit` gives them.
     The backward has no size of its own to start from: whatever the forward can hold without spilling is where its own spills are still worth timing.
+    Nothing is spill-free there for a large algebra, and a wide tile that spills a little beats a narrow one that does not, so the timing decides among whichever :func:`_affordable` lets it run.
     """
     import torch
     import triton
@@ -315,16 +315,26 @@ def _choose_tiles(namespace, funcname, plan, values, n_out, extents):
     call = [x for v, op in zip(values, plan) for x in ((v,) if op.array else v)]
     out = torch.empty((n_out, math.prod(extents)), device=reference.device, dtype=reference.dtype)
     span = max(n_out, *(op.slots for op in plan if op.array))
-    sample = (*call, out, *extents, math.prod(extents) * span >= 2 ** 31)
+    wide = math.prod(extents) * span >= 2 ** 31
+    sizes = [f'e{k}' for k in range(1, len(extents))]
+
+    def autotune(kernel, tiles, key, **kwargs):
+        configs = [triton.Config(_sizes(shape), num_warps=w, num_stages=s) for shape, w, s in tiles]
+        return triton.autotune(configs=configs, key=key, **kwargs)(kernel)
 
     widths = _widths(extents)
-    clean = _widest_clean(namespace[f'{funcname}_fwd'], sample, _tiles(widths, CONFIGS))
-    namespace[f'{funcname}_fwd'] = triton.autotune(
-        configs=[triton.Config(_sizes(shape), num_warps=w, num_stages=s) for shape, w, s in clean],
-        key=[f'e{k}' for k in range(1, len(extents))])(namespace[f'{funcname}_fwd'])
+    clean = _widest_clean(namespace[f'{funcname}_fwd'], _tiles(widths, CONFIGS), *call, out, *extents, wide)
+    namespace[f'{funcname}_fwd'] = autotune(namespace[f'{funcname}_fwd'], clean, sizes)
 
     elements = [(math.prod(shape), w, s) for shape, w, s in clean]
-    namespace['_BACKWARD'] = _tiles(widths, elements, [1 << k for k in range(max(e for e, _, _ in elements).bit_length())])
+    candidates = _tiles(widths, elements, [1 << k for k in range(max(e for e, _, _ in elements).bit_length())])
+    arrays = [(v, op) for v, op in zip(values, plan) if op.array]
+    grads = {f'd{op.name}': v if all(op.varies) else v.to(torch.promote_types(v.dtype, torch.float32)) for v, op in arrays}
+    flags = {f'G{op.name}': True for _, op in arrays}
+    stripes = _stripes(extents, candidates, reference.device)
+    namespace['_BACKWARD'] = _affordable(namespace[f'{funcname}_bwd'], candidates, reference.device, *call, *extents, wide, **grads, gout=out, STRIPES=stripes, **flags)
+    # Gradients are summed by atomic adds, so every timed run has to start them from zero again.
+    namespace[f'{funcname}_bwd'] = autotune(namespace[f'{funcname}_bwd'], namespace['_BACKWARD'], sizes + list(flags), reset_to_zero=[f'd{op.name}' for _, op in arrays if not all(op.varies)])
 
 
 def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_asarray=None, shapes=None):
@@ -404,7 +414,7 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
         grad_lines, grads = _gradients(plan, exprs)
         src = _source(funcname, plan, len(extents), lines, outs, grad_lines, grads, dtype)
         filename = f'{funcname}#{next(_BUILDS)}'
-        namespace = {'_layout': _layout, '_programs': _programs, '_fastest': _fastest, '_TUNED': {}}
+        namespace = {'_layout': _layout, '_stripes': _stripes}
         linecache.cache[filename] = (len(src), None, src.splitlines(True), filename)
         exec(compile(src, filename, 'exec'), namespace)
         _choose_tiles(namespace, funcname, plan, values, len(outs), extents)
@@ -495,7 +505,7 @@ def _source(funcname, plan, n, lines, outs, grad_lines, grads, dtype):
 
     launcher = f"""
 def _grid(meta):
-    return (math.prod(triton.cdiv(meta[f"e{{k}}"], meta[f"T{{k}}"]) for k in range({n})),)
+    return ({" * ".join(f'triton.cdiv(meta["e{k}"], meta["T{k}"])' for k in range(n))},)
 
 
 class _Fn(torch.autograd.Function):
@@ -516,21 +526,11 @@ class _Fn(torch.autograd.Function):
         ({", ".join(scalars)}{"," if scalars else ""}) = ctx.scalars
         {", ".join(flags)}, = {", ".join(f"ctx.needs_input_grad[{i}]" for i, op in enumerate(plan) if op.array)},
         gout, extents = gout.contiguous(), ctx.extents
-
-        def run(tile, warps, stages, warmup=False):
-            blocks = [triton.cdiv(extent, size) for extent, size in zip(extents, tile)]
-            stripes = {"max(1, min(blocks[0], _programs(gout.device) // math.prod(blocks[1:])))" if shared else "1"}
-            {"; ".join(buffers)}
-            compiled = {funcname}_bwd.run(
-                {", ".join(_params(plan))}, *extents, math.prod(extents) * {span} >= 2 ** 31, *tile,
-                {", ".join("d" + name for name in names)}, gout, stripes,
-                {", ".join(flags)}, grid=(math.prod(blocks),), warmup=warmup, num_warps=warps, num_stages=stages)
-            return compiled if warmup else ({returns})
-
-        key = extents[1:], {", ".join(flags)}
-        if key not in _TUNED:
-            _TUNED[key] = _fastest(run, _BACKWARD, gout.device)
-        return run(*_TUNED[key])
+        stripes = {"_stripes(extents, _BACKWARD, gout.device)" if shared else "1"}
+        {"; ".join(buffers)}
+        {funcname}_bwd[_grid]({", ".join(_params(plan))}, *extents, math.prod(extents) * {span} >= 2 ** 31,
+                              {", ".join(f"d{name}=d{name}" for name in names)}, gout=gout, STRIPES=stripes, {", ".join(f"{f}={f}" for f in flags)})
+        return {returns}
 
 
 def {funcname}(*values):
