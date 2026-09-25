@@ -4,9 +4,10 @@ One Triton kernel per operator, instead of one torch call per symbolic multiply:
     >>> alg = Algebra(3, lambdifier=triton_lambdify)
     >>> z = alg.gp(x, y)
 
-Multivector in, multivector out, differentiable, same as any other lambdifier. Non-polynomial
-expressions fall back to :func:`~kingdon.codegen.lambdify`; the backward comes from
-:meth:`~kingdon.polynomial.RationalPolynomial.diff`.
+Multivector in, multivector out, differentiable, same as any other lambdifier. The expressions
+are kingdon's polynomials or, for an operator whose codegen_symbolcls is a sympy symbol, sympy's,
+which may then call the functions triton has, :code:`erf` say. Anything else falls back to
+:func:`~kingdon.codegen.lambdify`. The backward is the expressions' own derivative, taken symbolically.
 """
 from __future__ import annotations
 
@@ -199,9 +200,58 @@ def _plan(bases, shapes):
     return [replace(base, varies=v, shape=shape) for base, shape, v in zip(bases, shapes, varies)], extents
 
 
+def _var(value):
+    """The name of the symbol a coefficient is, or ``'_'`` for one that is not a symbol, a structural zero say."""
+    import sympy
+
+    return value.name if isinstance(value, sympy.Symbol) else rp_var_name(value)
+
+
+def _sympy_body(exprs):
+    """:func:`_body` for sympy expressions."""
+    import sympy
+    from sympy.printing.codeprinter import PrintMethodNotImplementedError
+    from sympy.printing.precedence import PRECEDENCE
+    from sympy.printing.pycode import PythonCodePrinter
+
+    class TritonPrinter(PythonCodePrinter):
+        """Numbers as floats, the functions triton has as its own, and powers as the products and roots it can take."""
+
+        def _print(self, expr, **kwargs):
+            if isinstance(expr, sympy.Basic) and expr.is_number and not expr.is_Integer:
+                return repr(float(expr))
+            return super()._print(expr, **kwargs)
+
+        def _print_Pow(self, expr, rational=False):
+            base, power = self.parenthesize(expr.base, PRECEDENCE['Pow']), expr.exp
+            if power in (sympy.S.Half, -sympy.S.Half):
+                return f'tl.{"sqrt" if power > 0 else "rsqrt"}({self._print(expr.base)})'
+            if not power.is_Integer:
+                raise Unsupported(f'power {power}')
+            product = '*'.join([base] * abs(int(power)))
+            return product if power > 0 else f'1/({product})'
+
+    exprs = [sympy.sympify(e).evalf() for e in exprs]
+    printer = TritonPrinter({'user_functions': {name: f'tl.{name}' for name in ('erf', 'exp', 'log', 'sin', 'cos')}})
+    names = sympy.numbered_symbols('t', exclude=set().union(*(e.free_symbols for e in exprs)))
+    pairs, outs = sympy.cse(exprs, symbols=names)
+    try:
+        lines, outs = [f'    {name} = {printer.doprint(e)}' for name, e in pairs], [printer.doprint(e) for e in outs]
+    except PrintMethodNotImplementedError as error:
+        raise Unsupported(str(error)) from error
+    # A function that triton does not have is printed from the module python has it in.
+    if foreign := set(printer.module_imports) - {'tl'}:
+        raise Unsupported(f'functions from {foreign}')
+    return lines, outs
+
+
 def _body(exprs):
     """CSE'd assignment lines and one formatted expression per output."""
+    import sympy
+
     exprs = list(exprs)
+    if all(isinstance(e, sympy.Expr) for e in exprs):
+        return _sympy_body(exprs)
     if not all(isinstance(e, RationalPolynomial) for e in exprs):
         raise Unsupported('not polynomial')
     divided = [e for e in exprs if e.denom != 1]
@@ -337,15 +387,16 @@ def _choose_tiles(namespace, funcname, plan, values, n_out, extents):
     namespace[f'{funcname}_bwd'] = autotune(namespace[f'{funcname}_bwd'], namespace['_BACKWARD'], sizes + list(flags), reset_to_zero=[f'd{op.name}' for _, op in arrays if not all(op.varies)])
 
 
-def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_asarray=None, shapes=None):
+def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_asarray=None, shapes=None, printer=None):
     """
     A differentiable callable over stacked coefficient tensors, backed by a Triton kernel.
 
     :param shapes: ``{argument name: shape}``, from :func:`~kingdon.codegen.do_compile_symbolic`.
+    :param printer: what :func:`~kingdon.codegen.lambdify` prints sympy expressions with, where there is no kernel.
     """
     from kingdon.codegen import lambdify
 
-    plain = lambdify(args, exprs, funcname, cse=cse, output_mv_idx=output_mv_idx, values_asarray=values_asarray)
+    plain = lambdify(args, exprs, funcname, printer=printer, cse=cse, output_mv_idx=output_mv_idx, values_asarray=values_asarray)
     try:
         if output_mv_idx is not None:
             raise Unsupported('writes into an argument')
@@ -359,7 +410,7 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
     bases = []
     for name, vals in args.items():
         nested = any(isinstance(v, (list, tuple)) for v in vals)
-        bases.append(Operand(name, tuple(rp_var_name(v) for v in (vals[0] if nested else vals)), nested))
+        bases.append(Operand(name, tuple(_var(v) for v in (vals[0] if nested else vals)), nested))
 
     def datashape(value, base):
         return tuple(value.shape[base.lead:]) if torch.is_tensor(value) else None
@@ -443,12 +494,15 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
 
 def _gradients(plan, exprs):
     """d(sum_k go_k * out_k)/ds per input symbol, CSE'd together so they share work."""
-    go = [RationalPolynomial.fromname(f'go{k}') for k in range(len(exprs))]
+    import sympy
+
+    symbol = RationalPolynomial.fromname if isinstance(exprs[0], RationalPolynomial) else sympy.Symbol
+    go = [symbol(f'go{k}') for k in range(len(exprs))]
     loss = go[0] * exprs[0]
     for g, e in zip(go[1:], exprs[1:]):
         loss = loss + g * e
     names = [var for op in plan if op.array for _, var in op.live]
-    lines, formatted = _body([loss.diff(var) for var in names])
+    lines, formatted = _body([loss.diff(symbol(var)) for var in names])
     return lines, dict(zip(names, formatted))
 
 

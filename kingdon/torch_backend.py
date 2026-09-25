@@ -44,6 +44,8 @@ from __future__ import annotations
 
 import inspect
 
+import sympy
+import sympy.printing.pytorch
 import torch
 
 from kingdon.multivector import MultiVector
@@ -54,6 +56,19 @@ try:
     import kingdon.einops_backend  # noqa: F401
 except ImportError:  # pragma: no cover
     pass
+
+
+class TorchPrinter(sympy.printing.pytorch.TorchPrinter):
+    """
+    Prints an operator whose codegen_symbolcls is a sympy symbol, and which can therefore call sympy's functions -- :code:`erf`, say -- as torch code.
+    A constant is printed as a number, since :code:`torch.sqrt(2)` wants a tensor.
+    """
+    namespace = {'torch': torch}
+
+    def _print(self, expr, **kwargs):
+        if isinstance(expr, sympy.Basic) and expr.is_number and not expr.is_Integer:
+            return repr(float(expr))
+        return super()._print(expr, **kwargs)
 
 
 def values_asarray(values):

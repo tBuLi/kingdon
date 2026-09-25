@@ -233,6 +233,8 @@ class Algebra:
             if self.backend == 'triton' and not chosen_lambdifier:
                 from kingdon.triton_codegen import triton_lambdify
                 self.lambdifier = triton_lambdify
+            if not chosen_lambdifier:
+                self.lambdifier = partial(self.lambdifier, printer=torch_backend.TorchPrinter())
         elif self.backend:
             raise ValueError(f"Unknown backend {self.backend!r}; kingdon has 'torch', 'triton' and 'einops'.")
 

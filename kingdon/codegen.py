@@ -376,6 +376,7 @@ def lambdify(
     :param exprs: tuple[Expr]
     :param funcname: string to be used as the bases for the name of the function.
     :param printer: Instance of the sympy style printer used to print individual sympy expressions.
+        Kingdon's own polynomials need none, and are printed without it unless a `func_printer` is given too.
     :param func_printer: Instance of the sympy style printer used to generate functions using the `printer`.
     :param cse: If :code:`True` (default), CSE is applied to the expressions.
         This typically greatly improves performance and reduces numba's initialization time.
@@ -399,7 +400,7 @@ def lambdify(
                 common_denom = non_unit[0].denom if non_unit else None
                 cse_pairs, numer_simplified, denom_simplified = rational_cse(flattened_exprs, common_denom)
 
-                if printer is None and func_printer is None:
+                if func_printer is None:
                     return _lambdify_poly_cse(args, exprs, funcname, cse_pairs, numer_simplified, denom_simplified,
                                               output_mv_idx=output_mv_idx, values_asarray=values_asarray)
 
