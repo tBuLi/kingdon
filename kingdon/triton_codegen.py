@@ -17,6 +17,11 @@ import linecache
 import math
 from dataclasses import dataclass, replace
 
+import sympy
+from sympy.printing.codeprinter import PrintMethodNotImplementedError
+from sympy.printing.precedence import PRECEDENCE
+from sympy.printing.pycode import PythonCodePrinter
+
 from kingdon.polynomial import RationalPolynomial, poly_format, rational_cse, rp_var_name
 
 #: Tiles to consider, as (elements, warps, stages). How many registers a tile needs is
@@ -30,6 +35,27 @@ _BUILDS = itertools.count()
 
 class Unsupported(Exception):
     """Raised when an expression cannot be emitted as a kernel, so the caller falls back."""
+
+
+class TritonPrinter(PythonCodePrinter):
+    """Sympy expressions as triton code: numbers as floats, the functions triton has as its own, and powers as the products and roots it can take."""
+
+    def __init__(self):
+        super().__init__({'user_functions': {name: f'tl.{name}' for name in ('erf', 'exp', 'log', 'sin', 'cos')}})
+
+    def _print(self, expr, **kwargs):
+        if isinstance(expr, sympy.Basic) and expr.is_number and not expr.is_Integer:
+            return repr(float(expr))
+        return super()._print(expr, **kwargs)
+
+    def _print_Pow(self, expr, rational=False):
+        base, power = self.parenthesize(expr.base, PRECEDENCE['Pow']), expr.exp
+        if power in (sympy.S.Half, -sympy.S.Half):
+            return f'tl.{"sqrt" if power > 0 else "rsqrt"}({self._print(expr.base)})'
+        if not power.is_Integer:
+            raise Unsupported(f'power {power}')
+        product = '*'.join([base] * abs(int(power)))
+        return product if power > 0 else f'1/({product})'
 
 
 @dataclass(frozen=True)
@@ -202,37 +228,13 @@ def _plan(bases, shapes):
 
 def _var(value):
     """The name of the symbol a coefficient is, or ``'_'`` for one that is not a symbol, a structural zero say."""
-    import sympy
-
     return value.name if isinstance(value, sympy.Symbol) else rp_var_name(value)
 
 
 def _sympy_body(exprs):
     """:func:`_body` for sympy expressions."""
-    import sympy
-    from sympy.printing.codeprinter import PrintMethodNotImplementedError
-    from sympy.printing.precedence import PRECEDENCE
-    from sympy.printing.pycode import PythonCodePrinter
-
-    class TritonPrinter(PythonCodePrinter):
-        """Numbers as floats, the functions triton has as its own, and powers as the products and roots it can take."""
-
-        def _print(self, expr, **kwargs):
-            if isinstance(expr, sympy.Basic) and expr.is_number and not expr.is_Integer:
-                return repr(float(expr))
-            return super()._print(expr, **kwargs)
-
-        def _print_Pow(self, expr, rational=False):
-            base, power = self.parenthesize(expr.base, PRECEDENCE['Pow']), expr.exp
-            if power in (sympy.S.Half, -sympy.S.Half):
-                return f'tl.{"sqrt" if power > 0 else "rsqrt"}({self._print(expr.base)})'
-            if not power.is_Integer:
-                raise Unsupported(f'power {power}')
-            product = '*'.join([base] * abs(int(power)))
-            return product if power > 0 else f'1/({product})'
-
-    exprs = [sympy.sympify(e).evalf() for e in exprs]
-    printer = TritonPrinter({'user_functions': {name: f'tl.{name}' for name in ('erf', 'exp', 'log', 'sin', 'cos')}})
+    exprs = [sympy.factor_terms(sympy.sympify(e).evalf()) for e in exprs]
+    printer = TritonPrinter()
     names = sympy.numbered_symbols('t', exclude=set().union(*(e.free_symbols for e in exprs)))
     pairs, outs = sympy.cse(exprs, symbols=names)
     try:
@@ -247,8 +249,6 @@ def _sympy_body(exprs):
 
 def _body(exprs):
     """CSE'd assignment lines and one formatted expression per output."""
-    import sympy
-
     exprs = list(exprs)
     if all(isinstance(e, sympy.Expr) for e in exprs):
         return _sympy_body(exprs)
@@ -494,8 +494,6 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
 
 def _gradients(plan, exprs):
     """d(sum_k go_k * out_k)/ds per input symbol, CSE'd together so they share work."""
-    import sympy
-
     symbol = RationalPolynomial.fromname if isinstance(exprs[0], RationalPolynomial) else sympy.Symbol
     go = [symbol(f'go{k}') for k in range(len(exprs))]
     loss = go[0] * exprs[0]

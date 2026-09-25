@@ -90,6 +90,63 @@ def test_divide_by_a_multivector(dim):
         torch.testing.assert_close(got_grad, want_grad, rtol=1e-4, atol=1e-3)
 
 
+def test_compiles_without_graph_breaks():
+    """
+    torch.compile traces the kernels of a warm operator, forward and backward, in one graph, and again once a second batch size makes the batch symbolic.
+    Through inductor, which launches the kernels its own way and, given several tiles, times them with the gradients reset between runs.
+    """
+    algebra = Algebra(3, backend='triton')
+    algebra.add_operator(wgp, symbolic=True)
+    n, k = len(algebra), n_weights(algebra)
+
+    def loss(x, y, w):
+        values = algebra.registry['wgp'](algebra.multivector(x), algebra.multivector(y), algebra.scalar(e=w)).values()
+        return (values * values).sum()
+
+    def grads(fn, tensors):
+        ts = [t.clone().requires_grad_(True) for t in tensors]
+        fn(*ts).backward()
+        return [t.grad for t in ts]
+
+    compiled = torch.compile(loss, fullgraph=True)
+    torch.manual_seed(0)
+    for batch in (48, 40):
+        tensors = [torch.randn(*shape, device='cuda') for shape in LAYOUTS['fully connected'](n, k)]
+        tensors[:2] = [t[:, :batch] for t in tensors[:2]]
+        for want, got in zip(grads(loss, tensors), grads(compiled, tensors)):
+            torch.testing.assert_close(got, want, rtol=1e-4, atol=1e-3)
+
+
+def test_sympy_functions():
+    """An operator over sympy symbols may call the functions triton has: flash-clifford's GELU gates before a weighted product, one kernel forward and one backward."""
+    import math
+    import sympy
+
+    def gated(X: MultiVector, Y: MultiVector, weights: MultiVector[None]) -> MultiVector:
+        gate = lambda mv: mv * (0.5 * (1 + sympy.erf(mv.e / math.sqrt(2))))
+        return wgp(gate(X), gate(Y), weights)
+
+    torch.manual_seed(0)
+    n, k = len(Algebra(2)), n_weights(Algebra(2))
+    tensors = [torch.randn(*shape, device='cuda') for shape in LAYOUTS['feature'](n, k)]
+    results = []
+    for backend in ('torch', 'triton'):
+        alg = Algebra(2, backend=backend)
+        alg.add_operator(gated, symbolic=True, codegen_symbolcls=sympy.Symbol)
+        ts = [t.clone().requires_grad_(True) for t in tensors]
+        x, y, w = alg.multivector(ts[0]), alg.multivector(ts[1]), alg.scalar(e=ts[2])
+        values = alg.registry['gated'](x, y, w).values()
+        (values * values).sum().backward()
+        results.append((values.detach(), [t.grad for t in ts]))
+    dispatch = alg.registry['gated'][x, y, w].func
+    built = dict(zip(dispatch.__code__.co_freevars, (c.cell_contents for c in dispatch.__closure__)))['built']
+    assert built and all(built.values()), 'fell back to torch'
+    (want, want_grads), (got, got_grads) = results
+    torch.testing.assert_close(got, want, rtol=1e-5, atol=1e-4)
+    for want_grad, got_grad in zip(want_grads, got_grads):
+        torch.testing.assert_close(got_grad, want_grad, rtol=1e-4, atol=1e-3)
+
+
 def test_sqrt():
     """A root is an opaque symbol over a remembered base, so it differentiates and emits."""
     torch.manual_seed(0)
