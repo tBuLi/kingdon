@@ -4,8 +4,11 @@ import string
 from functools import lru_cache
 from itertools import groupby
 
+import sympy
 from einops._backends import AbstractBackend, get_backend
+from sympy.core.symbol import Str
 
+from kingdon.codegen import Blade, Einsum, Reduce, Reshape, Stack, grade_sizes
 from kingdon.multivector import MultiVector, _coefficients, _union_keys
 
 
@@ -80,6 +83,11 @@ class KingdonBackend(AbstractBackend):
         return x.shape
 
     def reshape(self, x: MultiVector, shape: tuple[int, ...]) -> MultiVector:
+        if x.issymbolic:
+            # einops hands over the whole new shape, batch axes included. So only the axes from the first that changes onwards are reshaped, together with the one before them which a -1 absorbs, and the generated code holds for any batch size.
+            kept = next((i for i, (a, b) in enumerate(zip(x.shape, shape)) if a != b), min(x.ndim, len(shape)))
+            k, sizes = (x.ndim - kept + 1, (-1, *shape[kept:])) if kept else (x.ndim, shape)
+            return _symbolic(x, Reshape(_array(x), k, sympy.Tuple(*sizes)), tuple(shape))
         values = x._values
         if isinstance(values, (list, tuple)):
             backend = get_backend(values[0])
@@ -98,6 +106,8 @@ class KingdonBackend(AbstractBackend):
         return x.fromkeysvalues(x.algebra, x._keys, values)
 
     def reduce(self, x: MultiVector, operation: str, axes: tuple[int, ...]) -> MultiVector:
+        if x.issymbolic:
+            return _symbolic(x, Reduce(_array(x), Str(operation), sympy.Tuple(*(a - x.ndim for a in axes))), tuple(d for a, d in enumerate(x.shape) if a not in axes))
         values = x._values
         if isinstance(values, (list, tuple)):
             backend = get_backend(values[0])
@@ -177,22 +187,27 @@ class KingdonBackend(AbstractBackend):
         base = next((mv for mv in mvs if mv._keys != (0,)), mvs[0])
         keys = base._keys
 
+        single = base.issymbolic and len(keys) == 1  # A symbolic multivector of one blade is that coefficient, without a blade axis.
         is_mv, values = [], []
         for op in operands:
             if not isinstance(op, MultiVector):
                 is_mv.append(False)
                 values.append(op)
-            elif op._keys == keys:
-                is_mv.append(True)
-                values.append(self._as_tensor(op))
-            elif op._keys == (0,):
+            elif op._keys == (0,) and op is not base or single and op._keys == keys:
                 # A scalar has no blade axis to speak of, so it enters as a plain tensor.
                 is_mv.append(False)
                 values.append(op._values[0])
+            elif op._keys == keys:
+                is_mv.append(True)
+                values.append(Stack(*op._values) if base.issymbolic else self._as_tensor(op))
             else:
                 raise TypeError('To einsum all multivectors must have the same keys (i.e. basis blades), '
                                 'with the exception of scalars.')
 
+        if base.issymbolic:
+            import torch  # Symbolic einops are printed for torch, whose einsum on meta tensors gives the shape.
+            shape = torch.einsum(pattern, *(torch.empty(getattr(op, 'shape', ()), device='meta') for op in operands)).shape
+            return _symbolic(base, Einsum(Str(_add_blade_axis(pattern, tuple(is_mv))), *values), tuple(shape))
         backend = get_backend(next(v for v, mv in zip(values, is_mv) if mv))
         values = backend.einsum(_add_blade_axis(pattern, tuple(is_mv)), *values)
         return base.fromkeysvalues(base.algebra, keys, values)
@@ -209,4 +224,16 @@ class KingdonBackend(AbstractBackend):
         values = x._values
         first = values[0] if isinstance(values, (list, tuple)) else values
         # Ask the coefficients' own backend, since e.g. torch dtypes are not strings.
-        return hasattr(first, "dtype") and get_backend(first).is_float_type(first)
+        return x.issymbolic or hasattr(first, "dtype") and get_backend(first).is_float_type(first)
+
+
+def _array(mv: MultiVector) -> sympy.Expr:
+    """ The coefficients of the symbolic `mv` as one array, or its one coefficient, which has no blade axis. """
+    return mv._values[0] if len(mv._keys) == 1 else Stack(*mv._values)
+
+
+def _symbolic(mv: MultiVector, array: sympy.Expr, shape: tuple[int, ...]) -> MultiVector:
+    """ A multivector with the type and keys of the symbolic `mv` and of `shape`, whose coefficients are the blades of `array`, or `array` itself for one blade. """
+    res = mv.fromkeysvalues(mv.algebra, mv._keys, [array] if len(mv._keys) == 1 else [Blade(array, i, len(shape), grade_sizes(mv._keys)) for i in range(len(mv._keys))], raw=True)
+    res.shape = shape
+    return res

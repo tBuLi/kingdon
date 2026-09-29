@@ -160,3 +160,36 @@ def test_sqrt():
     got, (got_grad,) = run(root, 2, [raw], triton_lambdify, loss=cube)
     torch.testing.assert_close(got, want, rtol=1e-5, atol=1e-4)
     torch.testing.assert_close(got_grad, want_grad, rtol=1e-4, atol=1e-3)
+
+
+@pytest.mark.parametrize('features', [(4, 6), (16, 32)])
+def test_einops(features):
+    """An operator with einops calls is one kernel over blocks of rows: a linear map per grade, a gate and a mean over the features, in registers. Features of 16 or more contract by tl.dot."""
+    import sympy
+    from einops import einsum, reduce
+    from kingdon import Scalar
+
+    def layer(X: MultiVector, W: Scalar[None], b: Scalar) -> MultiVector:
+        Y = einsum(X, W[X.gradeidx_of_blades], "... i, o i -> ... o") + b
+        Y = Y * sympy.erf(Y.e)
+        return Y / (reduce((Y * ~Y).grade(0), "... o -> ... 1", "mean") + 1)
+
+    torch.manual_seed(0)
+    i, o = features
+    tensors = [torch.randn(4, 48, i, device='cuda'), torch.randn(1, 3, o, i, device='cuda'), torch.randn(1, o, device='cuda')]
+    results = []
+    for backend in ('torch', 'triton'):
+        alg = Algebra(2, backend=backend, simp_func=lambda v: v)
+        alg.add_operator(layer, symbolic=True, codegen_symbolcls=sympy.Symbol)
+        ts = [t.clone().requires_grad_(True) for t in tensors]
+        args = alg.multivector(ts[0]), alg.scalar(e=ts[1][0]), alg.scalar(e=ts[2][0])
+        values = alg.registry['layer'](*args).values()
+        (values * values).sum().backward()
+        results.append((values.detach(), [t.grad for t in ts]))
+    dispatch = alg.registry['layer'][args].func
+    built = dict(zip(dispatch.__code__.co_freevars, (c.cell_contents for c in dispatch.__closure__)))['built']
+    assert built and all(built.values()), 'fell back to torch'
+    (want, want_grads), (got, got_grads) = results
+    torch.testing.assert_close(got, want, rtol=1e-5, atol=1e-4)
+    for want_grad, got_grad in zip(want_grads, got_grads):
+        torch.testing.assert_close(got_grad, want_grad, rtol=1e-4, atol=1e-3)

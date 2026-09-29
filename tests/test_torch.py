@@ -227,3 +227,18 @@ def test_symbolic_codegen_is_unaffected(alg):
     alg.add_operator(double, symbolic=True)
     x = alg.vector(torch.randn(3, 4, 5))
     assert same(alg.registry['double'](x), x + x)
+
+def test_einops_printing(alg):
+    from kingdon import MultiVector, Scalar
+    from einops import einsum
+    from sympy import Symbol
+
+    def linear(X: MultiVector, W: Scalar[None], b: Scalar = 0) -> MultiVector:
+        """:class:`~rotorch.nn.cgenn.MVLinear`, with W[k] the matrix of the k-th grade of X."""
+        return einsum(X, W[X.gradeidx_of_blades], "... i, o i -> ... o") + b
+
+    x = alg.vector(torch.randn(3, 4, 5))
+    W = alg.scalar(torch.randn(1, 1, 6, 5))
+    b = alg.scalar(torch.randn(1, 6))
+    linear_compiled = alg.add_operator(linear, symbolic=True, codegen_symbolcls=Symbol)
+    assert same(linear_compiled(x, W, b), linear(x, W, b))

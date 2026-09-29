@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 import string
-from itertools import accumulate, chain
+from bisect import bisect_right
+from itertools import accumulate, chain, groupby, pairwise
 from dataclasses import dataclass
 from collections.abc import Callable
 import linecache
@@ -10,12 +11,16 @@ import inspect
 import builtins
 import keyword
 import copy
-from functools import partial
+from functools import cache, partial, reduce
+
+import numpy as np
 
 from sympy.utilities.iterables import iterable, flatten
 from sympy.printing.lambdarepr import LambdaPrinter
 from sympy.simplify.cse_main import numbered_symbols
-from sympy import Symbol, sympify
+import sympy
+from sympy import Basic, Symbol, Tuple, sympify
+from sympy.core.parameters import distribute
 
 from kingdon.polynomial import (
     poly_cse, poly_format, rational_cse, rp_var_name, Polynomial, RationalPolynomial
@@ -52,11 +57,15 @@ class CompiledExpression:
             sizes = [len(keys) for keys in self.keys_out]
             # A tensor splits in one step and its backward joins in one, where a slice per output costs a zero-filled copy of the whole per output.
             parts = values_out.split(sizes) if hasattr(values_out, 'split') else [values_out[end - size:end] for size, end in zip(sizes, accumulate(sizes))]
-            return tuple(mvtype.fromkeysvalues(self.algebra, keys, part, values_asarray=self.values_asarray, raw=issymbolic)
-                         for mvtype, keys, part in zip(self.mvtype, self.keys_out, parts))
-        return self.mvtype.fromkeysvalues(
-            self.algebra, self.keys_out, values_out, values_asarray=self.values_asarray, raw=issymbolic
-        )
+            res = tuple(mvtype.fromkeysvalues(self.algebra, keys, part, values_asarray=self.values_asarray, raw=issymbolic)
+                        for mvtype, keys, part in zip(self.mvtype, self.keys_out, parts))
+        else:
+            res = self.mvtype.fromkeysvalues(self.algebra, self.keys_out, values_out, values_asarray=self.values_asarray, raw=issymbolic)
+        if issymbolic:  # Symbolic values cannot tell the shape they stand for, so it is that of the symbolic inputs.
+            shape = np.broadcast_shapes(*(mv.shape for mv in mvs if mv.issymbolic))
+            for mv in res if isinstance(res, tuple) else (res,):
+                mv.shape = shape
+        return res
 
 
 def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None, default: type = MultiVector):
@@ -132,7 +141,8 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
     algebra = mvs[0].algebra
     mvs_orig = [copy.deepcopy(mv) for mv in mvs]
 
-    res = codegen(*(mv.asmvtype() for mv in mvs))
+    with distribute(False):  # A number stays outside a sum, rather than multiplying each of its terms.
+        res = codegen(*(mv.asmvtype() for mv in mvs))
 
     MVType = algebra.mvtype
     output_mv_idx = None  # If codegen modified one of the mvs using set, this will be the index of the modified mv.
@@ -141,12 +151,14 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
         res = mvs[output_mv_idx]
         mvs = mvs_orig
     else:
-        def is_number(x):
-            try: float(x); return True
-            except (ValueError, TypeError): return False
+        def number(x):
+            if isinstance(x, Basic) and not x.is_number:  # The str of a large expression costs more than all of its codegen.
+                return None
+            try: return float(str(x))
+            except (ValueError, TypeError): return None
 
         def typed(res):
-            res_layout = {k: float(f) if is_number(f := str(v)) else ... for k, v in res.items()}
+            res_layout = {k: ... if (f := number(v)) is None else f for k, v in res.items()}
             MVType, layout = resolve_layout(algebra._type_layouts, res_layout, default=algebra.mvtype)
             if layout:
                 res = dict(res.items())
@@ -170,9 +182,10 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
     extra = {'values_asarray': values_asarray} if 'values_asarray' in accepted else {}
     if 'shapes' in accepted:
         extra['shapes'] = {arg_name: mv.shape for arg_name, mv in zip(string.ascii_uppercase, mvs)}
-    func = lambdifier(
-        args, exprs, funcname=funcname, cse=algebra.cse, output_mv_idx=output_mv_idx, **extra
-    )
+    if 'keys' in accepted:
+        extra['keys'] = {arg_name: mv.keys() for arg_name, mv in zip(string.ascii_uppercase, mvs)}
+    with distribute(False):  # Rebuilding an expression, as cse does, would otherwise distribute the number after all.
+        func = lambdifier(args, exprs, funcname=funcname, cse=algebra.cse, output_mv_idx=output_mv_idx, **extra)
     return CompiledExpression(
         algebra, keys, func, MVType or algebra.mvtype, output_mv_idx, wrapper(func) if wrapper else func, values_asarray=values_asarray
     )
@@ -329,6 +342,33 @@ def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, 
     namespace = None if asarray is None else {'builtins': builtins, 'range': range, asarray: values_asarray}
     return _build_and_cache_func(header, body_lines, funcname, namespace=namespace)
 
+class ArrayBase(sympy.Function):
+    """
+    An operation on an array of all the blades of a multivector at once, as a sympy node for a printer that knows arrays: kingdon.einops_backend returns multivectors whose coefficients are blades of such nodes.
+    Stack(*coefficients) is them as one array, whose first axis is the blade axis, and Cat(*arrays) joins arrays along it.
+    Blade(array, i, n, sizes) is blade i, a coefficient of n axes, of an array of grades of `sizes` blades; Blades(array, start, stop, n, sizes) those blades as a view, and BladeSum(array) their sum.
+    Split(array, sizes) is the pieces of `sizes` blades an array consists of, Unbind(array) its blades, and Item(pieces, i) one of either.
+    Einsum(pattern, *operands) has the blade axis in its pattern; Reduce(array, operation, axes) and Reshape(array, k, sizes) count axes from the end, the latter unflattening the last k into `sizes`.
+    """
+    is_commutative = True
+    is_number = False  # Even of numbers, lest a printer turn it into a float.
+
+
+Stack, Cat, Blade, Blades, BladeSum, Split, Unbind, Item, Einsum, Reduce, Reshape = (type(name, (ArrayBase,), {}) for name in ('Stack', 'Cat', 'Blade', 'Blades', 'BladeSum', 'Split', 'Unbind', 'Item', 'Einsum', 'Reduce', 'Reshape'))
+
+
+def grade_sizes(keys) -> tuple[int, ...]:
+    """ The number of blades of every run of consecutive `keys` of one grade. """
+    return tuple(len(list(run)) for _, run in groupby(keys, key=int.bit_count))
+
+
+def _grade(i, sizes) -> tuple[int, int, int]:
+    """ The index, start and stop of the grade of blade i, in an array of grades of `sizes` blades. """
+    bounds = (0, *accumulate(sizes))
+    g = bisect_right(bounds, i) - 1
+    return g, bounds[g], bounds[g + 1]
+
+
 def lambdify(
         args: dict,
         exprs: list,
@@ -338,6 +378,8 @@ def lambdify(
         cse=False,
         output_mv_idx: int = None,
         values_asarray=None,
+        shapes: dict = None,
+        keys: dict = None,
     ):
     """
     Function that turns symbolic expressions into Python functions. Heavily inspired by
@@ -418,6 +460,14 @@ def lambdify(
         args = {name: [tosympy(v) for v in values] for name, values in args.items()}
         _exprs = [tosympy(expr) for expr in exprs]
 
+    # For an operator with einops calls in it, a printer that knows arrays gets whole arrays wherever the blades of whole grades go through the same expression, and every array taken apart once into the pieces used.
+    arrays = hasattr(printer, '_print_ArrayBase') and values_asarray and output_mv_idx is None and any(e.has(ArrayBase) for e in flatten(_exprs))
+    if arrays:
+        flat = {name: values for name, values in args.items() if not any(isinstance(v, Tuple) for v in values)}  # Not those typehinted MultiVector[None].
+        ndim = {name: len(shapes[name]) for name in args}
+        leaves = {v: Blade(Symbol(name), i, ndim[name], grade_sizes(keys[name])) for name, values in flat.items() for i, v in enumerate(values) if isinstance(v, Symbol)}
+        _exprs = [_taken_apart(_vectorize(Stack(*_exprs), leaves, {v: ndim[name] - 1 for name in args.keys() - flat.keys() for v in flatten(args[name])}))]
+
     if cse and not cses:
         if not callable(cse):
             from sympy.simplify.cse_main import cse
@@ -437,9 +487,11 @@ def lambdify(
 
     names = tuple(arg if isinstance(arg, str) else arg.name for arg in args.keys())
     iterable_args = tuple(args.values())
-    asarray = 'values_asarray' if values_asarray else None
+    returned = asarray = 'values_asarray' if values_asarray else None
+    if arrays:
+        _exprs, iterable_args, returned = _exprs[0], tuple([] if name in flat else values for name, values in args.items()), None
     funcstr = func_printer.doprint(funcname, iterable_args, names, _exprs, cses=cses,
-                                   output_mv_idx=output_mv_idx, asarray=asarray)
+                                   output_mv_idx=output_mv_idx, asarray=returned)
 
     # Provide lambda expression with builtins, and compatible implementation of range
     namespace = {'builtins': builtins, 'range': range, **(printer.namespace if hasattr(printer, 'namespace') else {})}
@@ -449,6 +501,103 @@ def lambdify(
     func = _compile_and_cache(funcstr, funcname, namespace)
     func.__module__ = __name__
     return func
+
+
+def _bottom_up(f):
+    """ `f` applied to every subexpression, innermost first, and once to each shared one: an operator is a DAG far smaller than the tree it unfolds into. """
+    @cache
+    def visit(e):
+        args = tuple(map(visit, e.args))
+        return f(e if args == e.args else e.func(*args))
+    return visit
+
+
+def _vectorize(expr, leaves: dict, ndims: dict):
+    """
+    `expr` with `leaves` replaced, and wherever the blades of whole grades of arrays go through the same expression, that expression once on the arrays:
+    a Stack of them becomes a slice or a Cat of such arrays, and a sum of them the BladeSum of such an array. Nothing below a grade is lifted, so a grade stays one node in the backward pass too.
+    An array broadcasts against what its blades share only if its coefficients have at least as many axes, and `ndims` gives those of the symbols that are not `leaves`.
+    """
+    @cache
+    def ndim(e):
+        return int(e.args[2]) if isinstance(e, Blade) else int(e.args[3]) if isinstance(e, Blades) else 99 if isinstance(e, ArrayBase) and not isinstance(e, BladeSum) else max(map(ndim, e.args), default=ndims.get(e, 0))
+
+    def lift(es):
+        """ The one expression whose blades are `es`, if they only differ in whole grades of arrays, else None. """
+        holes, shared = set(), []
+
+        def walk(es):
+            first = es[0]
+            if all(e == first for e in es):
+                shared.append(first)
+                return first
+            if isinstance(first, Blade):
+                a, i, n, sizes = first.args
+                _, start, stop = _grade(i, sizes)
+                if i == start and list(es) == [Blade(a, i + j, n, sizes) for j in range(stop - start)]:
+                    holes.add(int(n))
+                    return Blades(a, start, stop, n, sizes)
+                return None
+            if isinstance(first, ArrayBase) or not first.args or any(e.func != first.func or len(e.args) != len(first.args) for e in es):
+                return None  # Only through elementwise operations.
+            args = [walk(column) for column in zip(*(e.args for e in es))]
+            return None if any(a is None for a in args) else first.func(*args)
+
+        lifted = walk(es)
+        return lifted if lifted is not None and len(holes) == 1 and all(ndim(e) <= min(holes) for e in shared) else None
+
+    def runs(es):
+        """ `es` in runs: the longest that lifts from each start, else the one element. """
+        i = 0
+        while i < len(es):
+            j, lifted = next(((j, lifted) for j in range(len(es), i + 1, -1) if (lifted := lift(es[i:j])) is not None), (i + 1, None))
+            yield es[i:j], lifted
+            i = j
+
+    def piece(es, lifted):
+        if lifted is None and isinstance(es[0], Blade):
+            a, i, n, sizes = es[0].args
+            if (grade := _grade(i, sizes))[2] - grade[1] == 1:  # A grade of one blade.
+                return Blades(a, i, i + 1, n, sizes)
+        return Stack(*es) if lifted is None else lifted
+
+    def join(pieces, piece):
+        """ Adjacent coefficients are one Stack. """
+        return pieces[:-1] + [Stack(*pieces[-1].args, *piece.args)] if pieces and isinstance(pieces[-1], Stack) and isinstance(piece, Stack) else pieces + [piece]
+
+    def whole(pieces):
+        """ The array of which `pieces` are all the grades, in order, if they are. """
+        if isinstance(first := pieces[0], Blades):
+            a, _, _, n, sizes = first.args
+            return a if pieces == [Blades(a, start, stop, n, sizes) for start, stop in pairwise((0, *accumulate(sizes)))] else None
+
+    def vectorized(e):
+        if isinstance(e, Stack):
+            pieces = reduce(join, (piece(es, lifted) for es, lifted in runs(e.args)), [])
+            return whole(pieces) or (pieces[0] if len(pieces) == 1 else Cat(*pieces))
+        if isinstance(e, sympy.Add):
+            return sympy.Add(*(es[0] if lifted is None else BladeSum(lifted) for es, lifted in runs(e.args)))
+        return leaves.get(e, e)
+
+    return _bottom_up(vectorized)(expr)
+
+
+def _taken_apart(expr):
+    """
+    `expr` with every grade of an array an item of its split by grades, and every blade an item of its grade unbound, so that cse takes every array apart once:
+    a slice or an index per use would each cost a zero-filled copy of the whole array in the backward pass.
+    """
+    def item(e):
+        if isinstance(e, Blades):
+            a, start, _, _, sizes = e.args
+            return a if len(sizes) == 1 else Item(Split(a, sizes), _grade(start, sizes)[0])
+        if isinstance(e, Blade):
+            a, i, _, sizes = e.args
+            g, start, _ = _grade(i, sizes)
+            return Item(Unbind(a if len(sizes) == 1 else Item(Split(a, sizes), g)), i - start)
+        return e
+
+    return _bottom_up(item)(expr)
 
 
 class KingdonPrinter:

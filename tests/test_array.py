@@ -321,6 +321,23 @@ def test_einsum_multiple_multivectors(xp):
     with pytest.raises(TypeError):
         einsum(x, alg.bivector(randn(xp, 1, 10)), "i, i -> i")
 
+
+def test_gradeidx_of_blades(xp):
+    """ A scalar stacked over the grades of X, indexed with X.gradeidx_of_blades, holds for every blade of X the entry of its grade, under the keys of X. """
+    X = alg.multivector(keys=(1, 2, 3), values=randn(xp, 3, 5, 10))  # grades (1, 2)
+    assert X.gradeidx_of_blades.keys() == X.keys()
+    assert X.gradeidx_of_blades.values() == [0, 0, 1]  # Positions in X.grades, not the grades themselves.
+
+    W = alg.scalar(randn(xp, 1, 2, 20, 10))  # A matrix per grade.
+    WX = W[X.gradeidx_of_blades]
+    assert type(WX) is type(X) and WX.keys() == X.keys()
+    assert WX.shape == (20, 10)
+
+    w = to_numpy(W.values())[0]
+    Y = einsum(X, WX, "... i, o i -> ... o")
+    assert Y.keys() == X.keys()
+    assert allclose(Y.values(), np.einsum("zbi,zoi->zbo", to_numpy(X.values()), np.stack([w[0], w[0], w[1]])))
+
 test_pack_unpack_config = [
     # (dimensions of a coefficient beyond the blade axis, pattern, expected shape)
     ((), '*', (3,)),

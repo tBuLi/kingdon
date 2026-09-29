@@ -10,7 +10,7 @@ import re
 import math
 import sys
 
-
+import numpy as np
 from sympy import Expr, Symbol, sympify
 from sympy.utilities.iterables import iterable
 
@@ -293,6 +293,15 @@ class MultiVector(metaclass=MultiVectorType):
         grades_in_fixed_layout = {k.bit_count() for k, v in self.type_layout.items() if v != ...}
         return tuple(sorted(grades_in_keys | grades_in_fixed_layout))
 
+    @cached_property
+    def gradeidx_of_blades(self) -> "MultiVector":
+        """
+        For every blade of `self`, the index of its grade in :attr:`grades`, as a multivector with the keys of `self`.
+        Indexing a stacked scalar with it hands every blade the entry of its grade: :code:`W[X.gradeidx_of_blades]` holds for every blade of `X` the matrix of its grade.
+        """
+        index = {g: i for i, g in enumerate(self.grades)}
+        return self.fromkeysvalues(self.algebra, self.keys(), [index[k.bit_count()] for k in self.keys()], raw=True)
+
     def grade(self, *grades):
         """
         Returns a new  :class:`~kingdon.multivector.MultiVector` instance with
@@ -317,7 +326,7 @@ class MultiVector(metaclass=MultiVectorType):
             MVType, _ = resolve_layout(self.algebra._type_layouts, res_layout, default=self.algebra.mvtype)
         else:
             MVType = self.algebra.mvtype
-        return MVType.fromkeysvalues(self.algebra, keys, values, raw=self.issymbolic)
+        return self._with_shape(MVType.fromkeysvalues(self.algebra, keys, values, raw=self.issymbolic))
 
     @staticmethod
     def _issymbolic(algebra, values) -> bool:
@@ -450,6 +459,12 @@ class MultiVector(metaclass=MultiVectorType):
         return str(self)
 
     def __getitem__(self, item):
+        if isinstance(item, MultiVector):  # Every blade of `item` gets the entry along the first axis of the scalar `self` that `item` holds for it.
+            index, values = list(item.values()), self._values[0]
+            res = item.fromkeysvalues(self.algebra, item.keys(), values[np.asarray(index)] if hasattr(values, 'shape') else [values[i] for i in index], raw=True)
+            if 'shape' in self.__dict__:
+                res.shape = self.shape[1:]
+            return res
         values = self.values()
         if not isinstance(values, (tuple, list)):  # Assume it obeys the python array API
             if not isinstance(item, tuple):
@@ -461,7 +476,11 @@ class MultiVector(metaclass=MultiVectorType):
             return_values = values.__class__(value[item] for value in values)
         else:
             raise IndexError("Cannot index a multivector with a non-iterable value.")
-        return self.__class__.fromkeysvalues(self.algebra, keys=self.keys(), values=return_values, raw=self.issymbolic)
+        res = self.__class__.fromkeysvalues(self.algebra, keys=self.keys(), values=return_values, raw=self.issymbolic)
+        # A known shape rather than a symbolic one, since a stacked multivector holds tuples of symbols and so does not count as symbolic.
+        if 'shape' in self.__dict__:
+            res.shape = np.broadcast_to(0, self.shape)[item].shape  # An array that takes no memory, for numpy to work out the shape.
+        return res
 
     def __setitem__(self, indices, values: 'MultiVector'):
         if isinstance(values, MultiVector):
@@ -537,7 +556,7 @@ class MultiVector(metaclass=MultiVectorType):
             vals = [func(k, v) for k, v in self.items()]
         else:
             vals = [func(v) for v in self.values()]
-        return self.fromkeysvalues(self.algebra, keys=self.keys(), values=vals, raw=self.issymbolic)
+        return self._with_shape(self.fromkeysvalues(self.algebra, keys=self.keys(), values=vals, raw=self.issymbolic))
 
     def filter(self, func=None, map=False) -> "MultiVector":
         """
@@ -559,7 +578,7 @@ class MultiVector(metaclass=MultiVectorType):
         if not keysvalues:
             return self.fromkeysvalues(self.algebra, keys=tuple(), values=list(), raw=self.issymbolic)
         keys, values = zip(*keysvalues)
-        return self.fromkeysvalues(self.algebra, keys=keys, values=list(values), raw=self.issymbolic)
+        return self._with_shape(self.fromkeysvalues(self.algebra, keys=keys, values=list(values), raw=self.issymbolic))
 
     def asmatrix(self):
         """ Returns a matrix representation of this multivector. """
@@ -596,9 +615,17 @@ class MultiVector(metaclass=MultiVectorType):
                 values = [layout[k] if layout[k] != ... else getattr(self, self.algebra.bin2canon[k]) for k in keys]
         else:
             keys, values = self.keys(), self.values()
-        if MVType == self.algebra.mvtype:
-            return MVType.fromkeysvalues(self.algebra, keys, values, raw=self.issymbolic)  # Faster than the generic constructor because it doesn't validate the input.
-        return MVType(self.algebra, keys=keys, values=values)
+        # fromkeysvalues is faster than the generic constructor because it doesn't validate the input.
+        res = MVType.fromkeysvalues(self.algebra, keys, values, raw=self.issymbolic) if MVType == self.algebra.mvtype else MVType(self.algebra, keys=keys, values=values)
+        if 'shape' in self.__dict__:  # See __getitem__.
+            res.shape = self.shape
+        return res
+
+    def _with_shape(self, mv: "MultiVector") -> "MultiVector":
+        """ `mv`, given the shape of self if self is symbolic: symbolic values cannot tell the shape they stand for. """
+        if self.issymbolic:
+            mv.shape = self.shape
+        return mv
 
     def gp(self, other):
         return self.algebra.gp(self, other)

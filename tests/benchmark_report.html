@@ -1,0 +1,1153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kingdon &mdash; codegen benchmark</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page:     #f9f9f7;
+    --surface:  #fcfcfb;
+    --ink:      #0b0b0b;
+    --ink-2:    #52514e;
+    --muted:    #898781;
+    --grid:     #e1e0d9;
+    --axis:     #c3c2b7;
+    --border:   rgba(11,11,11,0.10);
+    /* Categorical slots 1-4, validated on the adjacent pairlist in both modes. Aqua and
+       yellow fall under 3:1 on the light surface, so the cards using them ship a table view. */
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --series-4: #eda100;
+    --ghost:    rgba(42,120,214,0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+      --muted: #898781; --grid: #2c2c2a; --axis: #383835;
+      --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+      --ghost: rgba(57,135,229,0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+    --muted: #898781; --grid: #2c2c2a; --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #d95926; --ghost: rgba(57,135,229,0.14);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 20px 80px;
+    background: var(--page); color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+
+  header { padding: 40px 0 20px; display: flex; gap: 20px; align-items: flex-start; }
+  header .grow { flex: 1 1 auto; min-width: 0; }
+  h1 { font-size: 26px; line-height: 1.2; margin: 0 0 6px; font-weight: 650; letter-spacing: -0.01em; }
+  h1 .glyph { color: var(--series-1); }
+  .lede { color: var(--ink-2); margin: 0; max-width: 72ch; }
+  .lede + .lede { margin-top: 8px; }
+  .source { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+
+  button, select, input[type=search] {
+    font: inherit; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; cursor: pointer;
+  }
+  input[type=search] { cursor: text; }
+  button:hover, select:hover { background: var(--ghost); }
+  .icon-btn { width: 34px; height: 34px; padding: 0; line-height: 1; font-size: 15px; flex: 0 0 auto; }
+
+  .filters {
+    display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center;
+    padding: 12px 14px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px; margin-top: 28px;
+  }
+  .filters label { font-size: 12.5px; color: var(--ink-2); display: flex; gap: 7px; align-items: center; }
+  .muted-note { font-size: 12.5px; color: var(--muted); }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 6px 12px; font-size: 13px; color: var(--ink-2); background: transparent; }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button[aria-pressed="true"] { background: var(--series-1); color: #fff; }
+
+  section { margin-top: 28px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px 20px; }
+  .card-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+  h2 { font-size: 16px; margin: 0; font-weight: 620; }
+  .cap { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; }
+  .card-head .spacer { flex: 1 1 auto; }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .kpi .k { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .kpi .v { font-size: 30px; font-weight: 620; line-height: 1.15; margin-top: 6px; letter-spacing: -0.02em; }
+  .kpi .v .u { font-size: 15px; font-weight: 500; color: var(--ink-2); margin-left: 3px; letter-spacing: 0; }
+  .kpi .s { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-2); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .swatch.open { background: transparent; border: 2px solid currentColor; }
+
+  .chart-scroll { overflow-x: auto; }
+  svg { display: block; max-width: 100%; }
+  svg text { fill: var(--muted); font-size: 11px; }
+  svg text.cat { fill: var(--ink-2); }
+  svg text.val { fill: var(--ink); font-weight: 600; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .axisline { stroke: var(--axis); stroke-width: 1; }
+  .hit { fill: transparent; cursor: default; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  /* No text-transform here: uppercasing maps U+00B5 MICRO SIGN to U+039C GREEK CAPITAL
+     MU, so a "(µs)" header renders as "(MS)" and the column reads as milliseconds. */
+  th { color: var(--muted); font-weight: 600; font-size: 11.5px; letter-spacing: .02em; cursor: pointer; user-select: none; }
+  td.num { text-align: right; }
+  td.note { color: var(--muted); white-space: normal; font-size: 12px; max-width: 40ch; }
+  tbody tr:hover { background: var(--ghost); }
+  .table-wrap { overflow: auto; max-height: 520px; }
+
+  #tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .08s;
+    background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 12.5px; line-height: 1.45;
+    box-shadow: 0 6px 20px rgba(0,0,0,.14); z-index: 50; max-width: 320px;
+  }
+  #tip b { font-weight: 620; }
+  #tip .dim { color: var(--muted); }
+
+  .na { color: var(--muted); font-size: 12.5px; margin-top: 12px; }
+  .na code { color: var(--ink-2); }
+
+  #loader { padding: 60px 0; text-align: center; color: var(--ink-2); }
+  .drop { border: 1.5px dashed var(--axis); border-radius: 12px; padding: 34px 20px; background: var(--surface); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="grow">
+    <h1><span class="glyph">&#120124;</span> kingdon codegen benchmark</h1>
+    <p class="lede">
+      Operators and expressions are measured twice. <b>Codegen</b> is the first call, the one that
+      generates and compiles the function &mdash; each sample builds a fresh <code>Algebra</code>
+      and times only that call, so no first call is secretly a cache hit.
+      <b>Steady state</b> is the same call once the generated function is cached.
+    </p>
+    <p class="lede">
+      Every figure is a <b>min</b>, never a mean: scheduler noise only ever adds time. Hover any
+      mark for the median and the sample count behind it. <b>Algebra construction</b> does no
+      codegen, so it has one number, not two.
+    </p>
+    <p class="source" id="source"></p>
+  </div>
+  <button class="icon-btn" id="theme" title="Toggle light / dark">&#9681;</button>
+</header>
+
+<div id="loader">
+  <div class="drop">
+    <p id="loadmsg">Loading <code>benchmark_results.csv</code>&hellip;</p>
+    <input type="file" id="file" accept=".csv">
+  </div>
+</div>
+
+<main id="app" class="hidden">
+
+  <section>
+    <div class="card">
+      <div class="card-head">
+        <h2>Algebra construction</h2>
+        <div class="seg view-group" data-view="create">
+          <button data-v="bars" aria-pressed="true">Bars</button>
+          <button data-v="scatter" aria-pressed="false">Scatter</button>
+          <button data-v="table" aria-pressed="false">Table</button>
+        </div>
+        <span class="spacer"></span>
+        <div class="legend" id="legend-create"></div>
+      </div>
+      <p class="cap" id="cap-create"></p>
+      <div class="chart-scroll" data-panel="create-chart"><svg id="chart-create"></svg></div>
+      <div class="table-wrap hidden" data-panel="create-table"></div>
+    </div>
+  </section>
+
+  <div class="filters">
+    <label>Algebra <select id="alg"></select></label>
+    <label>Metric</label>
+    <div class="seg metric-group">
+      <button data-m="first" aria-pressed="true">Codegen (ms)</button>
+      <button data-m="repeat" aria-pressed="false">Steady state (&micro;s)</button>
+    </div>
+    <span class="muted-note">scopes everything below</span>
+  </div>
+
+  <section class="kpis" id="kpis"></section>
+
+  <section>
+    <div class="card">
+      <div class="card-head">
+        <h2>Built-in operators</h2>
+        <div class="seg view-group" data-view="ops">
+          <button data-v="chart" aria-pressed="true">Chart</button>
+          <button data-v="table" aria-pressed="false">Table</button>
+        </div>
+        <div class="seg metric-group">
+          <button data-m="first" aria-pressed="true">Codegen (ms)</button>
+          <button data-m="repeat" aria-pressed="false">Steady state (&micro;s)</button>
+        </div>
+        <span class="spacer"></span>
+        <label>Operands <select id="profile"></select></label>
+      </div>
+      <p class="cap" id="cap-ops"></p>
+      <div class="chart-scroll" data-panel="ops-chart"><svg id="chart-ops"></svg></div>
+      <div class="table-wrap hidden" data-panel="ops-table"></div>
+      <p class="na" id="na-ops"></p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <div class="card-head">
+        <h2>Operand pair</h2>
+        <div class="seg view-group" data-view="matrix">
+          <button data-v="chart" aria-pressed="true">Chart</button>
+          <button data-v="table" aria-pressed="false">Table</button>
+        </div>
+        <div class="seg metric-group">
+          <button data-m="first" aria-pressed="true">Codegen (ms)</button>
+          <button data-m="repeat" aria-pressed="false">Steady state (&micro;s)</button>
+        </div>
+        <span class="spacer"></span>
+        <label>First <select id="lhs"></select></label>
+        <label>Second <select id="rhs"></select></label>
+      </div>
+      <p class="cap" id="cap-matrix"></p>
+      <div class="chart-scroll" data-panel="matrix-chart"><svg id="chart-matrix"></svg></div>
+      <div class="table-wrap hidden" data-panel="matrix-table"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <div class="card-head">
+        <h2>JIT-compiled expressions</h2>
+        <div class="seg view-group" data-view="expr">
+          <button data-v="chart" aria-pressed="true">Chart</button>
+          <button data-v="table" aria-pressed="false">Table</button>
+        </div>
+        <div class="seg metric-group">
+          <button data-m="first" aria-pressed="true">Codegen (ms)</button>
+          <button data-m="repeat" aria-pressed="false">Steady state (&micro;s)</button>
+        </div>
+        <span class="spacer"></span>
+        <div class="legend" id="legend-expr"></div>
+      </div>
+      <p class="cap" id="cap-expr"></p>
+      <div class="chart-scroll" data-panel="expr-chart"><svg id="chart-expr"></svg></div>
+      <div class="table-wrap hidden" data-panel="expr-table"></div>
+    </div>
+  </section>
+
+  <section id="array-section">
+    <div class="card">
+      <div class="card-head">
+        <h2>Array coefficients</h2>
+        <div class="seg view-group" data-view="array">
+          <button data-v="chart" aria-pressed="true">Chart</button>
+          <button data-v="table" aria-pressed="false">Table</button>
+        </div>
+        <div class="seg metric-group">
+          <button data-m="first" aria-pressed="true">Codegen (ms)</button>
+          <button data-m="repeat" aria-pressed="false">Steady state (&micro;s)</button>
+        </div>
+        <span class="spacer"></span>
+        <div class="legend" id="legend-array"></div>
+      </div>
+      <p class="cap" id="cap-array"></p>
+      <div class="chart-scroll" data-panel="array-chart"><svg id="chart-array"></svg></div>
+      <div class="table-wrap hidden" data-panel="array-table"></div>
+      <p class="na" id="na-array"></p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <div class="card-head">
+        <h2>All measurements</h2>
+        <span class="spacer"></span>
+        <input id="q" type="search" placeholder="filter rows&hellip;" style="width:220px">
+      </div>
+      <p class="cap">Every row for the selected algebra, plus the construction rows. Click a column to sort.</p>
+      <div class="table-wrap" id="all-table"></div>
+    </div>
+  </section>
+
+</main>
+</div>
+
+<div id="tip" role="tooltip"></div>
+
+<script>
+"use strict";
+
+/* ---------------------------------------------------------------- CSV ---- */
+
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else quoted = false; }
+      else field += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+    else if (c !== '\r') field += c;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  const head = rows.shift();
+  return rows.filter(r => r.length === head.length && r.some(v => v !== ''))
+             .map(r => Object.fromEntries(head.map((h, i) => [h, r[i]])));
+}
+
+const num = v => (v === '' || v === undefined || v === null) ? null : Number(v);
+
+/* ------------------------------------------------------------- state ---- */
+
+const S = {
+  data: [], algebra: null, metric: 'first', profile: '__top__',
+  view: { create: 'bars', ops: 'chart', matrix: 'chart', expr: 'chart', array: 'chart' },
+  lhs: null, rhs: null, sort: null, asc: true, q: ''
+};
+
+const METRIC = {
+  first:  { key: 'cold_ms', med: 'cold_med_ms', n: 'cold_n',
+            unit: 'ms', label: 'codegen', axis: 'codegen, first call (ms)' },
+  repeat: { key: 'hot_us',  med: 'hot_med_us', n: 'hot_n',
+            unit: 'µs', label: 'steady state', axis: 'steady state, per call (µs)' }
+};
+/** Slot 2 means "compiled symbolically" everywhere it appears. */
+const SYMBOLIC = 'var(--series-2)';
+
+/** Construction has no codegen step, so it always reads the repeated measurement. */
+const BUILD = { key: 'hot_us', med: 'hot_med_us', n: 'hot_n',
+                unit: 'µs', label: 'construction', axis: 'construction (µs)' };
+
+const fmt = (v, u) => v === null ? '—'
+  : (v >= 1000 ? v.toFixed(0) : v >= 100 ? v.toFixed(1) : v >= 10 ? v.toFixed(2) : v.toFixed(3)) + (u ? ' ' + u : '');
+const fmtShort = v => v === null ? '—'
+  : v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+
+const val = (r, m) => num(r[(m || METRIC[S.metric]).key]);
+
+/** "min of 7 samples · median 1.31 ms" — so no headline number has to be taken on trust. */
+function provenance(r, m) {
+  const med = num(r[m.med]), n = num(r[m.n]);
+  if (n === null) return '';
+  const what = m === BUILD || m.key === 'hot_us' ? 'calls' : 'samples';
+  return `<span class="dim">min of ${n} ${what}${med === null ? '' : ` &middot; median ${fmt(med, m.unit)}`}</span>`;
+}
+
+/** Both metrics at once, for tooltips. */
+function bothMetrics(r) {
+  const parts = [];
+  for (const m of [METRIC.first, METRIC.repeat]) {
+    const v = val(r, m);
+    if (v !== null) parts.push(`${m.label} <b>${fmt(v, m.unit)}</b><br>${provenance(r, m)}`);
+  }
+  return parts.join('<br>');
+}
+
+/* ---------------------------------------------------------- svg utils ---- */
+
+/**
+ * Legends are built from the series that actually got drawn, never hard-coded: a CSV
+ * without some variant would otherwise leave the legend advertising a colour that is
+ * nowhere on the chart.
+ */
+function renderLegend(id, entries) {
+  document.getElementById(id).innerHTML = entries.map(e =>
+    `<span><i class="swatch${e.open ? ' open' : ''}" style="${
+      e.open ? 'border-color' : 'background'}:${e.color}"></i>${e.label}</span>`).join('');
+}
+
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent) {
+  const n = document.createElementNS(NS, tag);
+  for (const k in attrs) if (attrs[k] !== undefined && attrs[k] !== null) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function text(parent, x, y, str, cls, anchor) {
+  const t = el('text', { x, y, 'text-anchor': anchor || 'start' }, parent);
+  if (cls) t.setAttribute('class', cls);
+  t.textContent = str;
+  return t;
+}
+/**
+ * Value labels for every mark. In a horizontal bar chart each bar owns its own row, so
+ * they all fit; where marks can overlap (grouped columns, a scatter) a label that would
+ * collide with one already placed is dropped rather than drawn on top of it. The axis
+ * carries the unit, so the labels themselves stay bare numbers.
+ */
+function labeller() {
+  const placed = [];
+  return function place(svg, x, y, str, anchor) {
+    const w = String(str).length * 6.2, h = 12;
+    const x0 = anchor === 'middle' ? x - w / 2 : anchor === 'end' ? x - w : x;
+    const box = [x0, x0 + w, y - h, y + 2];
+    for (const b of placed) {
+      if (box[0] < b[1] && box[1] > b[0] && box[2] < b[3] && box[3] > b[2]) return false;
+    }
+    placed.push(box);
+    text(svg, x, y, str, 'val', anchor);
+    return true;
+  };
+}
+
+/** Bar with the 4px rounding on the value end only, anchored at the baseline. */
+function barPath(x, y, w, h, r, dir) {
+  r = Math.max(0, Math.min(r, dir === 'right' ? w : h, (dir === 'right' ? h : w) / 2));
+  if (dir === 'right') {
+    return `M${x},${y} H${x + w - r} A${r},${r} 0 0 1 ${x + w},${y + r} V${y + h - r} A${r},${r} 0 0 1 ${x + w - r},${y + h} H${x} Z`;
+  }
+  return `M${x},${y + h} V${y + r} A${r},${r} 0 0 1 ${x + r},${y} H${x + w - r} A${r},${r} 0 0 1 ${x + w},${y + r} V${y + h} Z`;
+}
+function niceTicks(max, count) {
+  if (!(max > 0)) return [0];
+  const raw = max / count, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw) || 10 * mag;
+  const out = [];
+  for (let v = 0; v <= max * 1.0001; v += step) out.push(+v.toFixed(10));
+  if (out[out.length - 1] < max) out.push(+(out[out.length - 1] + step).toFixed(10));
+  return out;
+}
+
+/* ------------------------------------------------------------ tooltip ---- */
+
+const tip = document.getElementById('tip');
+function showTip(evt, html) {
+  tip.innerHTML = html;
+  tip.style.opacity = 1;
+  const b = tip.getBoundingClientRect();
+  let x = evt.clientX + 14, y = evt.clientY + 14;
+  if (x + b.width > innerWidth - 8) x = evt.clientX - b.width - 14;
+  if (y + b.height > innerHeight - 8) y = evt.clientY - b.height - 14;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+function hideTip() { tip.style.opacity = 0; }
+function hoverable(node, html) {
+  node.addEventListener('mousemove', e => showTip(e, html));
+  node.addEventListener('mouseleave', hideTip);
+  node.setAttribute('tabindex', '0');
+  node.addEventListener('focus', () => {
+    const r = node.getBoundingClientRect();
+    showTip({ clientX: r.left + r.width / 2, clientY: r.top }, html);
+  });
+  node.addEventListener('blur', hideTip);
+}
+
+/* ------------------------------------------------- chart: construction ---- */
+
+/** Least-squares fit of y = a + b·x, plus R², used to show how linear the trend is. */
+function linfit(pts) {
+  const n = pts.length;
+  if (n < 2) return null;
+  const mx = pts.reduce((s, p) => s + p.x, 0) / n, my = pts.reduce((s, p) => s + p.y, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (const p of pts) { sxy += (p.x - mx) * (p.y - my); sxx += (p.x - mx) ** 2; syy += (p.y - my) ** 2; }
+  if (!sxx) return null;
+  const b = sxy / sxx;
+  return { a: my - b * mx, b, r2: syy ? (sxy * sxy) / (sxx * syy) : 1 };
+}
+
+/** Above this dimension `large=True` is the default — the tipping point to mark. */
+const LARGE_FROM = 6;
+
+/**
+ * Four series over two channels: hue carries the storage mode (the comparison the
+ * chart is about) and fill carries the signature. Four categorical hues would be
+ * over the all-pairs cap for a scatter, and the signature difference is small
+ * enough that it belongs on the weaker channel.
+ */
+function creationSeries() {
+  const rows = S.data.filter(r => r.section === 'creation');
+  const pick = (pga, mode) => d => rows.find(r =>
+    +r.d === d && r.algebra.includes(',') === pga && (r.variant || 'small') === mode);
+  return {
+    rows,
+    dims: [...new Set(rows.map(r => +r.d))].sort((a, b) => a - b),
+    series: [
+      { name: 'small · Algebra(d)',       color: 'var(--series-1)', open: false, mode: 'small', pick: pick(false, 'small') },
+      { name: 'small · Algebra(d−1,0,1)', color: 'var(--series-1)', open: true,  mode: 'small', pick: pick(true,  'small') },
+      { name: 'large · Algebra(d)',       color: 'var(--series-2)', open: false, mode: 'large', pick: pick(false, 'large') },
+      { name: 'large · Algebra(d−1,0,1)', color: 'var(--series-2)', open: true,  mode: 'large', pick: pick(true,  'large') }
+    ]
+  };
+}
+
+/** Vertical annotation rule marking where the `large` default flips. */
+function tippingRule(svg, x, yTop, yBot, label) {
+  el('line', { x1: x, x2: x, y1: yTop, y2: yBot,
+               stroke: 'var(--ink-2)', 'stroke-width': 1, opacity: 0.55 }, svg);
+  const t = text(svg, x + 5, yTop + 10, label, null, 'start');
+  t.setAttribute('fill', 'var(--ink-2)');
+}
+
+function drawCreation() {
+  const { rows, dims, series } = creationSeries();
+  renderLegend('legend-create', series
+    .filter(s => dims.some(d => s.pick(d)))
+    .map(s => ({ color: s.color, open: s.open, label: s.name })));
+  renderPanel('create', tableHTML(rows,
+    ['algebra', 'variant', 'd', 'out_keys', 'hot_us', 'hot_med_us', 'hot_n', 'note']));
+  if (S.view.create === 'scatter') drawCreationScatter();
+  else if (S.view.create === 'bars') drawCreationBars();
+}
+
+/** Scatter of construction time against basis-blade count: linear cost falls on a line. */
+function drawCreationScatter() {
+  const svg = document.getElementById('chart-create');
+  svg.textContent = '';
+  const { dims, series } = creationSeries();
+
+  const W = Math.max(560, Math.min(1000, svg.parentNode.clientWidth || 900));
+  const P = { t: 28, r: 22, b: 52, l: 58 }, H = 320;
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  const iw = W - P.l - P.r, ih = H - P.t - P.b;
+
+  const pts = series.map(s => dims.map(d => {
+    const r = s.pick(d); return r ? { x: +r.out_keys, y: val(r, BUILD), r } : null;
+  }).filter(Boolean));
+
+  const maxX = Math.max(...pts.flat().map(p => p.x));
+  const maxY = Math.max(...pts.flat().map(p => p.y));
+  const xt = niceTicks(maxX, 4), yt = niceTicks(maxY, 4);
+  const topX = xt[xt.length - 1], topY = yt[yt.length - 1];
+  const X = v => P.l + (v / topX) * iw;
+  const Y = v => P.t + ih - (v / topY) * ih;
+
+  for (const t of yt) {
+    el('line', { class: 'gridline', x1: P.l, x2: P.l + iw, y1: Y(t), y2: Y(t) }, svg);
+    text(svg, P.l - 8, Y(t) + 4, fmtShort(t), null, 'end');
+  }
+  for (const t of xt) text(svg, X(t), H - P.b + 18, fmtShort(t), null, 'middle');
+  text(svg, 0, 12, BUILD.axis, null, 'start');
+  text(svg, P.l + iw, H - P.b + 38, 'basis blades (2^d)', null, 'end');
+  el('line', { class: 'axisline', x1: P.l, x2: P.l + iw, y1: Y(0), y2: Y(0) }, svg);
+
+  // One fit per storage mode, pooling both signatures: they construct at nearly the same
+  // speed, and two lines read far better than four.
+  const modes = [
+    { mode: 'small', color: 'var(--series-1)', label: 'large=False' },
+    { mode: 'large', color: 'var(--series-2)', label: 'large=True' }
+  ];
+  const fits = modes.map(mo => linfit(
+    series.flatMap((s, j) => s.mode === mo.mode ? pts[j] : [])));
+  modes.forEach((mo, k) => {
+    const f = fits[k];
+    if (f) el('line', {
+      x1: X(0), y1: Y(Math.max(0, f.a)), x2: X(topX), y2: Y(f.a + f.b * topX),
+      stroke: mo.color, 'stroke-width': 2, opacity: 0.45
+    }, svg);
+  });
+
+  const place = labeller();
+  series.forEach((s, j) => {
+    for (const p of pts[j]) {
+      // Signature rides on fill, so a VGA disc and its PGA ring stay readable where they
+      // land on the same blade count.
+      el('circle', s.open
+        ? { cx: X(p.x), cy: Y(p.y), r: 6.5, fill: 'none', stroke: s.color, 'stroke-width': 2.5 }
+        : { cx: X(p.x), cy: Y(p.y), r: 6.5, fill: s.color, stroke: 'var(--surface)', 'stroke-width': 2 }, svg);
+      const hit = el('circle', { class: 'hit', cx: X(p.x), cy: Y(p.y), r: 13 }, svg);
+      hoverable(hit, `<b>${p.r.algebra}</b> <span class="dim">large=${s.mode === 'large'}</span>
+        <br><span class="dim">d = ${p.r.d} · ${p.r.out_keys} basis blades${p.r.note === 'default' ? ' · this is the default' : ''}</span>
+        <br>construction <b>${fmt(p.y, BUILD.unit)}</b><br>${provenance(p.r, BUILD)}`);
+      // Four markers cluster at every x, so a single fixed offset would lose most of the
+      // labels. Try positions around the point and take the first that is clear.
+      for (const [dx, dy, anchor] of [[10, -8, 'start'], [10, 13, 'start'],
+                                      [-10, -8, 'end'],  [-10, 13, 'end'],
+                                      [10, -21, 'start'], [10, 26, 'start'],
+                                      [-10, -21, 'end'],  [-10, 26, 'end']]) {
+        if (place(svg, X(p.x) + dx, Y(p.y) + dy, fmtShort(p.y), anchor)) break;
+      }
+    }
+  });
+
+  // The default flips between the two lines just above d = 6; mark the gap.
+  const bladesAt = dd => 2 ** dd;
+  tippingRule(svg, X((bladesAt(LARGE_FROM) + bladesAt(LARGE_FROM + 1)) / 2), P.t - 14, P.t + ih,
+              `d = ${LARGE_FROM} · default flips to large →`);
+
+  // The slope is per blade, far smaller than the axis values — give it its own unit.
+  const rate = us => us >= 1000 ? (us / 1000).toFixed(2) + ' ms'
+    : us >= 1 ? us.toFixed(us >= 100 ? 0 : us >= 10 ? 1 : 2) + ' µs'
+    : (us * 1000).toFixed(0) + ' ns';
+  const per = fits.map((f, k) => f
+    ? `${modes[k].label}: ${rate(f.b)}/blade, R² ${f.r2.toFixed(3)}`
+    : null).filter(Boolean).join(' &middot; ');
+  document.getElementById('cap-create').innerHTML =
+    `Construction time against basis-blade count, both storage modes measured over the whole
+     range. Hue is the mode, fill is the signature (VGA filled, PGA open — they sit at the same
+     blade counts, so the markers coincide). One least-squares fit per mode, pooling both
+     signatures: ${per}. Kingdon picks <code>large=True</code> above d = ${LARGE_FROM}, so the
+     default follows the blue line up to the rule and the orange line after it.`;
+}
+
+function drawCreationBars() {
+  const svg = document.getElementById('chart-create');
+  svg.textContent = '';
+  const { dims, series } = creationSeries();
+
+  const W = Math.max(560, Math.min(1000, svg.parentNode.clientWidth || 900));
+  // Extra headroom: with four columns per group the value labels are turned on their
+  // side, so they need vertical room above the tallest bar rather than horizontal room
+  // beside it. Turned labels also mean all 28 fit, instead of colliding pairwise.
+  const P = { t: 62, r: 14, b: 44, l: 58 }, H = 308;
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  const iw = W - P.l - P.r, ih = H - P.t - P.b;
+
+  const vals = [];
+  for (const d of dims) for (const s of series) { const r = s.pick(d); if (r) vals.push(val(r, BUILD)); }
+  const max = Math.max(...vals, 0);
+  const ticks = niceTicks(max, 4), top = ticks[ticks.length - 1];
+  const y = v => P.t + ih - (v / top) * ih;
+
+  for (const t of ticks) {
+    el('line', { class: 'gridline', x1: P.l, x2: P.l + iw, y1: y(t), y2: y(t) }, svg);
+    text(svg, P.l - 8, y(t) + 4, fmtShort(t), null, 'end');
+  }
+  text(svg, 0, 12, BUILD.axis, null, 'start');
+  el('line', { class: 'axisline', x1: P.l, x2: P.l + iw, y1: y(0), y2: y(0) }, svg);
+
+  const band = iw / dims.length;
+  const bw = Math.min(22, (band - 16) / series.length);
+
+  dims.forEach((d, i) => {
+    const cx = P.l + band * i + band / 2;
+    text(svg, cx, H - P.b + 18, 'd = ' + d, 'cat', 'middle');
+    series.forEach((s, j) => {
+      const r = s.pick(d); if (!r) return;
+      const v = val(r, BUILD);
+      // 2px surface gap between adjacent bars
+      const x = cx - (series.length * (bw + 2)) / 2 + j * (bw + 2);
+      const h = Math.max(1, y(0) - y(v));
+      const p = el('path', s.open
+        ? { d: barPath(x, y(v), bw, h, 4, 'up'), fill: 'var(--surface)', stroke: s.color, 'stroke-width': 2 }
+        : { d: barPath(x, y(v), bw, h, 4, 'up'), fill: s.color }, svg);
+      hoverable(p, `<b>${r.algebra}</b> <span class="dim">large=${s.mode === 'large'}</span>
+        <br><span class="dim">d = ${d} · ${r.out_keys} basis blades${r.note === 'default' ? ' · this is the default' : ''}</span>
+        <br>construction <b>${fmt(v, BUILD.unit)}</b><br>${provenance(r, BUILD)}`);
+      const lx = x + bw / 2 + 4, ly = y(v) - 8;
+      const t = text(svg, lx, ly, fmtShort(v), 'val', 'start');
+      t.setAttribute('transform', `rotate(-90 ${lx} ${ly})`);
+    });
+  });
+
+  // The default flips just above d = 6 — put the rule in the gap after that band.
+  const idx = dims.indexOf(LARGE_FROM);
+  if (idx >= 0 && idx < dims.length - 1) {
+    tippingRule(svg, P.l + band * (idx + 1), P.t - 14, y(0), `d = ${LARGE_FROM} · default flips to large →`);
+  }
+
+  document.getElementById('cap-create').innerHTML =
+    `Time to build an Algebra, 2 ≤ d ≤ 8, with both storage modes measured over the whole range.
+     Hue is the mode, fill is the signature. Construction runs no codegen, so it is the same work
+     every time — one repeated measurement, unaffected by the metric switch below. Values are in
+     ${BUILD.unit}; a label is dropped only where it would land on top of another.`;
+}
+
+/* ---------------------------------------------------- chart: operators ---- */
+
+const operatorRows = () => S.data.filter(r => r.section === 'operator' && r.algebra === S.algebra);
+
+/**
+ * One horizontal bar per row, sorted as given, single hue (this is a magnitude
+ * comparison, not an identity one). Every bar carries its value; the axis carries the unit.
+ * Returns the axis maximum so callers can describe the scale.
+ */
+function drawHBars(svg, rows, m, labelFn, leftGutter, colour) {
+  svg.textContent = '';
+  const W = Math.max(560, Math.min(1000, svg.parentNode.clientWidth || 900));
+  const rowH = 22, P = { t: 46, r: 66, b: 8, l: leftGutter };
+  const H = P.t + rows.length * rowH + P.b;
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  const iw = W - P.l - P.r;
+
+  const max = Math.max(...rows.map(r => val(r, m)), 0);
+  const ticks = niceTicks(max, 4), top = ticks[ticks.length - 1];
+  const x = v => P.l + (v / top) * iw;
+
+  for (const t of ticks) {
+    el('line', { class: 'gridline', x1: x(t), x2: x(t), y1: P.t - 8, y2: H - P.b }, svg);
+    text(svg, x(t), P.t - 14, fmtShort(t), null, 'middle');
+  }
+  text(svg, 0, 12, m.axis, null, 'start');
+  el('line', { class: 'axisline', x1: P.l, x2: P.l, y1: P.t - 8, y2: H - P.b }, svg);
+
+  const place = labeller();
+  rows.forEach((r, i) => {
+    const v = val(r, m), y0 = P.t + i * rowH;
+    const label = labelFn(r);
+    text(svg, P.l - 10, y0 + rowH / 2 + 4, label.length > 30 ? label.slice(0, 29) + '…' : label, 'cat', 'end');
+    const p = el('path', { d: barPath(P.l, y0 + 3, Math.max(1, x(v) - P.l), rowH - 6, 4, 'right'),
+                           fill: colour || 'var(--series-1)' }, svg);
+    const detail = `<b>${r.operation}</b> <span class="dim">(${r.inputs})</span><br>${bothMetrics(r)}
+      ${r.muls ? `<br><span class="dim">${r.muls} muls / ${r.divs} divs / ${r.adds} adds → ${r.out_keys} blades</span>` : ''}`;
+    hoverable(p, detail);
+    hoverable(el('rect', { class: 'hit', x: P.l, y: y0, width: iw, height: rowH }, svg), detail);
+    place(svg, x(v) + 8, y0 + rowH / 2 + 4, fmtShort(v), 'start');
+  });
+  return max;
+}
+
+function drawOperators() {
+  const m = METRIC[S.metric];
+  const all = operatorRows();
+  const ok = all.filter(r => val(r) !== null);
+  const failed = all.filter(r => val(r) === null);
+
+  let rows, capNote;
+  if (S.profile === '__top__') {
+    rows = [...ok].sort((a, b) => val(b) - val(a)).slice(0, 25);
+    capNote = 'The 25 slowest of every operator × operand combination.';
+  } else {
+    rows = ok.filter(r => r.inputs === S.profile).sort((a, b) => val(b) - val(a));
+    capNote = `Every operator applied to <code>${S.profile}</code>.`;
+  }
+
+  renderPanel('ops', tableHTML([...ok, ...failed],
+    ['operation', 'inputs', 'out_keys', 'muls', 'divs', 'adds',
+     'cold_ms', 'cold_n', 'hot_us', 'hot_n', 'note']));
+
+  // Built-ins go through do_compile_symbolic, so they wear the same slot the `symbolic`
+  // variant wears on the expressions chart — colour follows what the bar means.
+  const max = drawHBars(document.getElementById('chart-ops'), rows, m,
+    r => S.profile === '__top__' ? `${r.operation}  ${r.inputs}` : r.operation, 190, SYMBOLIC);
+
+  // A single pathological row compresses everything else to nothing. Say so rather
+  // than letting the scale mislead.
+  const med = rows.length ? [...rows.map(val)].sort((a, b) => a - b)[rows.length >> 1] : 0;
+  const skewed = rows.length > 2 && med > 0 && max / med > 20
+    ? ` <b>${rows[0].operation} (${rows[0].inputs})</b> is ${Math.round(max / med)}× the median here,
+        so the rest of the scale is squashed — pick a single operand profile or open the table.` : '';
+  let floorNote = '';
+  if (S.metric === 'repeat' && rows.length > 4) {
+    const lo = Math.min(...rows.map(val));
+    if (max / lo < 3) floorNote =
+      ` Everything here sits between <b>${fmt(lo, 'µs')}</b> and <b>${fmt(max, 'µs')}</b> —
+        at this size the per-call cost is dominated by wrapping the result back into a
+        MultiVector, not by the generated arithmetic.`;
+  }
+  document.getElementById('cap-ops').innerHTML =
+    `${capNote} Sorted slowest first, values in ${m.unit}; hover any bar for the median and
+     sample count behind it.${skewed}${floorNote}`;
+
+  const na = document.getElementById('na-ops');
+  na.innerHTML = failed.length
+    ? `<b>${failed.length}</b> combinations do not apply in this algebra — see the table for why.`
+    : '';
+}
+
+/* ------------------------------------------------------- operand pair ---- */
+
+function operandTypes() {
+  const t = new Set();
+  for (const r of operatorRows()) for (const p of r.inputs.split('+')) t.add(p);
+  return [...t].sort();
+}
+
+function drawMatrix() {
+  const types = operandTypes();
+  for (const [id, key] of [['lhs', 'lhs'], ['rhs', 'rhs']]) {
+    const sel = document.getElementById(id);
+    if (!types.includes(S[key])) S[key] = types.includes('vector') ? 'vector' : types[0];
+    sel.innerHTML = types.map(t => `<option${t === S[key] ? ' selected' : ''}>${t}</option>`).join('');
+  }
+  const m = METRIC[S.metric];
+  const pair = `${S.lhs}+${S.rhs}`;
+  const all = operatorRows().filter(r => r.inputs === pair);
+  const rows = all.filter(r => val(r, m) !== null).sort((a, b) => val(b, m) - val(a, m));
+  const failed = all.filter(r => val(r, m) === null);
+
+  renderPanel('matrix', all.length
+    ? tableHTML([...rows, ...failed], ['operation', 'out_keys', 'muls', 'divs', 'adds',
+        'cold_ms', 'cold_med_ms', 'cold_n', 'hot_us', 'hot_med_us', 'hot_n', 'note'])
+    : '<p class="na">No binary operators were measured for this pair.</p>');
+  drawHBars(document.getElementById('chart-matrix'), rows, m, r => r.operation, 130, SYMBOLIC);
+
+  document.getElementById('cap-matrix').innerHTML =
+    `Every binary operator applied to <code>${S.lhs}</code> &times; <code>${S.rhs}</code> in
+     ${S.algebra} — ${rows.length} of them, slowest first, values in ${m.unit}.
+     Unary operators take one operand and are listed under
+     <em>Built-in operators</em>.${failed.length
+       ? ` <b>${failed.length}</b> do not apply to this pair — see the table.` : ''}`;
+}
+
+/* -------------------------------------------------- chart: expressions ---- */
+
+function drawExpressions() {
+  const m = METRIC[S.metric];
+  const rows = S.data.filter(r => r.section === 'expression' && r.algebra === S.algebra);
+  renderPanel('expr', tableHTML(rows,
+    ['operation', 'variant', 'inputs', 'out_keys', 'muls', 'divs', 'adds',
+     'cold_ms', 'cold_n', 'hot_us', 'hot_n', 'note']));
+
+  const svg = document.getElementById('chart-expr');
+  svg.textContent = '';
+  const names = [...new Set(rows.map(r => r.operation))];
+  // Drawn in slot order, so the adjacent pairs are the ones the palette validates.
+  const variants = [
+    { name: 'traced',         color: 'var(--series-1)' },
+    { name: 'symbolic',       color: 'var(--series-2)' },
+    { name: 'symbolic-nocse', color: 'var(--series-3)' },
+    { name: 'plain',          color: 'var(--series-4)' }
+  ].filter(v => rows.some(r => r.variant === v.name));
+  renderLegend('legend-expr', variants.map(v => ({
+    color: v.color, label: v.name === 'plain' ? 'plain (no jit)'
+      : v.name === 'symbolic-nocse' ? 'symbolic, no CSE' : v.name
+  })));
+
+  const W = Math.max(560, Math.min(1000, svg.parentNode.clientWidth || 900));
+  const groupH = 16 * variants.length + 12, P = { t: 46, r: 66, b: 8, l: 170 };
+  const H = P.t + names.length * groupH + P.b;
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  const iw = W - P.l - P.r;
+
+  const max = Math.max(...rows.map(r => val(r)).filter(v => v !== null), 0);
+  const ticks = niceTicks(max, 4), top = ticks[ticks.length - 1];
+  const x = v => P.l + (v / top) * iw;
+
+  for (const t of ticks) {
+    el('line', { class: 'gridline', x1: x(t), x2: x(t), y1: P.t - 8, y2: H - P.b }, svg);
+    text(svg, x(t), P.t - 14, fmtShort(t), null, 'middle');
+  }
+  text(svg, 0, 12, m.axis, null, 'start');
+  el('line', { class: 'axisline', x1: P.l, x2: P.l, y1: P.t - 8, y2: H - P.b }, svg);
+
+  const place = labeller();
+  names.forEach((name, i) => {
+    const y0 = P.t + i * groupH;
+    text(svg, P.l - 10, y0 + groupH / 2 + 4, name, 'cat', 'end');
+    variants.forEach((vr, j) => {
+      const r = rows.find(q => q.operation === name && q.variant === vr.name);
+      if (!r) return;
+      const v = val(r); if (v === null) return;
+      const bh = (groupH - 8) / variants.length - 2;   // 2px surface gap between bars
+      const y = y0 + 4 + j * (bh + 2);
+      const w = Math.max(1, x(v) - P.l);
+      const p = el('path', { d: barPath(P.l, y, w, bh, 4, 'right'), fill: vr.color }, svg);
+      hoverable(p, `<b>${name}</b> <span class="dim">— ${vr.name}</span>
+        <br><span class="dim">${r.note || ''}</span><br>${bothMetrics(r)}
+        ${r.muls ? `<br><span class="dim">${r.muls} muls / ${r.divs} divs / ${r.adds} adds</span>`
+                 : '<br><span class="dim">no fused function — nothing to count</span>'}
+        <br><span class="dim">inputs: ${r.inputs}</span>`);
+      place(svg, x(v) + 8, y + bh / 2 + 4.5, fmtShort(v), 'start');
+    });
+  });
+
+  document.getElementById('cap-expr').innerHTML =
+    `The same expressions compiled four ways. <b>traced</b> stitches together the already-compiled
+     built-ins; <b>symbolic</b> optimises the whole expression as one; <b>symbolic-nocse</b> does that
+     with <code>cse=False</code>; <b>plain</b> is the undecorated function, re-interpreted on every
+     call with only the individual built-ins cached. Values are in ${m.unit}, as the axis says.`;
+}
+
+/* -------------------------------------------------------- array coeffs ---- */
+
+/**
+ * The three vectorised patterns from the array docs, run with and without
+ * `values_asarray`. Not algebra-scoped: the section stands on its own.
+ */
+function drawArrays() {
+  const rows = S.data.filter(r => r.section === 'array');
+  const section = document.getElementById('array-section');
+  section.classList.toggle('hidden', rows.length === 0);
+  if (!rows.length) return;
+
+  const m = METRIC[S.metric];
+  const BASELINE = 'numpy list';
+  // Only backends that actually produced a timing get a colour and a legend entry; the
+  // rest are named underneath with the reason they could not run.
+  const variants = [
+    { name: 'numpy list',    color: 'var(--series-1)' },
+    { name: 'numpy asarray', color: 'var(--series-2)' },
+    { name: 'torch cpu',     color: 'var(--series-3)' },
+    { name: 'torch cuda',    color: 'var(--series-4)' }
+  ].filter(v => rows.some(r => r.variant === v.name && val(r) !== null));
+  renderLegend('legend-array', variants.map(v => ({ color: v.color, label: v.name })));
+
+  const skipped = [...new Set(rows.filter(r => val(r) === null && r.note)
+                                  .map(r => `${r.variant} — ${r.note.replace(/^skipped: /, '')}`))];
+  document.getElementById('na-array').innerHTML = skipped.length
+    ? 'Not measured on this machine: ' + skipped.map(s => `<code>${s}</code>`).join(', ') : '';
+  renderPanel('array', tableHTML(rows,
+    ['operation', 'variant', 'inputs', 'cold_ms', 'cold_n', 'hot_us', 'hot_med_us', 'hot_n', 'note']));
+
+  const names = [...new Set(rows.map(r => r.operation))];
+  const svg = document.getElementById('chart-array');
+  svg.textContent = '';
+  const W = Math.max(560, Math.min(1000, svg.parentNode.clientWidth || 900));
+  const groupH = 16 * variants.length + 12, P = { t: 46, r: 78, b: 8, l: 190 };
+  const H = P.t + names.length * groupH + P.b;
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  const iw = W - P.l - P.r;
+
+  const max = Math.max(...rows.map(r => val(r)).filter(v => v !== null), 0);
+  const ticks = niceTicks(max, 4), top = ticks[ticks.length - 1];
+  const x = v => P.l + (v / top) * iw;
+
+  for (const t of ticks) {
+    el('line', { class: 'gridline', x1: x(t), x2: x(t), y1: P.t - 8, y2: H - P.b }, svg);
+    text(svg, x(t), P.t - 14, fmtShort(t), null, 'middle');
+  }
+  text(svg, 0, 12, m.axis, null, 'start');
+  el('line', { class: 'axisline', x1: P.l, x2: P.l, y1: P.t - 8, y2: H - P.b }, svg);
+
+  const place = labeller();
+  const beats = {};   // how often each backend beats the numpy-list baseline
+  names.forEach((name, i) => {
+    const y0 = P.t + i * groupH;
+    text(svg, P.l - 10, y0 + groupH / 2 + 4, name, 'cat', 'end');
+    const pair = {};
+    variants.forEach((vr, j) => {
+      const r = rows.find(q => q.operation === name && q.variant === vr.name);
+      if (!r) return;
+      const v = val(r); if (v === null) return;
+      pair[vr.name] = v;
+      const bh = (groupH - 8) / variants.length - 2;
+      const y = y0 + 4 + j * (bh + 2);
+      const p = el('path', { d: barPath(P.l, y, Math.max(1, x(v) - P.l), bh, 4, 'right'),
+                             fill: vr.color }, svg);
+      hoverable(p, `<b>${name}</b> <span class="dim">— ${vr.name}</span>
+        <br><span class="dim">${r.inputs} · ${r.note || ''}</span><br>${bothMetrics(r)}`);
+      place(svg, x(v) + 8, y + bh / 2 + 4.5, fmtShort(v), 'start');
+    });
+    for (const vr of variants) {
+      if (vr.name === BASELINE || !pair[vr.name] || !pair[BASELINE]) continue;
+      const b = beats[vr.name] || (beats[vr.name] = { win: 0, of: 0 });
+      b.of++;
+      if (pair[vr.name] < pair[BASELINE]) b.win++;
+    }
+  });
+
+  // The sizes span orders of magnitude by construction, so one group can flatten the rest.
+  const all = rows.map(r => val(r)).filter(v => v !== null).sort((a, b) => a - b);
+  const mid = all[all.length >> 1];
+  const skewed = mid > 0 && max / mid > 20
+    ? ` The largest case is ${Math.round(max / mid)}× the median here, so the smaller sizes are
+        squashed — the table gives every number, and the win/loss count above already accounts
+        for all of them.` : '';
+  const scoreline = Object.entries(beats)
+    .map(([k, b]) => `<b>${k}</b> beats it in ${b.win}/${b.of}`).join(', ');
+  document.getElementById('cap-array').innerHTML =
+    `The three vectorised patterns from the array docs, across coefficient backends, over a 4×
+     size ladder — <b>small / medium / large</b> are N = 64 / 256 / 1024 points, with N/4 lines,
+     8N mesh vertices and 16N faces (exact shapes are in the table and the tooltips).
+     <code>numpy list</code> is the default: one array per basis blade. The others pass a
+     <code>values_asarray</code> that packs the coefficients into a single array — a
+     stack-and-copy on every multivector built, in exchange for cheaper bulk work later.
+     ${scoreline ? `Against the <code>${BASELINE}</code> baseline on this metric: ${scoreline}.` : ''}${skewed}`;
+}
+
+/* --------------------------------------------------------------- KPIs ---- */
+
+const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); const h = s.length >> 1; return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2; };
+const quantile = (a, q) => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(q * s.length))]; };
+
+function drawKPIs() {
+  // Construction and the array section are not algebra-scoped codegen, so they stay out.
+  const rows = S.data.filter(r => r.algebra === S.algebra
+    && r.section !== 'creation' && r.section !== 'array');
+  const cg = rows.map(r => num(r.cold_ms)).filter(v => v !== null);
+  const st = rows.map(r => num(r.hot_us)).filter(v => v !== null);
+  const slowest = rows.filter(r => num(r.cold_ms) !== null)
+                      .sort((a, b) => num(b.cold_ms) - num(a.cold_ms))[0]
+                   || { cold_ms: '', operation: '—', inputs: '' };
+  // Scale the unit to the value: 47022 ms is 47 s, not "47.0k ms".
+  const scale = (v, units) => {
+    if (v === null) return { v: '—', u: '' };
+    let i = 0;
+    while (v >= 1000 && i < units.length - 1) { v /= 1000; i++; }
+    return { v: v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2), u: units[i] };
+  };
+  const ms = v => scale(v, ['ms', 's']), us = v => scale(v, ['µs', 'ms', 's']);
+  const tiles = [
+    { k: 'Median codegen', ...ms(median(cg)), s: `${cg.length} compiled expressions` },
+    { k: '90th percentile codegen', ...ms(quantile(cg, 0.9)), s: '9 in 10 compile faster than this' },
+    { k: 'Slowest codegen', ...ms(num(slowest.cold_ms)), s: `${slowest.operation} (${slowest.inputs})` },
+    { k: 'Median steady state', ...us(median(st)), s: 'per call, generated code cached' }
+  ];
+  document.getElementById('kpis').innerHTML = tiles.map(t =>
+    `<div class="kpi"><div class="k">${t.k}</div>
+     <div class="v">${t.v}<span class="u">${t.u}</span></div>
+     <div class="s">${t.s}</div></div>`).join('');
+}
+
+/* -------------------------------------------------------------- tables --- */
+
+const HEAD = {
+  algebra: 'algebra', d: 'd', operation: 'operation', variant: 'variant', inputs: 'inputs',
+  out_keys: 'out blades', muls: 'muls', divs: 'divs', adds: 'adds', mode: 'mode',
+  cold_ms: 'codegen min (ms)', cold_med_ms: 'codegen median (ms)', cold_n: 'codegen n',
+  hot_us: 'steady min (µs)', hot_med_us: 'steady median (µs)', hot_n: 'steady n',
+  note: 'note', section: 'section'
+};
+const NUMCOL = new Set(['d', 'out_keys', 'muls', 'divs', 'adds',
+                        'cold_ms', 'cold_med_ms', 'cold_n', 'hot_us', 'hot_med_us', 'hot_n']);
+
+function tableHTML(rows, cols) {
+  return `<table><thead><tr>${cols.map(c =>
+      `<th class="${NUMCOL.has(c) ? 'num' : ''}">${HEAD[c] || c}</th>`).join('')}</tr></thead><tbody>`
+    + rows.map(r => `<tr>${cols.map(c =>
+        `<td class="${NUMCOL.has(c) ? 'num' : (c === 'note' ? 'note' : '')}">${r[c] === '' || r[c] === undefined ? '—' : r[c]}</td>`
+      ).join('')}</tr>`).join('')
+    + '</tbody></table>';
+}
+
+/** Each card shows exactly one panel; the view segmented control picks which. */
+function renderPanel(name, tableMarkup) {
+  const t = document.querySelector(`[data-panel="${name}-table"]`);
+  if (t) t.innerHTML = tableMarkup;
+  const showTable = S.view[name] === 'table';
+  const chart = document.querySelector(`[data-panel="${name}-chart"]`);
+  if (chart) chart.classList.toggle('hidden', showTable);
+  if (t) t.classList.toggle('hidden', !showTable);
+}
+
+function drawAllTable() {
+  const host = document.getElementById('all-table');
+  const cols = ['section', 'algebra', 'operation', 'variant', 'inputs', 'out_keys',
+                'muls', 'divs', 'adds', 'cold_ms', 'cold_med_ms', 'cold_n',
+                'hot_us', 'hot_med_us', 'hot_n', 'note'];
+  let rows = S.data.filter(r => r.section === 'creation' || r.section === 'array'
+                                || r.algebra === S.algebra);
+  if (S.q) {
+    const q = S.q.toLowerCase();
+    rows = rows.filter(r => cols.some(c => (r[c] || '').toLowerCase().includes(q)));
+  }
+  if (S.sort) {
+    const c = S.sort, sign = S.asc ? 1 : -1;
+    rows = [...rows].sort((a, b) => NUMCOL.has(c)
+      ? sign * ((num(a[c]) ?? -Infinity) - (num(b[c]) ?? -Infinity))
+      : sign * String(a[c]).localeCompare(String(b[c])));
+  }
+  host.innerHTML = tableHTML(rows, cols);
+  host.querySelectorAll('th').forEach((th, i) => th.addEventListener('click', () => {
+    const c = cols[i];
+    S.asc = S.sort === c ? !S.asc : false;
+    S.sort = c;
+    drawAllTable();
+  }));
+}
+
+/* --------------------------------------------------------------- wire ---- */
+
+function profileOptions() {
+  const sel = document.getElementById('profile');
+  const set = [...new Set(operatorRows().map(r => r.inputs))]
+    .sort((a, b) => (a.split('+').length - b.split('+').length) || a.localeCompare(b));
+  sel.innerHTML = `<option value="__top__">25 slowest</option>`
+    + set.map(p => `<option value="${p}">${p}</option>`).join('');
+  if (!set.includes(S.profile)) S.profile = '__top__';
+  sel.value = S.profile;
+}
+
+function renderAll() {
+  drawKPIs(); drawCreation(); drawOperators(); drawMatrix();
+  drawExpressions(); drawArrays(); drawAllTable();
+}
+
+function boot(text, sourceLabel) {
+  S.data = parseCSV(text);
+  const algebras = [...new Set(S.data.filter(r => r.section !== 'creation').map(r => r.algebra))];
+  S.algebra = algebras.includes('2DPGA') ? '2DPGA' : algebras[0];
+  const sel = document.getElementById('alg');
+  sel.innerHTML = algebras.map(a => `<option${a === S.algebra ? ' selected' : ''}>${a}</option>`).join('');
+  sel.addEventListener('change', () => { S.algebra = sel.value; profileOptions(); renderAll(); });
+
+  document.getElementById('profile').addEventListener('change', e => { S.profile = e.target.value; drawOperators(); });
+  document.getElementById('lhs').addEventListener('change', e => { S.lhs = e.target.value; drawMatrix(); });
+  document.getElementById('rhs').addEventListener('change', e => { S.rhs = e.target.value; drawMatrix(); });
+  document.getElementById('q').addEventListener('input', e => { S.q = e.target.value; drawAllTable(); });
+
+  // The metric control appears twice — once above the sections it scopes, once on the
+  // expressions card where you actually want it. Two views of one piece of state.
+  document.querySelectorAll('.metric-group').forEach(group =>
+    group.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      S.metric = b.dataset.m;
+      document.querySelectorAll('.metric-group button').forEach(c =>
+        c.setAttribute('aria-pressed', c.dataset.m === S.metric));
+      renderAll();
+    }));
+
+  document.querySelectorAll('.view-group').forEach(group =>
+    group.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      const name = group.dataset.view;
+      S.view[name] = b.dataset.v;
+      [...group.children].forEach(c => c.setAttribute('aria-pressed', c === b));
+      ({ create: drawCreation, ops: drawOperators, matrix: drawMatrix,
+         expr: drawExpressions, array: drawArrays })[name]();
+    }));
+
+  document.getElementById('source').innerHTML =
+    `${S.data.length} measurements from <code>${sourceLabel}</code> &middot; regenerate with
+     <code>python tests/benchmark.py</code>`;
+
+  profileOptions();
+  document.getElementById('loader').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  renderAll();
+
+  // Re-render on resize, but only when the charts would actually come out a different
+  // width. Redrawing unconditionally is a feedback loop: a redraw changes the page
+  // height, that toggles the scrollbar, that fires resize, that redraws...
+  let t, lastWidth = document.querySelector('.wrap').clientWidth;
+  addEventListener('resize', () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      const w = document.querySelector('.wrap').clientWidth;
+      if (w === lastWidth) return;
+      lastWidth = w; renderAll();
+    }, 150);
+  });
+}
+
+document.getElementById('theme').addEventListener('click', () => {
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  const cur = document.documentElement.dataset.theme || (dark ? 'dark' : 'light');
+  document.documentElement.dataset.theme = cur === 'dark' ? 'light' : 'dark';
+  renderAll();
+});
+
+document.getElementById('file').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(t => boot(t, f.name));
+});
+
+fetch('benchmark_results.csv')
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+  .then(t => boot(t, 'benchmark_results.csv'))
+  .catch(() => {
+    document.getElementById('loadmsg').innerHTML =
+      `Couldn't fetch <code>benchmark_results.csv</code> &mdash; browsers block that over
+       <code>file://</code>. Either pick the CSV below, or serve the folder:
+       <br><br><code>python -m http.server -d tests</code>`;
+  });
+</script>
+</body>
+</html>

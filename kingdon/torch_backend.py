@@ -58,17 +58,42 @@ except ImportError:  # pragma: no cover
     pass
 
 
+def cat_blades(arrays):
+    """ Arrays whose first axis is the blade axis joined along it, with their other axes broadcast against each other: a bias of shape (o,) joins blades of (batch, o). """
+    shape = torch.broadcast_shapes(*(a.shape[1:] for a in arrays))
+    return torch.cat([a.reshape(len(a), *(1,) * (len(shape) + 1 - a.ndim), *a.shape[1:]).expand(len(a), *shape) for a in arrays])
+
+
 class TorchPrinter(sympy.printing.pytorch.TorchPrinter):
     """
     Prints an operator whose codegen_symbolcls is a sympy symbol, and which can therefore call sympy's functions -- :code:`erf`, say -- as torch code.
     A constant is printed as a number, since :code:`torch.sqrt(2)` wants a tensor.
     """
-    namespace = {'torch': torch}
+    namespace = {'torch': torch, 'cat_blades': cat_blades}
 
     def _print(self, expr, **kwargs):
         if isinstance(expr, sympy.Basic) and expr.is_number and not expr.is_Integer:
             return repr(float(expr))
         return super()._print(expr, **kwargs)
+
+    def _print_ArrayBase(self, expr):
+        return _ARRAY_OPS[type(expr).__name__](self._print, *expr.args)
+
+
+#: How torch spells every kingdon.codegen.ArrayBase, given the printer and the arguments of the node.
+#: values_asarray is in the namespace of every function generated for an algebra over torch; a lone coefficient becomes an array as a view.
+_ARRAY_OPS = {
+    'Stack': lambda p, *vs: f"({p(vs[0])})[None]" if len(vs) == 1 and not vs[0].is_number else f"values_asarray([{', '.join(map(p, vs))}])",
+    'Cat': lambda p, *arrays: f"cat_blades([{', '.join(map(p, arrays))}])",
+    'Blades': lambda p, array, start, stop, *_: f"{p(array)}[{start}:{stop}]",
+    'BladeSum': lambda p, array: f"torch.sum({p(array)}, 0)",
+    'Split': lambda p, array, sizes: f"torch.split({p(array)}, {list(map(int, sizes))})",
+    'Unbind': lambda p, array: f"torch.unbind({p(array)})",
+    'Item': lambda p, pieces, i: f"{p(pieces)}[{i}]",
+    'Einsum': lambda p, pattern, *operands: f"torch.einsum({pattern.name!r}, {', '.join(map(p, operands))})",
+    'Reduce': lambda p, array, operation, axes: f"torch.{ {'max': 'amax', 'min': 'amin'}.get(operation.name, operation.name)}({p(array)}, dim={tuple(map(int, axes))})",
+    'Reshape': lambda p, array, k, sizes: f"torch.unflatten(torch.flatten({p(array)}, {-int(k)}), -1, {tuple(map(int, sizes))})",
+}
 
 
 def values_asarray(values):
