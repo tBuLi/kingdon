@@ -5,6 +5,23 @@ This chapter will explain how :code:`kingdon` works internally to make it easier
 (Under construction.)
 
 
+Blade strings and sparse execution
+----------------------------------
+
+A canonical oriented label such as :code:`e31` is the identity of a basis blade.
+The private blade rules use the algebra's generator order and metric to calculate products,
+and use the supplied basis to recover custom orientations. Generator order need not be the
+lexical order of label characters. Default-basis results sort by grade and label; a custom
+basis uses its supplied order. These rules are shared by symbolic code generation and direct
+operators.
+
+For :code:`large=True`, the default basis is not enumerated during algebra construction.
+Direct operators accumulate observed result labels and sort only those labels. Functions
+that explicitly ask for a full basis still enumerate one when called. Layout-position
+integers exposed by :code:`type_number` and :code:`keys_binary` are calculated on demand;
+they are not blade keys and are not used by large direct operations.
+
+
 Type system internals
 ---------------------
 

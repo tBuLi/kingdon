@@ -131,10 +131,12 @@ but with specific blades, we can do so by providing the :code:`keys` argument.
     >>> x1 𝐞₁ + x12 𝐞₁₂
 
 The canonical key representation is a tuple of blade strings. The scalar blade is ``"e"``.
-Legacy integer bit masks such as ``keys=(0b01, 0b11)`` are accepted as constructor input and
-converted immediately, but :meth:`~kingdon.multivector.MultiVector.keys` and
-:meth:`~kingdon.multivector.MultiVector.items` always expose blade strings. Kingdon derives bit
-masks internally where they are useful for product, sign, and grade computations.
+:meth:`~kingdon.multivector.MultiVector.keys` and
+:meth:`~kingdon.multivector.MultiVector.items` expose these strings, and constructors and type
+layouts accept blade strings. Generator products, signs, and grades are computed directly from
+the labels. A supplied custom basis determines each blade's canonical orientation and basis
+order. :code:`type_number` and :code:`keys_binary` report layout positions for compatibility;
+neither is a blade identity. Integer blade-mask keys are no longer accepted.
 
 Numerical Multivectors
 ----------------------
@@ -619,6 +621,10 @@ A large algebra has no :ref:`multivector types <Multivector Types>`: every multi
 :class:`~kingdon.multivector.MultiVector`. The k-vector constructors such as
 :code:`alg.vector` and :code:`alg.pseudovector` are still there, they simply construct a
 :class:`~kingdon.multivector.MultiVector` of the requested grade.
+Default-basis large algebras construct only generator metadata and the blades they touch.
+Sparse operations order their observed results without enumerating the full basis. Operations
+that explicitly request a full basis, such as :code:`asfullmv()` or a Cayley table, still
+materialize one when called.
 
 For examples of large algebra's, see the OPNS section of the `teahouse <https://tbuli.github.io/teahouse>`_,
 which has some demos in the mother algebra :code:`Algebra(4, 4)`, 2D CSGA :code:`Algebra(5, 3)` and

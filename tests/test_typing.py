@@ -33,17 +33,17 @@ def pos_grades(alg, grds):
 @pytest.mark.parametrize(
     "MVType, layout, grades, bases",
     [
-        (Scalar, {0: ...}, (0,), (KVector,)),
-        (Vector, {1: ..., 2: ..., 4: ..., 8: ...}, (1,), (KVector,)),
-        (Bivector, {9: ..., 10: ..., 12: ..., 3: ..., 5: ..., 6: ...}, (2,), (KVector,)),
-        (Trivector, {14: ..., 13: ..., 11: ..., 7: ...}, (3,), (KVector,)),
-        (Quadvector, {15: ...}, (4,), (KVector,)),
-        (Direction, {14: ..., 13: ..., 11: ...}, (-2,), (MultiVector,)),
-        (EVector, {1: ..., 2: ..., 4: ...}, (1,), (Vector,)),
-        (UPoint, {1: ..., 2: ..., 4: ..., 8: 1.0}, (1,), (Vector,)),
-        (Point, {14: ..., 13: ..., 11: ..., 7: 1.0}, (-2,), (MultiVector,)),
-        (Translation, {0: 1.0, 9: ..., 10: ..., 12: ...}, (0, 2), (Bireflection,)),
-        (Bireflection, {0: ..., 9: ..., 10: ..., 12: ..., 3: ..., 5: ..., 6: ...}, (0, 2), (MultiVector,)),
+        (Scalar, {'e': ...}, (0,), (KVector,)),
+        (Vector, {'e1': ..., 'e2': ..., 'e3': ..., 'e0': ...}, (1,), (KVector,)),
+        (Bivector, {'e01': ..., 'e02': ..., 'e03': ..., 'e12': ..., 'e31': ..., 'e23': ...}, (2,), (KVector,)),
+        (Trivector, {'e032': ..., 'e013': ..., 'e021': ..., 'e123': ...}, (3,), (KVector,)),
+        (Quadvector, {'e0123': ...}, (4,), (KVector,)),
+        (Direction, {'e032': ..., 'e013': ..., 'e021': ...}, (-2,), (MultiVector,)),
+        (EVector, {'e1': ..., 'e2': ..., 'e3': ...}, (1,), (Vector,)),
+        (UPoint, {'e1': ..., 'e2': ..., 'e3': ..., 'e0': 1.0}, (1,), (Vector,)),
+        (Point, {'e032': ..., 'e013': ..., 'e021': ..., 'e123': 1.0}, (-2,), (MultiVector,)),
+        (Translation, {'e': 1.0, 'e01': ..., 'e02': ..., 'e03': ...}, (0, 2), (Bireflection,)),
+        (Bireflection, {'e': ..., 'e01': ..., 'e02': ..., 'e03': ..., 'e12': ..., 'e31': ..., 'e23': ...}, (0, 2), (MultiVector,)),
     ],
 )
 @pytest.mark.parametrize("alg_name", ['2DPGA', '3DPGA'])
@@ -51,21 +51,21 @@ def test_pga_layouts(alg_name, MVType, layout, grades, bases):
     """ Test if the layout classmethods correctly generate the expected layout. Done for different PGA's to ensure the validity. """
     alg = Algebra.fromname(alg_name)
     if alg_name == '2DPGA':
-        # 3DPGA key bits: {0=e1, 1=e2, 2=e3, 3=e0}. 2DPGA key bits: {0=e1, 1=e2, 2=e0}.
-        # Discard keys with e3 (bit 2 in 3DPGA), remap e0 from 3DPGA bit 3 → 2DPGA bit 2.
-        def direct(k):
-            return None if (k & 4) else (k & 3) | ((k >> 1) & 4)
-        if all(g < 0 for g in grades):
-            # Pseudo/dual types: complement in 3D → direct remap → complement in 2D.
-            def remap(k):
-                p = direct(15 - k)
-                return None if p is None else 7 - p
-        else:
-            remap = direct
-        remapped = {k2: v for k, v in layout.items() if (k2 := remap(k)) is not None}
-        layout = {mask: remapped[mask] for mask in alg.blade2mask.values() if mask in remapped}
+        by_support = {frozenset(blade[1:]): blade for blade in alg.basis}
+        pseudo = all(g < 0 for g in grades)
+        remapped = {}
+        for blade, value in layout.items():
+            support = set(blade[1:])
+            if pseudo:
+                missing = set('0123') - support
+                if '3' in missing:
+                    continue
+                support = set('012') - missing
+            elif '3' in support:
+                continue
+            remapped[by_support[frozenset(support)]] = value
+        layout = {blade: remapped[blade] for blade in alg.basis if blade in remapped}
     if max(grades) > alg.d: return
-    layout = {alg.mask2blade[mask]: value for mask, value in layout.items()}
 
     # These types should have a layout on the algebra.
     alg_layout = alg._type_layouts[MVType]
@@ -607,8 +607,8 @@ def test_no_types_in_large_algebras():
     assert not alg.types and not alg._type_layouts
     assert all(type(x) is MultiVector
                for x in (v, v * w, -v, v + w, (v * w).grade(2), alg.pss, alg.blades.e123456789))
-    assert all(list(alg.blades[blade].items()) == [(blade, 1)] for blade in alg.blade2mask)
-    assert alg.pss.keys() == (alg.mask2blade[len(alg) - 1],) and (alg.pss * alg.pss).e == -1
+    assert all(list(alg.blades[blade].items()) == [(blade, 1)] for blade in alg.indices_for_grades(tuple(range(alg.d + 1))))
+    assert alg.pss.keys() == (alg._pseudoscalar_key,) and (alg.pss * alg.pss).e == -1
     assert alg.scalar([1]).grades == (0,) and alg.pseudovector(range(10)).grades == (9,)
     assert alg.purevector([1], grade=0).grades == (0,) and alg.purevector(range(10), grade=9).grades == (9,)
     assert not hasattr(Algebra(6, 0, 1), 'point')
@@ -621,5 +621,5 @@ def test_no_types_in_large_algebras():
 def test_no_types_above_octovector():
     """ Small algebras have no types beyond grade 8 either, and fall back to MultiVector. """
     alg = Algebra(9, large=False)
-    assert type(alg.pss) is MultiVector and alg.pss.keys() == (alg.mask2blade[len(alg) - 1],)
+    assert type(alg.pss) is MultiVector and alg.pss.keys() == (alg._pseudoscalar_key,)
     assert alg.purevector([1], grade=9).grades == (9,)

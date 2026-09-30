@@ -43,8 +43,9 @@ def test_widget(alg):
     assert g.subjects == subjects
 
     # Test if graph has the right basis, signature, and default style.
-    assert g.basis == [b if b != 'e' else '1' for b in alg.blade2mask]
-    assert list(g.key2idx) == list(alg.blade2mask)
+    basis = list(alg.indices_for_grades(tuple(range(alg.d + 1))))
+    assert g.basis == [b if b != 'e' else '1' for b in basis]
+    assert list(g.key2idx) == basis
     assert g.signature == alg.signature
     assert g.options['style'] == {
         'width': 'min( 100%, 1024px )',

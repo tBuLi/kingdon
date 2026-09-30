@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from functools import cached_property, partial, partialmethod
 import re
 from kingdon.multivector import Scalar, MultiVector, MultiVectorType
+from kingdon import blades as blade_rules
 
 
 @dataclass(init=False)
@@ -31,8 +32,7 @@ class TapeRecorder:
 
     @cached_property
     def type_number(self) -> int:
-        return int(''.join('1' if blade in self._keys else '0'
-                           for blade in reversed(self.algebra.blade2mask)), 2)
+        return sum(1 << blade_rules.basis_position(self.algebra, blade) for blade in set(self._keys))
 
     def __len__(self):
         return self.shape[0] if len(self.shape) else 0
@@ -46,7 +46,7 @@ class TapeRecorder:
         if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
             raise AttributeError(f'{self.__class__.__name__} object has no attribute or basis blade {basis_blade}')
         basis_blade, swaps = self.algebra._blade2canon(basis_blade)
-        if basis_blade not in self.algebra.blade2mask:
+        if not basis_blade:
             return self.__class__(
                 algebra=self.algebra,
                 expr="(0,)",

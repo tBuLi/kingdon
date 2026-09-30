@@ -126,7 +126,7 @@ class GraphWidget(anywidget.AnyWidget):
     @traitlets.default('key2idx')
     def get_key2idx(self):
         d = self.algebra.d
-        allkeys = list(self.algebra.blade2mask)
+        allkeys = list(self.algebra.indices_for_grades(tuple(range(self.algebra.d + 1))))
         if ('up' not in self.options) and d <= 6:
             return {k: i for i, k in enumerate(allkeys)}
         # From >6D, ganja wants graded input. In this case we return indices by grade
@@ -147,7 +147,7 @@ class GraphWidget(anywidget.AnyWidget):
 
     @traitlets.default('basis')
     def get_basis(self):
-        return [b if b != 'e' else '1' for b in self.algebra.blade2mask]
+        return [b if b != 'e' else '1' for b in self.algebra.indices_for_grades(tuple(range(self.algebra.d + 1)))]
 
     @traitlets.default('types')
     def get_types(self):

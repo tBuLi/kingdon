@@ -14,6 +14,7 @@ from sympy import Expr, Symbol, sympify, sinc, cos
 from sympy.utilities.iterables import iterable
 
 import kingdon.operators as ops
+from kingdon import blades as blade_rules
 from kingdon.polynomial import RationalPolynomial
 
 
@@ -85,7 +86,7 @@ class MultiVector(metaclass=MultiVectorType):
     def __new__(cls, algebra: "Algebra", values=None, keys=None, *, name=None, grades=None, symbolcls=None, **items):
         """
         :param algebra: Instance of :class:`~kingdon.algebra.Algebra`.
-        :param keys: Semantic blade-string keys, e.g. ``"e"`` or ``"e12"``. Integer bit masks are accepted as legacy input and converted immediately.
+        :param keys: Semantic blade-string keys, e.g. ``"e"`` or ``"e12"``.
         :param values: Values of the multivector. If keys are provided, then keys and values should
             satisfy :code:`len(keys) == len(values)`. If no keys nor grades are provided, :code:`len(values)`
             should equal :code:`len(algebra)`, i.e. a full multivector. If grades is provided,
@@ -112,20 +113,14 @@ class MultiVector(metaclass=MultiVectorType):
                 raise ValueError('Cannot provide both items and keys or values.')
             normalized = {}
             for key, value in items.items():
-                if isinstance(key, int):
-                    try:
-                        target, swaps = algebra.mask2blade[key], 0
-                    except KeyError:
-                        continue
-                else:
-                    if not re.match(r'^e[0-9a-fA-Z]*$', key):
-                        raise KeyError(f'The key {key} does not refer to a valid basis blade.')
-                    target, swaps = algebra._blade2canon(key)
-                    if target not in algebra.blade2mask:
-                        continue
+                if not isinstance(key, str) or not re.match(r'^e[0-9a-fA-Z]*$', key):
+                    raise KeyError(f'The key {key} does not refer to a valid basis blade.')
+                target, swaps = algebra._blade2canon(key)
+                if not target:
+                    continue
                 normalized[target] = -value if swaps % 2 else value
 
-            keysvalues = tuple((blade, normalized[blade]) for blade in algebra.blade2mask if blade in normalized)
+            keysvalues = tuple(sorted(normalized.items(), key=lambda item: algebra._blade_order_key(item[0])))
             keys, values = zip(*keysvalues) if keysvalues else ((), [])
             values = list(values)
 
@@ -152,7 +147,7 @@ class MultiVector(metaclass=MultiVectorType):
         All array construction ultimately funnels through this function.
 
         :param algebra: :class:`~kingdon.algebra.Algebra`
-        :param keys: Blade-string keys corresponding to the values. Legacy integer masks are converted at this API boundary.
+        :param keys: Blade-string keys corresponding to the values.
         :param values: Values of the multivector.
         :param values_asarray: asarray function to be applied to values. E.g. numpy.asarray or torch.asarray. Defaults to :code:`Algebra.values_asarray`.
         :param raw: values_asarray application is skipped.
@@ -163,10 +158,8 @@ class MultiVector(metaclass=MultiVectorType):
                 values = values_asarray(values)
         if not isinstance(keys, tuple):
             keys = tuple(keys)
-        # Keep this low-level path cheap for generated operators while still converting
-        # legacy mask tuples at the boundary.
-        if keys and isinstance(keys[0], int):
-            keys = tuple(algebra.mask2blade[key] for key in keys)
+        if keys and not all(isinstance(key, str) for key in keys):
+            raise TypeError('Basis blade keys must be strings.')
         obj = object.__new__(cls)
         obj.algebra = algebra
         obj._values = values
@@ -203,7 +196,7 @@ class MultiVector(metaclass=MultiVectorType):
                 if grades is None:
                     keys = tuple(k for k, v in layout.items() if v == ...)
                 else:
-                    keys = tuple(k for k, v in layout.items() if v == ... and algebra.blade2mask[k].bit_count() in grades)
+                    keys = tuple(k for k, v in layout.items() if v == ... and blade_rules.grade(k) in grades)
                 return keys
 
             if grades is None:
@@ -212,13 +205,8 @@ class MultiVector(metaclass=MultiVectorType):
         else:
             if not isinstance(keys, tuple):
                 keys = tuple(keys)
-            if not all(isinstance(k, str) for k in keys):
-                try:
-                    keys = tuple(algebra.mask2blade[key] if isinstance(key, int) else key for key in keys)
-                except KeyError as exc:
-                    raise KeyError(f'{exc.args[0]} is not a valid blade bit mask.') from None
-            if not all(key in algebra.blade2mask for key in keys):
-                invalid = next(key for key in keys if key not in algebra.blade2mask)
+            if not all(algebra._is_canonical_blade(key) for key in keys):
+                invalid = next(key for key in keys if not algebra._is_canonical_blade(key))
                 raise KeyError(f'{invalid!r} is not a canonical blade of this algebra.')
 
         # Validate keys against layout if one is provided.
@@ -226,7 +214,7 @@ class MultiVector(metaclass=MultiVectorType):
             if not all(layout.get(k) == ... for k in keys):
                 raise TypeError(f'The provided keys {keys} are not free variables for {cls.__name__} with layout {layout}.')
             if grades is None:
-                grades = tuple(sorted({algebra.blade2mask[k].bit_count()
+                grades = tuple(sorted({blade_rules.grade(k)
                                        for k in keys + tuple(k for k, v in layout.items() if v != ...)}))
 
         if full_layout and algebra._type_layouts:  # The second condition is false before layouts have been bound.
@@ -282,8 +270,7 @@ class MultiVector(metaclass=MultiVectorType):
 
     @cached_property
     def type_number(self) -> int:
-        return int(''.join('1' if blade in self._keys else '0'
-                           for blade in reversed(self.algebra.blade2mask)), 2)
+        return sum(1 << blade_rules.basis_position(self.algebra, blade) for blade in set(self._keys))
 
     @cached_property
     @to_shape_tuple
@@ -321,8 +308,8 @@ class MultiVector(metaclass=MultiVectorType):
     @cached_property
     def grades(self):
         """ Tuple of the grades present in `self`. """
-        grades_in_keys = {self.algebra.blade2mask[k].bit_count() for k in self.keys()}
-        grades_in_fixed_layout = {self.algebra.blade2mask[k].bit_count()
+        grades_in_keys = {blade_rules.grade(k) for k in self.keys()}
+        grades_in_fixed_layout = {blade_rules.grade(k)
                                   for k, v in self.type_layout.items() if v != ...}
         return tuple(sorted(grades_in_keys | grades_in_fixed_layout))
 
@@ -336,9 +323,9 @@ class MultiVector(metaclass=MultiVectorType):
         if len(grades) == 1 and isinstance(grades[0], tuple):
             grades = grades[0]
 
-        items = {k: v for k, v in self.items() if self.algebra.blade2mask[k].bit_count() in grades}
+        items = {k: v for k, v in self.items() if blade_rules.grade(k) in grades}
         res_layout = {k: v for k, v in self.type_layout.items()
-                      if self.algebra.blade2mask[k].bit_count() in grades}
+                      if blade_rules.grade(k) in grades}
         res_layout.update({k: ... for k in items})
         if res_layout:
             from .codegen import resolve_layout
@@ -525,7 +512,7 @@ class MultiVector(metaclass=MultiVectorType):
         if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
             raise AttributeError(f'{self.__class__.__name__} object has no attribute or basis blade {basis_blade}')
         basis_blade, swaps = self.algebra._blade2canon(basis_blade)
-        if basis_blade not in self.algebra.blade2mask:
+        if not basis_blade:
             return 0
         val = 0
         try:
@@ -551,8 +538,6 @@ class MultiVector(metaclass=MultiVectorType):
         raise TypeError("The keys of a MultiVector are immutable, please create a new MultiVector.")
 
     def __contains__(self, item):
-        if isinstance(item, int):
-            item = self.algebra.mask2blade.get(item)
         return item in self._keys
 
     def __bool__(self):
@@ -599,8 +584,7 @@ class MultiVector(metaclass=MultiVectorType):
 
     def asmatrix(self):
         """ Returns a matrix representation of this multivector. """
-        mask2index = {mask: i for i, mask in enumerate(self.algebra.blade2mask.values())}
-        return sum(v * self.algebra.matrix_basis[mask2index[self.algebra.blade2mask[k]]]
+        return sum(v * self.algebra.matrix_basis[blade_rules.basis_position(self.algebra, k)]
                    for k, v in self.items())
 
     def asfullmv(self, canonical=True):
@@ -614,7 +598,7 @@ class MultiVector(metaclass=MultiVectorType):
         if canonical:
             keys = tuple(self.algebra.indices_for_grades(tuple(range(self.algebra.d + 1))))
         else:
-            keys = tuple(self.algebra.mask2blade[mask] for mask in range(len(self.algebra)))
+            keys = tuple(blade_rules.subset_order(self.algebra))
         values = [getattr(self, blade) for blade in keys]
         return self.fromkeysvalues(self.algebra, keys=keys, values=values)
 
@@ -625,7 +609,7 @@ class MultiVector(metaclass=MultiVectorType):
             return self
         if layout := self.type_layout:
             # Sort the layout to canonical order, since a layout may be in whatever order its type likes.
-            layout = {k: layout[k] for k in self.algebra.blade2mask if k in layout}
+            layout = {k: layout[k] for k in sorted(layout, key=self.algebra._blade_order_key)}
             keysvalues = tuple((k, v if v != ... else getattr(self, k))
                                for k, v in layout.items() if k in self.keys() or v != ...)
             keys, values = zip(*keysvalues) if keysvalues else (tuple(), list())
@@ -979,8 +963,9 @@ def _union_keys(mvs: list[MultiVector]) -> tuple[str, ...]:
         return keys
     union = set().union(*(mv.keys() for mv in mvs))
     # A layout is already in the order that its type uses.
-    order = list(mvs[0].type_layout) or mvs[0].algebra.blade2mask
-    return tuple(k for k in order if k in union)
+    if order := list(mvs[0].type_layout):
+        return tuple(k for k in order if k in union)
+    return tuple(sorted(union, key=mvs[0].algebra._blade_order_key))
 
 
 def _coefficients(mv: MultiVector, keys: tuple[str, ...], zeros_like=_zeros_like) -> list:

@@ -64,17 +64,17 @@ def test_MultiVector(ga101):
         # No algebra provided
         X = MultiVector(name='X')
     with pytest.raises(KeyError):
-        # Dict keys must be canonical basis blade strings (legacy masks are converted).
+        # Dict keys must be basis blade strings.
         X = MultiVector(values={'a': 2, 'e12': 1}, algebra=ga101)
-    X = MultiVector(values={0: 2.2, 'e12': 1.2}, algebra=ga101)
+    X = MultiVector(values={'e': 2.2, 'e12': 1.2}, algebra=ga101)
     assert dict(X.items()) == {'e': 2.2, 'e12': 1.2}
 
     assert ga101.vector(e1=1, e2=0) == ga101.vector(e1=1, e2=0, e3=0)
 
 def test_anticommutation(ga101, vga11, vga2d):
     for alg in [ga101, vga11, vga2d]:
-        X = alg.multivector({1: 1})
-        Y = alg.multivector({2: 1})
+        X = alg.multivector({'e1': 1})
+        Y = alg.multivector({'e2': 1})
         assert X*Y == -Y*X
 
 def test_gp(ga101):
@@ -101,14 +101,14 @@ def test_cayley(ga101, vga2d, vga11):
 def test_purevector(ga101):
     with pytest.raises(TypeError):
         # Grade needs to be specified.
-        ga101.purevector({1: 1, 2: 1})
+        ga101.purevector({'e1': 1, 'e2': 1})
     with pytest.raises(ValueError):
         # Grade must be valid, in this case no larger than 2.
-        ga101.purevector({1: 1, 2: 1}, grade=10)
+        ga101.purevector({'e1': 1, 'e2': 1}, grade=10)
     with pytest.raises(TypeError):
         # vals must be of the specified grade.
-        ga101.purevector({0: 1, 2: 1}, grade=1)
-    x = ga101.purevector({1: 1, 2: 1}, grade=1)
+        ga101.purevector({'e': 1, 'e2': 1}, grade=1)
+    x = ga101.purevector({'e1': 1, 'e2': 1}, grade=1)
     assert type(x) == Vector
     assert x.grades == (1,)
 
@@ -130,7 +130,7 @@ def test_broadcasting(vga2d):
     assert np.all(Z.e1 == Z2.e1) and np.all(Z.e2 == Z2.e2)
 
     # Test broadcasting a rotor across a tensor-valued element
-    R = vga2d.multivector({0: np.cos(np.pi / 3), 3: np.sin(np.pi / 3)})
+    R = vga2d.multivector({'e': np.cos(np.pi / 3), 'e12': np.sin(np.pi / 3)})
     Z3 = R.sw(X)
     for i, xrow in enumerate(valsX.T):
         Rx = R.sw(vga2d.vector(xrow))
@@ -143,7 +143,7 @@ def test_reverse(R6):
     assert X.grade((2, 3, 6)) == - Xrev.grade((2, 3, 6))
 
 def test_getattr_setattr(ga101):
-    X = ga101.multivector({0: 2, 'e12': 3})
+    X = ga101.multivector({'e': 2, 'e12': 3})
     assert X.e == 2 and X.e12 == 3
     assert X.e1 == 0 and X.e2 == 0
     # Asking for a valid basis blade outside of the algebra should also return 0
@@ -185,7 +185,7 @@ def test_gp_symbolic(vga2d):
     assert expand(Rnormsq.e - ((u1*v1 + u2*v2)**2 + (u1*v2 - u2*v1)**2)) == 0
     assert len(Rnormsq.values()) == 1
     assert 'e12' not in Rnormsq
-    assert 0 in Rnormsq
+    assert 'e' in Rnormsq
     assert Rnormsq.e12 == 0
 
 def test_sw_symbolic(vga2d):
@@ -304,7 +304,7 @@ def test_blades_typing_3dpga(alg, basis_blade, expected, expected_full):
 
 
 def _assert_canonical(mv, label=''):
-    canon_pos = {k: i for i, k in enumerate(mv.algebra.blade2mask)}
+    canon_pos = {k: i for i, k in enumerate(mv.algebra.indices_for_grades(tuple(range(mv.algebra.d + 1))))}
     positions = [canon_pos[k] for k in mv.keys()]
     assert positions == sorted(positions), f'{label}: keys {mv.keys()} not in basis order (positions={positions})'
 
@@ -360,7 +360,7 @@ def test_canonical_key_order(alg):
     for grade in range(alg.d + 1):
         _assert_canonical(x.grade(grade), label=f'grade({grade})')
 
-    for blade in alg.blade2mask:
+    for blade in alg.indices_for_grades(tuple(range(alg.d + 1))):
         _assert_canonical(alg.blades[blade], label=f'blades[{blade}]')
 
     _assert_canonical(ops.add(x.grade(0), x.grade(2)), label='add(g0,g2)')
@@ -490,10 +490,10 @@ def test_regressive(ga301):
     """ Test the regressive product of full mvs in 3DPGA against the known result from GAmphetamine.js"""
     xvals = symbols(','.join(f'x{i}' for i in range(1, len(ga301) + 1)))
     x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16 = xvals
-    x = ga301.multivector({k: xvals[i] for i, k in enumerate(ga301.blade2mask)})
+    x = ga301.multivector({k: xvals[i] for i, k in enumerate(ga301.indices_for_grades(tuple(range(ga301.d + 1))))})
     yvals = symbols(','.join(f'y{i}' for i in range(1, len(ga301) + 1)))
     y1, y2, y3, y4, y5, y6, y7, y8, y9, y10, y11, y12, y13, y14, y15, y16 = yvals
-    y = ga301.multivector({k: yvals[i] for i, k in enumerate(ga301.blade2mask)})
+    y = ga301.multivector({k: yvals[i] for i, k in enumerate(ga301.indices_for_grades(tuple(range(ga301.d + 1))))})
 
     # Known output from GAmphetamine.js
     known_vals = {
@@ -576,10 +576,7 @@ def test_oddmultivector(R6):
 
 
 def test_namedmv(R6):
-    legacy_masks = (1, 3, 17)
     named_keys = ('e1', 'e12', 'e15')
-    x = R6.multivector(name='x', keys=legacy_masks)
-    assert x.keys() == named_keys
     y = R6.multivector(name='x', keys=named_keys)
     assert y.keys() == named_keys
 
@@ -696,7 +693,7 @@ def test_outerexp(R6):
 
 def test_outertrig(R6):
     alg = Algebra(6)
-    B = alg.bivector(name='B', keys=(0b110000, 0b1100, 0b11))
+    B = alg.bivector(name='B', keys=('e56', 'e34', 'e12'))
     sB = B.outersin()
     cB = B.outercos()
 
@@ -825,10 +822,11 @@ def test_asfullmv():
     # Manually make the expected dense x
     x_densevals = np.zeros(len(alg))
     x_densevals[np.array([1, 2, 4])] = xvals
-    x_dense = alg.multivector(x_densevals, keys=tuple(range(8)))
+    expected_subset_order = ('e', 'e0', 'e1', 'e01', 'e2', 'e02', 'e12', 'e012')
+    x_dense = alg.multivector(x_densevals, keys=expected_subset_order)
     # Compare to asfullmv method.
     y = x.asfullmv(canonical=False)
-    assert y.keys() == x_dense.keys()
+    assert y.keys() == expected_subset_order
     np.testing.assert_equal(y.values(), x_dense.values())
 
     # Manually make the expected dense x in canonical ordering
@@ -857,7 +855,7 @@ def test_full_layout(alg):
 
     with pytest.raises(ValueError):
         # In full_layout mode, the keys have to be correct.
-        x = alg.multivector(name='x', keys=(1,))
+        x = alg.multivector(name='x', keys=('e1',))
 
 
 def test_blade_dict():
@@ -1046,7 +1044,7 @@ def test_blades_of_grade():
         assert blades_of_grade == blades_of_grade_alt
         assert tuple(blades_of_grade) == expected_keys
         assert isinstance(blades_of_grade, dict)
-        assert all(label in alg.blade2mask and blade.grades[0] in grades
+        assert all(alg._is_canonical_blade(label) and blade.grades[0] in grades
                    for label, blade in blades_of_grade.items())
 
 def test_map_filter():
@@ -1128,45 +1126,6 @@ def test_free_symbols():
     X = alg.multivector()
     assert X.free_symbols == set()
 
-def test_swap_blades():
-    """
-    Test the _swap_blades function, which should place like-labels together
-    to find the number of swaps and the resulting blade.
-    """
-    from kingdon.algebra import _swap_blades
-
-    tests = [
-        {'input': ('1', '2', '12'), 'output': (0, '12', '')},
-        {'input': ('1', '2', '21'), 'output': (1, '21', '')},
-        {'input': ('123', '1', '23'), 'output': (2, '23', '1')},
-        {'input': ('123', '1', '32'), 'output': (3, '32', '1')},
-
-        {'input': ('23', '1', '123'), 'output': (2, '123', '')},
-
-        {'input': ('', ''), 'output': (0, '', '')},
-        {'input': ('', '2'), 'output': (0, '2', '')},
-        {'input': ('2', ''), 'output': (0, '2', '')},
-        {'input': ('21', '3'), 'output': (0, '213', '')},
-        {'input': ('21', '1'), 'output': (0, '2', '1')},
-        {'input': ('12', '1'), 'output': (1, '2', '1')},
-        {'input': ('1', '21'), 'output': (1, '2', '1')},
-        {'input': ('1', '12'), 'output': (0, '2', '1')},
-        {'input': ('321', '3'), 'output': (2, '21', '3')},
-        {'input': ('231', '3'), 'output': (1, '21', '3')},
-        {'input': ('213', '3'), 'output': (0, '21', '3')},
-        {'input': ('3', '321'), 'output': (0, '21', '3')},
-        {'input': ('3', '231'), 'output': (1, '21', '3')},
-        {'input': ('3', '213'), 'output': (2, '21', '3')},
-        {'input': ('31', '321'), 'output': (2, '2', '31')},
-        {'input': ('321', '31'), 'output': (2, '2', '31')},
-        {'input': ('123', '12'), 'output': (3, '3', '12')},
-    ]
-    for test in tests:
-        swaps, res_blade, eliminated = _swap_blades(*test['input'])
-        assert swaps == test['output'][0]
-        assert res_blade == test['output'][1]
-        assert eliminated == test['output'][2]
-
 def test_custom_basis():
     with pytest.raises(ValueError):
         Algebra.fromname('fantasyalgebra')
@@ -1187,7 +1146,7 @@ def test_custom_basis():
 
     for basis, pga, alg in [(basis_2dpga, pga2d, alg201), (basis_3dpga, pga3d, alg301), (basis_stap, stap, alg311)]:
         assert pga.basis == basis
-        assert list(pga.blade2mask) == basis
+        assert list(pga.indices_for_grades(tuple(range(pga.d + 1)))) == basis
 
         e20, e0, e2 = pga.blades.e20, pga.blades.e0, pga.blades.e2
         assert e20 * e2 == - e0
@@ -1205,18 +1164,18 @@ def test_custom_basis():
         X_dual = X.dual()
         assert x == x_dual.undual()
         assert X == X_dual.undual()
-        assert all(getattr(x, blade) == getattr(X, blade) for blade in alg.blade2mask)
-        assert all(getattr(x, blade) == getattr(X, blade) for blade in pga.blade2mask)
-        assert all(getattr(x_dual, blade) == getattr(X_dual, blade) for blade in alg.blade2mask)
-        assert all(getattr(x_dual, blade) == getattr(X_dual, blade) for blade in pga.blade2mask)
+        assert all(getattr(x, blade) == getattr(X, blade) for blade in alg.indices_for_grades(tuple(range(alg.d + 1))))
+        assert all(getattr(x, blade) == getattr(X, blade) for blade in pga.indices_for_grades(tuple(range(pga.d + 1))))
+        assert all(getattr(x_dual, blade) == getattr(X_dual, blade) for blade in alg.indices_for_grades(tuple(range(alg.d + 1))))
+        assert all(getattr(x_dual, blade) == getattr(X_dual, blade) for blade in pga.indices_for_grades(tuple(range(pga.d + 1))))
 
         # Same, but now after performing a product.
         for op in [operator.mul, operator.xor, operator.and_, operator.add, operator.sub, operator.or_]:
             y = alg.multivector(name='y')
             Y = pga.multivector(**dict(y.items()))
             xy, XY = op(x, y), op(X, Y)
-            assert all(getattr(xy, blade) == getattr(XY, blade) for blade in alg.blade2mask)
-            assert all(getattr(xy, blade) == getattr(XY, blade) for blade in pga.blade2mask)
+            assert all(getattr(xy, blade) == getattr(XY, blade) for blade in alg.indices_for_grades(tuple(range(alg.d + 1))))
+            assert all(getattr(xy, blade) == getattr(XY, blade) for blade in pga.indices_for_grades(tuple(range(pga.d + 1))))
 
 def test_apply_to_list():
     alg = Algebra(2, 0, 1)
@@ -1266,7 +1225,7 @@ def test_101():
     # No news is good news, because with kingdon <= 1.5.1 this raised a MemoryError
     alg = Algebra(16)
     assert alg.large
-    basisvectors = [alg.vector(keys=(alg.mask2blade[2 ** i],), values=(1.0,)) for i in range(alg.d)]
+    basisvectors = [alg.vector(keys=('e' + generator,), values=(1.0,)) for generator in alg._generators]
     e0, e1, e2, e3, *rest = basisvectors
     e01, e02, e03 = e0 ^ e1, e0 ^ e2, e0 ^ e3
     assert e01 == e0 * e1

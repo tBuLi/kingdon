@@ -12,6 +12,7 @@ from functools import reduce, wraps
 from fractions import Fraction as PyFraction
 
 from kingdon.powers import power_supply
+from kingdon import blades as blade_rules
 
 
 def is_zero(v) -> bool:
@@ -32,9 +33,9 @@ def is_zero(v) -> bool:
 
 
 def dict_to_multivector(res: dict, algebra) -> "MultiVector":
-    # Drop zeros and put the remaining blade names back in basis order.
+    # Only sort blades actually produced by this operation.
     nonzero = {k: v for k, v in res.items() if not is_zero(v)}
-    items = [(k, nonzero[k]) for k in algebra.blade2mask if k in nonzero]
+    items = sorted(nonzero.items(), key=lambda item: algebra._blade_order_key(item[0]))
     keys, values = zip(*items) if items else ((), [])
     return algebra.mvtype.fromkeysvalues(algebra, keys, list(values), raw=True)
 
@@ -43,38 +44,19 @@ def scalar(algebra, value) -> "MultiVector":
     return algebra.mvtype.fromkeysvalues(algebra, ('e',), [value], raw=True)
 
 
-def product(
-    x: "MultiVector",
-    y: "MultiVector",
-    filter_func=None,
-    sign_func=None,
-    keyout_func=operator.xor
-) -> "MultiVector":
+def product(x: "MultiVector", y: "MultiVector", filter_func=None) -> "MultiVector":
     """
-    Helper function for the codegen of all product-type functions.
+    Accumulate blade products for symbolic codegen or direct sparse execution.
 
-    :param x: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
-    :param y: Fully symbolic :class:`~kingdon.multivector.MultiVector`.
-    :param filter_func: A condition which should be true in the preprocessing of terms.
-        Input is a TermTuple.
-    :param sign_func: function to compute sign between terms. E.g. algebra.signs[ei, ej]
-        for metric dependent products. Input: 2-tuple of blade indices, e.g. (ei, ej).
-    :param keyout_func:
+    :param x: :class:`~kingdon.multivector.MultiVector`.
+    :param y: :class:`~kingdon.multivector.MultiVector`.
+    :param filter_func: Optional predicate on input and output blade strings.
     """
     algebra = x.algebra
-    sign_func = sign_func or (lambda pair: algebra.signs[pair])
-
-    # Blade strings carry semantic identity. Convert them to masks once here and do all
-    # Clifford product/sign/grade logic on integers.
-    x_terms = ((algebra.blade2mask[key], value) for key, value in x.items())
-    y_terms = tuple((algebra.blade2mask[key], value) for key, value in y.items())
     res = {}
-    for (kx, vx), (ky, vy) in itertools.product(x_terms, y_terms):
-        if (sign := sign_func((kx, ky))):
-            mask_out = keyout_func(kx, ky)
-            if filter_func and not filter_func(kx, ky, mask_out):
-                continue
-            key_out = algebra.mask2blade[mask_out]
+    for (kx, vx), (ky, vy) in itertools.product(x.items(), y.items()):
+        key_out, sign = blade_rules.product_blades(algebra, kx, ky)
+        if sign and (filter_func is None or filter_func(kx, ky, key_out)):
             termstr = vx * vy if sign > 0 else (-vx * vy)
             res[key_out] = res[key_out] + termstr if key_out in res else termstr
     return dict_to_multivector(res, x.algebra)
@@ -125,8 +107,7 @@ def cp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
 
     :return: multivector with blade-string keys.
     """
-    algebra = x.algebra
-    filter_func = lambda kx, ky, k_out: (algebra.signs[kx, ky] - algebra.signs[ky, kx])
+    filter_func = lambda kx, ky, k_out: blade_rules.commutation_parity(kx, ky)
     return product(x, y, filter_func=filter_func)
 
 
@@ -136,8 +117,7 @@ def acp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
 
     :return: multivector with blade-string keys.
     """
-    algebra = x.algebra
-    filter_func = lambda kx, ky, k_out: (algebra.signs[kx, ky] + algebra.signs[ky, kx])
+    filter_func = lambda kx, ky, k_out: not blade_rules.commutation_parity(kx, ky)
     return product(x, y, filter_func=filter_func)
 
 
@@ -145,12 +125,12 @@ def ip(x: "MultiVector", y: "MultiVector", diff_func: Callable=abs) -> "MultiVec
     """
     Generate the inner product of :code:`x` and :code:`y`.
 
-    :param diff_func: How to treat the difference between the internal blade masks.
+    :param diff_func: How to treat the difference between input blade grades.
         if :code:`abs`, compute the symmetric inner product. When :code:`lambda x: -x` this
         function generates left-contraction, and when :code:`lambda x: x`, right-contraction.
     :return: multivector with blade-string keys.
     """
-    filter_func = lambda kx, ky, k_out: k_out == diff_func(kx - ky)
+    filter_func = lambda kx, ky, k_out: blade_rules.grade(k_out) == diff_func(blade_rules.grade(kx) - blade_rules.grade(ky))
     return product(x, y, filter_func=filter_func)
 
 
@@ -205,7 +185,7 @@ def op(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     :y: "MultiVector"
     :return: multivector with blade-string keys.
     """
-    filter_func = lambda kx, ky, k_out: k_out == kx + ky
+    filter_func = lambda kx, ky, k_out: blade_rules.grade(k_out) == blade_rules.grade(kx) + blade_rules.grade(ky)
     return product(x, y, filter_func=filter_func)
 
 
@@ -219,29 +199,25 @@ def rp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     :return: multivector with blade-string keys.
     """
     algebra = x.algebra
-    key_pss = len(algebra) - 1
-    keyout_func = lambda kx, ky: key_pss - (kx ^ ky)
-    filter_func = lambda kx, ky, k_out: key_pss == kx + ky - k_out
-    # Sign is composed of dualization of each blade, exterior product, and undual.
-    sign_func = lambda pair: (
-        algebra.signs[pair[0], key_pss - pair[0]] *
-        algebra.signs[pair[1], key_pss - pair[1]] *
-        algebra.signs[key_pss - pair[0], key_pss - pair[1]] *
-        algebra.signs[key_pss - (pair[0] ^ pair[1]), pair[0] ^ pair[1]]
-    )
-
-    return product(
-        x, y,
-        filter_func=filter_func,
-        keyout_func=keyout_func,
-        sign_func=sign_func,
-    )
+    res = {}
+    left = ((*blade_rules.hodge_blade(algebra, a), va) for a, va in x.items())
+    right = tuple((*blade_rules.hodge_blade(algebra, b), vb) for b, vb in y.items())
+    for (da, sa, va), (db, sb, vb) in itertools.product(left, right):
+        joined, wedge_sign = blade_rules.product_blades(algebra, da, db)
+        if blade_rules.grade(joined) != blade_rules.grade(da) + blade_rules.grade(db):
+            continue
+        output, final_sign = blade_rules.hodge_blade(algebra, joined, undual=True)
+        sign = sa * sb * wedge_sign * final_sign
+        if sign:
+            term = va * vb if sign > 0 else -(va * vb)
+            res[output] = res[output] + term if output in res else term
+    return dict_to_multivector(res, algebra)
 
 def grade(x: "MultiVector", *grades) -> "MultiVector":
     """ Select grade g part of x. """
     if len(grades) == 1 and isinstance(grades[0], tuple):
         grades = grades[0]
-    res = {k: v for k, v in x.items() if x.algebra.blade2mask[k].bit_count() in grades}
+    res = {k: v for k, v in x.items() if blade_rules.grade(k) in grades}
     return dict_to_multivector(res, x.algebra)
 
 
@@ -435,7 +411,7 @@ def involutions(x: "MultiVector", invert_grades: tuple[int, int] = (2, 3)) -> "M
 
     :param invert_grades: The grades that flip sign under this involution mod 4, e.g. (2, 3) for reversion.
     """
-    res = {k: -v if x.algebra.blade2mask[k].bit_count() % 4 in invert_grades else v
+    res = {k: -v if blade_rules.grade(k) % 4 in invert_grades else v
            for k, v in x.items()}
     return dict_to_multivector(res, x.algebra)
 
@@ -477,12 +453,11 @@ def sqrt(x: "MultiVector") -> "MultiVector":
 
 def polarity(x: "MultiVector", undual: bool = False) -> "MultiVector":
     # The pseudoscalar, kept raw for the same reason as the constants in :func:`scalar`.
-    pss_key = x.algebra.mask2blade[len(x.algebra) - 1]
+    pss_key = x.algebra._pseudoscalar_key
     pss = x.algebra.mvtype.fromkeysvalues(x.algebra, (pss_key,), [1], raw=True)
     if undual:
         return gp(x, pss)
-    key_pss = len(x.algebra) - 1
-    sign = x.algebra.signs[key_pss, key_pss]
+    sign = blade_rules.product_blades(x.algebra, pss_key, pss_key)[1]
     if sign == -1:
         return - gp(x, pss)
     return gp(x, pss)
@@ -494,13 +469,10 @@ def unpolarity(x: "MultiVector") -> "MultiVector":
 
 def hodge(x: "MultiVector", undual: bool = False) -> "MultiVector":
     algebra = x.algebra
-    pss_mask = len(algebra) - 1
     res = {}
     for blade, value in x.items():
-        mask = algebra.blade2mask[blade]
-        dual_mask = pss_mask - mask
-        sign_pair = (dual_mask, mask) if undual else (mask, dual_mask)
-        res[algebra.mask2blade[dual_mask]] = -value if algebra.signs[sign_pair] < 0 else value
+        output, sign = blade_rules.hodge_blade(algebra, blade, undual=undual)
+        res[output] = -value if sign < 0 else value
     return dict_to_multivector(res, algebra)
 
 

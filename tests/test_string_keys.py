@@ -21,23 +21,22 @@ def test_string_keys_are_canonical_for_construction_access_and_layouts():
     alg = Algebra(3)
     symbolic = alg.multivector(name='x', keys=('e', 'e1', 'e23'))
     numeric = alg.multivector({'e': 1, 'e1': 2, 'e23': 3})
-    legacy = alg.multivector(keys=(0, 1, 6), values=[1, 2, 3])
-    legacy_mapping = alg.multivector({0: 1, 1: 2, 6: 3})
-    legacy_low_level = type(numeric).fromkeysvalues(
-        alg, (0, 1, 6), [1, 2, 3]
-    )
-
-    assert symbolic.keys() == numeric.keys() == legacy.keys()
-    assert legacy_mapping.keys() == legacy_low_level.keys() == legacy.keys()
+    assert symbolic.keys() == numeric.keys()
     assert symbolic.keys() == ('e', 'e1', 'e23')
     assert symbolic.e == Symbol('x')
     assert symbolic.e23 == Symbol('x23')
     assert dict(numeric.items()) == {'e': 1, 'e1': 2, 'e23': 3}
-    # Integer membership remains a compatibility input.
-    assert 'e23' in numeric and 6 in numeric
+    assert 'e23' in numeric and 6 not in numeric
     assert_string_keys(
-        symbolic, numeric, legacy, legacy_mapping, legacy_low_level
+        symbolic, numeric
     )
+
+    with pytest.raises(KeyError):
+        alg.multivector(keys=(0, 1), values=[1, 2])
+    with pytest.raises(KeyError):
+        alg.multivector({0: 1})
+    with pytest.raises(TypeError):
+        type(numeric).fromkeysvalues(alg, (0,), [1])
 
     vector = alg.vector(name='v')
     assert vector.type_layout == {'e1': ..., 'e2': ..., 'e3': ...}
@@ -48,7 +47,7 @@ def test_string_keys_are_canonical_for_construction_access_and_layouts():
     )
 
 
-def test_vga_products_keep_masks_internal_and_expose_string_keys():
+def test_vga_products_use_string_keys():
     alg = Algebra(3)
     e1, e2, e12, e23 = (
         alg.blades[key] for key in ('e1', 'e2', 'e12', 'e23')
@@ -85,7 +84,7 @@ def test_degenerate_pga_string_keys_and_typed_layouts(name):
 
 def test_named_3dpga_preserves_nonlexicographic_blade_identity_and_signs():
     alg = Algebra.fromname('3DPGA')
-    assert list(alg.blade2mask) == [
+    assert list(alg.indices_for_grades(tuple(range(alg.d + 1)))) == [
         'e', 'e1', 'e2', 'e3', 'e0',
         'e01', 'e02', 'e03', 'e12', 'e31', 'e23',
         'e032', 'e013', 'e021', 'e123', 'e0123',
@@ -117,11 +116,8 @@ def test_named_3dpga_preserves_nonlexicographic_blade_identity_and_signs():
     assert coefficient.e == -2
 
     semantic = alg.multivector(keys=('e31', 'e032'), values=[2, 3])
-    legacy = alg.multivector(
-        keys=(alg.blade2mask['e31'], alg.blade2mask['e032']),
-        values=[2, 3],
-    )
-    assert semantic.type_number == legacy.type_number
+    assert semantic.type_number == 0b0000101000000000
+    assert format(semantic, 'keys_binary') == '0000101000000000'
 
     values = np.arange(len(alg))
     full = alg.multivector(values)
