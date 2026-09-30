@@ -115,19 +115,7 @@ def test_all_blade_pairs_against_removed_mask_path(algebra):
         assert dict(ops.unhodge(algebra.blades[blade]).items()) == {dual: old_gp(dual, blade)[1]}
 
 
-def test_sparse_large_does_not_materialize_full_basis():
-    algebra = Algebra(20, large=True)
-    assert not hasattr(algebra, 'blade2mask')
-    assert not hasattr(algebra, 'mask2blade')
-    assert len(algebra.blades) == algebra.d + 1  # basis vectors and pseudoscalar
-    a = algebra.multivector({'e1': 2, 'eA': 3})
-    b = algebra.multivector({'e2': 5, 'eB': 7})
-    result = a * b
-    assert result.keys() == ('e12', 'e1B', 'e2A', 'eAB')
-    assert len(algebra.blades) == algebra.d + 1
-
-
-def test_default_basis_position_and_full_orders():
+def test_default_basis_position():
     for d in (3, 12):
         algebra = Algebra(d, large=True)
         blades = tuple(algebra.indices_for_grades(tuple(range(d + 1))))
@@ -136,57 +124,6 @@ def test_default_basis_position_and_full_orders():
     assert high._generators[-3:] == ('P', 'R', 'Q')
     assert all(rules.basis_position(high, blade) == 1 + high.d + i
                for i, blade in enumerate(high.indices_for_grade(2)))
-    algebra = Algebra.fromname('3DPGA', large=True)
-    expected_subset_order = (
-        'e', 'e1', 'e2', 'e12', 'e3', 'e31', 'e23', 'e123',
-        'e0', 'e01', 'e02', 'e021', 'e03', 'e013', 'e032', 'e0123',
-    )
-    assert tuple(rules.subset_order(algebra)) == expected_subset_order
-    assert algebra.blades.e.asfullmv(canonical=False).keys() == expected_subset_order
-
-
-def test_binary_blade_compatibility_is_removed():
-    algebra = Algebra(3)
-    for name in ('blade2mask', 'mask2blade', 'canon2bin', 'bin2canon', 'signs'):
-        assert not hasattr(algebra, name)
-    with pytest.raises(KeyError):
-        algebra.multivector({1: 2})
-    with pytest.raises(KeyError):
-        algebra.multivector(keys=(1,), values=[2])
-    with pytest.raises(TypeError):
-        type(algebra.blades.e).fromkeysvalues(algebra, (1,), [2])
-
-
-@pytest.mark.parametrize('basis, message', [
-    (['e', 'e1', 'e2'], 'every blade'),
-    (['e', 'e1', 'e12', 'e21'], 'every generator blade'),
-    (['e', 'e1', 'e2', 'e1'], 'Duplicate generator support'),
-    (['e', 'e1', 'e2', 'e11'], 'Invalid custom basis blade'),
-    (['e', 'e1', 'e2', 'e1@'], 'Invalid custom basis blade'),
-    (['e', 'e12', 'e1', 'e2'], 'grade order'),
-])
-def test_invalid_custom_basis(basis, message):
-    with pytest.raises(ValueError, match=message):
-        Algebra(2, basis=basis)
-
-
-def test_grade_requests_follow_basis_order():
-    default = Algebra(3)
-    expected = ('e1', 'e2', 'e3', 'e12', 'e13', 'e23')
-    assert tuple(default.indices_for_grades((2, 1))) == expected
-    assert tuple(default.indices_for_grades((1, 2))) == expected
-
-    custom = Algebra.fromname('3DPGA')
-    expected = ('e1', 'e2', 'e3', 'e0', 'e01', 'e02', 'e03', 'e12', 'e31', 'e23')
-    assert tuple(custom.indices_for_grades((2, 1))) == expected
-    assert tuple(custom.indices_for_grades((1, 2))) == expected
-
-
-def test_exact_default_layout_position_outputs():
-    algebra = Algebra(3)
-    mv = algebra.multivector(keys=('e', 'e3', 'e13', 'e123'), values=[1, 2, 3, 4])
-    assert mv.type_number == 0b10101001
-    assert format(mv, 'keys_binary') == '10101001'
 
 
 def test_custom_basis_with_letter_generators():

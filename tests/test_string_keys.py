@@ -19,6 +19,8 @@ def assert_string_keys(*mvs):
 
 def test_string_keys_are_canonical_for_construction_access_and_layouts():
     alg = Algebra(3)
+    for name in ('blade2mask', 'mask2blade', 'canon2bin', 'bin2canon', 'signs'):
+        assert not hasattr(alg, name)
     symbolic = alg.multivector(name='x', keys=('e', 'e1', 'e23'))
     numeric = alg.multivector({'e': 1, 'e1': 2, 'e23': 3})
     assert symbolic.keys() == numeric.keys()
@@ -45,6 +47,51 @@ def test_string_keys_are_canonical_for_construction_access_and_layouts():
         for layout in alg._type_layouts.values()
         for key in layout
     )
+
+
+@pytest.mark.parametrize('basis, message', [
+    (['e', 'e1', 'e2'], 'every blade'),
+    (['e', 'e1', 'e12', 'e21'], 'every generator blade'),
+    (['e', 'e1', 'e2', 'e1'], 'Duplicate generator support'),
+    (['e', 'e1', 'e2', 'e11'], 'Invalid custom basis blade'),
+    (['e', 'e1', 'e2', 'e1@'], 'Invalid custom basis blade'),
+    (['e', 'e12', 'e1', 'e2'], 'grade order'),
+])
+def test_custom_basis_validation(basis, message):
+    with pytest.raises(ValueError, match=message):
+        Algebra(2, basis=basis)
+
+
+def test_grade_requests_follow_basis_order():
+    default = Algebra(3)
+    expected = ('e1', 'e2', 'e3', 'e12', 'e13', 'e23')
+    assert tuple(default.indices_for_grades((2, 1))) == expected
+    assert tuple(default.indices_for_grades((1, 2))) == expected
+
+    custom = Algebra.fromname('3DPGA')
+    expected = ('e1', 'e2', 'e3', 'e0', 'e01', 'e02', 'e03', 'e12', 'e31', 'e23')
+    assert tuple(custom.indices_for_grades((2, 1))) == expected
+    assert tuple(custom.indices_for_grades((1, 2))) == expected
+
+
+def test_named_3dpga_full_subset_order():
+    algebra = Algebra.fromname('3DPGA', large=True)
+    assert algebra.blades.e.asfullmv(canonical=False).keys() == (
+        'e', 'e1', 'e2', 'e12', 'e3', 'e31', 'e23', 'e123',
+        'e0', 'e01', 'e02', 'e021', 'e03', 'e013', 'e032', 'e0123',
+    )
+
+
+def test_layout_position_compatibility_outputs():
+    default = Algebra(3)
+    mv = default.multivector(keys=('e', 'e3', 'e13', 'e123'), values=[1, 2, 3, 4])
+    assert mv.type_number == 0b10101001
+    assert format(mv, 'keys_binary') == '10101001'
+
+    custom = Algebra.fromname('3DPGA')
+    mv = custom.multivector(keys=('e31', 'e032'), values=[2, 3])
+    assert mv.type_number == 0b0000101000000000
+    assert format(mv, 'keys_binary') == '0000101000000000'
 
 
 def test_vga_products_use_string_keys():
@@ -115,10 +162,6 @@ def test_named_3dpga_preserves_nonlexicographic_blade_identity_and_signs():
     assert coefficient.keys() == ('e',)
     assert coefficient.e == -2
 
-    semantic = alg.multivector(keys=('e31', 'e032'), values=[2, 3])
-    assert semantic.type_number == 0b0000101000000000
-    assert format(semantic, 'keys_binary') == '0000101000000000'
-
     values = np.arange(len(alg))
     full = alg.multivector(values)
     roundtrip = type(full).frommatrix(alg, full.asmatrix())
@@ -182,3 +225,15 @@ def test_array_empty_and_large_multivectors_have_string_keys():
     product = large.blades.e1 * large.blades.e2
     assert product.keys() == ('e12',)
     assert_string_keys(product)
+
+
+def test_sparse_large_does_not_materialize_full_basis():
+    algebra = Algebra(20, large=True)
+    for name in ('blade2mask', 'mask2blade'):
+        assert not hasattr(algebra, name)
+    assert len(algebra.blades) == algebra.d + 1  # basis vectors and pseudoscalar
+    a = algebra.multivector({'e1': 2, 'eA': 3})
+    b = algebra.multivector({'e2': 5, 'eB': 7})
+    result = a * b
+    assert result.keys() == ('e12', 'e1B', 'e2A', 'eAB')
+    assert len(algebra.blades) == algebra.d + 1
