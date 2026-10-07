@@ -349,12 +349,13 @@ class ArrayBase(sympy.Function):
     Blade(array, i, n, sizes) is blade i, a coefficient of n axes, of an array of grades of `sizes` blades; Blades(array, start, stop, n, sizes) those blades as a view, and BladeSum(array) their sum.
     Split(array, sizes) is the pieces of `sizes` blades an array consists of, Unbind(array) its blades, and Item(pieces, i) one of either.
     Einsum(pattern, *operands) has the blade axis in its pattern; Reduce(array, operation, axes) and Reshape(array, k, sizes) count axes from the end, the latter unflattening the last k into `sizes`.
+    Take(array, index) is the entries along the first axis of an array that a nested tuple of integers holds, in its shape.
     """
     is_commutative = True
     is_number = False  # Even of numbers, lest a printer turn it into a float.
 
 
-Stack, Cat, Blade, Blades, BladeSum, Split, Unbind, Item, Einsum, Reduce, Reshape = (type(name, (ArrayBase,), {}) for name in ('Stack', 'Cat', 'Blade', 'Blades', 'BladeSum', 'Split', 'Unbind', 'Item', 'Einsum', 'Reduce', 'Reshape'))
+Stack, Cat, Blade, Blades, BladeSum, Split, Unbind, Item, Einsum, Reduce, Reshape, Take = (type(name, (ArrayBase,), {}) for name in ('Stack', 'Cat', 'Blade', 'Blades', 'BladeSum', 'Split', 'Unbind', 'Item', 'Einsum', 'Reduce', 'Reshape', 'Take'))
 
 
 def grade_sizes(keys) -> tuple[int, ...]:

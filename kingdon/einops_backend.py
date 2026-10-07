@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import string
 from functools import lru_cache
 from itertools import groupby
@@ -8,7 +9,7 @@ import sympy
 from einops._backends import AbstractBackend, get_backend
 from sympy.core.symbol import Str
 
-from kingdon.codegen import Blade, Einsum, Reduce, Reshape, Stack, grade_sizes
+from kingdon.codegen import Blade, Cat, Einsum, Reduce, Reshape, Stack, grade_sizes
 from kingdon.multivector import MultiVector, _coefficients, _union_keys
 
 
@@ -83,6 +84,9 @@ class KingdonBackend(AbstractBackend):
         return x.shape
 
     def reshape(self, x: MultiVector, shape: tuple[int, ...]) -> MultiVector:
+        shape = tuple(math.prod(x.shape) // -math.prod(shape) if d == -1 else d for d in shape)  # A symbolic multivector has to know its sizes, and einops.pack asks for a -1.
+        if shape == x.shape:
+            return x
         if x.issymbolic:
             # einops hands over the whole new shape, batch axes included. So only the axes from the first that changes onwards are reshaped, together with the one before them which a -1 absorbs, and the generated code holds for any batch size.
             kept = next((i for i, (a, b) in enumerate(zip(x.shape, shape)) if a != b), min(x.ndim, len(shape)))
@@ -163,9 +167,19 @@ class KingdonBackend(AbstractBackend):
         input is densified to the keys of the result, e.g. packing an :code:`alg.vector(e1=...)`
         with an :code:`alg.vector(...)` gives the former an explicit zero on :code:`e2`.
         """
+        keys = _union_keys(mvs)
+        if any(mv.issymbolic for mv in mvs):
+            # In a trace the arguments are of the algebra's own type and what is computed from them of whatever type its keys fit, so only the keys count.
+            if axis:
+                raise NotImplementedError('Symbolic multivectors concatenate along their first axis only.')
+            # A coefficient has no blade axis, so its first axis is that of its multivector, along which a plain number is as many of it.
+            coefficients = [dict(mv.items()) for mv in mvs]
+            values = [Cat(*(c[k] if isinstance(c.get(k), sympy.Basic) and not c[k].is_number else Stack(*[c.get(k, 0)] * mv.shape[0]) for c, mv in zip(coefficients, mvs))) for k in keys]
+            res = mvs[0].algebra.mvtype.fromkeysvalues(mvs[0].algebra, keys, values, raw=True)
+            res.shape = (sum(mv.shape[0] for mv in mvs), *mvs[0].shape[1:])
+            return res
         if len({type(mv) for mv in mvs}) != 1:
             raise TypeError('To concat all multivectors must have the same type.')
-        keys = _union_keys(mvs)
         # The result holds its coefficients in a single array only if all the inputs do.
         if all(mv._keys and not isinstance(mv._values, (list, tuple)) for mv in mvs):
             values = get_backend(mvs[0]._values).concat([_spread(mv, keys) for mv in mvs], axis + 1)

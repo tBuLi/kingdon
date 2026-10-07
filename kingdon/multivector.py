@@ -11,7 +11,7 @@ import math
 import sys
 
 import numpy as np
-from sympy import Expr, Symbol, sympify
+from sympy import Expr, Symbol, Tuple, sympify
 from sympy.utilities.iterables import iterable
 
 import kingdon.operators as ops
@@ -302,6 +302,19 @@ class MultiVector(metaclass=MultiVectorType):
         index = {g: i for i, g in enumerate(self.grades)}
         return self.fromkeysvalues(self.algebra, self.keys(), [index[k.bit_count()] for k in self.keys()], raw=True)
 
+    @property
+    def blades(self) -> "MultiVector":
+        """
+        The coefficients of `self` as a scalar whose first axis runs over its blades, which an einsum contracts or an index gathers as any other axis:
+        :code:`X.blades[J]` holds for every blade of `J` the blades of `X` that it lists.
+        """
+        if not self.issymbolic:
+            return self.algebra.scalar(e=self.values())
+        from .codegen import Stack
+        res = self.algebra.scalar(e=Stack(*self.values()))
+        res.shape = (len(self.keys()), *self.shape)
+        return res
+
     def grade(self, *grades):
         """
         Returns a new  :class:`~kingdon.multivector.MultiVector` instance with
@@ -459,8 +472,12 @@ class MultiVector(metaclass=MultiVectorType):
         return str(self)
 
     def __getitem__(self, item):
-        if isinstance(item, MultiVector):  # Every blade of `item` gets the entry along the first axis of the scalar `self` that `item` holds for it.
+        if isinstance(item, MultiVector):  # Every blade of `item` gets the entry along the first axis of the scalar `self` that `item` holds for it, or the entries of the row it holds.
             index, values = list(item.values()), self._values[0]
+            if self.issymbolic:  # Its coefficient is one array, so this is one gather.
+                from .codegen import Take
+                from .einops_backend import _symbolic
+                return _symbolic(item, Take(values, Tuple(*(Tuple(*i) if isinstance(i, (list, tuple)) else i for i in index))), (*np.shape(index)[1:], *self.shape[1:]))
             res = item.fromkeysvalues(self.algebra, item.keys(), values[np.asarray(index)] if hasattr(values, 'shape') else [values[i] for i in index], raw=True)
             if 'shape' in self.__dict__:
                 res.shape = self.shape[1:]
@@ -576,7 +593,7 @@ class MultiVector(metaclass=MultiVectorType):
             if map: keysvalues = tuple((k, fv) for k, v in self.items() if _nonzero(fv := func(v)))
             else:   keysvalues = tuple((k, v) for k, v in self.items() if _nonzero(func(v)))
         if not keysvalues:
-            return self.fromkeysvalues(self.algebra, keys=tuple(), values=list(), raw=self.issymbolic)
+            return self._with_shape(self.fromkeysvalues(self.algebra, keys=tuple(), values=list(), raw=self.issymbolic))
         keys, values = zip(*keysvalues)
         return self._with_shape(self.fromkeysvalues(self.algebra, keys=keys, values=list(values), raw=self.issymbolic))
 

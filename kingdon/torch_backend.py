@@ -43,6 +43,7 @@ them, and :code:`mv.values()` is there when the coefficients are what you mean::
 from __future__ import annotations
 
 import inspect
+from functools import cache
 
 import sympy
 import sympy.printing.pytorch
@@ -59,9 +60,22 @@ except ImportError:  # pragma: no cover
 
 
 def cat_blades(arrays):
-    """ Arrays whose first axis is the blade axis joined along it, with their other axes broadcast against each other: a bias of shape (o,) joins blades of (batch, o). """
+    """ Arrays whose first axis is the blade axis joined along it, with their other axes broadcast against each other: a bias of shape (o,) joins blades of (batch, o), and a list of numbers a blade each. """
+    like = next(a for a in arrays if isinstance(a, torch.Tensor))
+    arrays = [a if isinstance(a, torch.Tensor) else _constant(tuple(a), like.device, like.dtype) for a in arrays]
     shape = torch.broadcast_shapes(*(a.shape[1:] for a in arrays))
     return torch.cat([a.reshape(len(a), *(1,) * (len(shape) + 1 - a.ndim), *a.shape[1:]).expand(len(a), *shape) for a in arrays])
+
+
+def take(array, index: tuple):
+    """ The entries along the first axis of `array` that the nested tuple `index` holds. """
+    return array[_constant(index, array.device)]
+
+
+@cache
+def _constant(values: tuple, device, dtype=None) -> torch.Tensor:
+    """ `values` as a tensor on `device`, made once: a list would be copied to the device, and waited for, at every call. """
+    return torch.tensor(values, dtype=dtype, device=device)
 
 
 class TorchPrinter(sympy.printing.pytorch.TorchPrinter):
@@ -69,7 +83,7 @@ class TorchPrinter(sympy.printing.pytorch.TorchPrinter):
     Prints an operator whose codegen_symbolcls is a sympy symbol, and which can therefore call sympy's functions -- :code:`erf`, say -- as torch code.
     A constant is printed as a number, since :code:`torch.sqrt(2)` wants a tensor.
     """
-    namespace = {'torch': torch, 'cat_blades': cat_blades}
+    namespace = {'torch': torch, 'cat_blades': cat_blades, 'take': take}
 
     def _print(self, expr, **kwargs):
         if isinstance(expr, sympy.Basic) and expr.is_number and not expr.is_Integer:
@@ -93,6 +107,7 @@ _ARRAY_OPS = {
     'Einsum': lambda p, pattern, *operands: f"torch.einsum({pattern.name!r}, {', '.join(map(p, operands))})",
     'Reduce': lambda p, array, operation, axes: f"torch.{ {'max': 'amax', 'min': 'amin'}.get(operation.name, operation.name)}({p(array)}, dim={tuple(map(int, axes))})",
     'Reshape': lambda p, array, k, sizes: f"torch.unflatten(torch.flatten({p(array)}, {-int(k)}), -1, {tuple(map(int, sizes))})",
+    'Take': lambda p, array, index: f"take({p(array)}, {tuple(tuple(map(int, i)) if isinstance(i, sympy.Tuple) else int(i) for i in index)})",
 }
 
 

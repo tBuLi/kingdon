@@ -25,7 +25,7 @@ from sympy.printing.codeprinter import PrintMethodNotImplementedError
 from sympy.printing.precedence import PRECEDENCE
 from sympy.printing.pycode import PythonCodePrinter
 
-from kingdon.codegen import ArrayBase, Blade, Einsum, Reduce, Reshape, Stack, _bottom_up
+from kingdon.codegen import ArrayBase, Blade, Cat, Einsum, Reduce, Reshape, Stack, Take, _bottom_up
 from kingdon.polynomial import RationalPolynomial, poly_format, rational_cse, rp_var_name
 
 #: Tiles to consider, as (elements, warps, stages). How many registers a tile needs is
@@ -590,6 +590,8 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
             raise Unsupported('writes into an argument')
         if fused:
             exprs = [sympy.sympify(e) for e in exprs]
+            if any(e.has(Take, Cat) for e in exprs):
+                raise Unsupported('a gather or a concatenation')
             ranks = _feature_ranks(exprs)
         else:
             lines, outs = _body(exprs)
