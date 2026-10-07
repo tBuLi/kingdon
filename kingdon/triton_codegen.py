@@ -132,7 +132,7 @@ class TritonPrinter(PythonCodePrinter):
     def _contract(self, terms, right, ops):
         """In registers: a tl.dot where the pattern is a product of matrices large enough for one, else the operands broadcast against each other, multiplied and summed."""
         zeroed = [op in self.zeroed for op in ops]
-        ops = [(self._print(op), self.shape(op)) for op in ops]
+        ops = [(self._print(op) if op.is_Atom else f'({self._print(op)})', self.shape(op)) for op in ops]
         names = [(_ROW if rows and '...' in term else '') + term.replace('...', '') for term, (_, (rows, _)) in zip(terms, ops)]
         out = (_ROW if '...' in right and any(rows for term, (_, (rows, _)) in zip(terms, ops) if '...' in term) else '') + right.replace('...', '')
         summed = [letter for letter in dict.fromkeys(''.join(names)) if letter not in out]
@@ -880,7 +880,10 @@ def _fused_gradients(plan, exprs, printer):
 
     pairs, outs = sympy.cse(exprs, symbols=sympy.numbered_symbols('_f'), order='none')
     for t, e in pairs:
-        program[t] = v = _bottom_up(factored)(visit(e))
+        program[t] = v = _bottom_up(factored)(visited := visit(e))
+        # A node named by cse is taken apart by its name later, as the node factored has made of it.
+        if visited in blades:
+            blades[v] = blades[visited]
         if not isinstance(v, (sympy.Symbol, ArrayBase)) and printer.shape(v)[0] and not _cheap(v, defs):
             program[t] = define(str(t), v)
             cuts.append((v, program[t]))
@@ -1118,8 +1121,14 @@ def _emit(roots, defs, printer, load, seeds=(), stage=None, budget=math.inf, pin
         if budget < math.inf:
             starts = _split(taken, {s: _registers_of(printer.shapes[s]) for s in taken}, points, budget, leaves, dots)
             cuts = sorted(points[k] for k in starts)
-            staged = [s for s in born if bisect.bisect(cuts, taken[s][0]) < bisect.bisect(cuts, taken[s][-1])]
-            lines, *_ = run(starts, _places(staged, {s: (taken[s][0], taken[s][-1]) for s in staged}, printer.shapes, pinned))
+            # A segment computes a cheap value anew from what it takes, which is therefore needed as far as the cheap value is.
+            last = {s: t[-1] for s, t in taken.items()}
+            for s in reversed(_topological(values)):
+                if s in cheap and s in last:
+                    for d in _symbols(values[s]):
+                        last[d] = max(last.get(d, 0), last[s])
+            staged = [s for s in born if bisect.bisect(cuts, taken[s][0]) < bisect.bisect(cuts, last[s])]
+            lines, *_ = run(starts, _places(staged, {s: (taken[s][0], last[s]) for s in staged}, printer.shapes, pinned))
     except PrintMethodNotImplementedError as error:
         raise Unsupported(str(error)) from error
     # A function that triton does not have is printed from the module python has it in.

@@ -6,7 +6,7 @@ from sympy import symbols, Symbol
 from kingdon.operator_dict import OperatorDict, UnaryOperatorDict
 import kingdon.operators as ops
 from kingdon.polynomial import RationalPolynomial
-from kingdon import Algebra, MultiVector, Scalar, stack
+from kingdon import Algebra, MultiVector, Scalar, add_operator, stack
 
 
 def test_operator_dict():
@@ -290,3 +290,21 @@ def test_lambdifier_sympy():
         return ops.gp(x, ops.reverse(x))
     assert normsq(u).e == pytest.approx(5.)
     assert normsq[(u,)].func.__name__ == '_lambdifygenerated'
+
+
+def test_add_operator_decorator():
+    """Written before there is an algebra: an operator of the algebra of its first multivector from the first call on, and the function itself where called with symbols."""
+    @add_operator(symbolic=True)
+    def projection(a, b):
+        return (a | b) / b
+
+    alg = Algebra(3)
+    u, v = alg.vector([1., 2., 3.]), alg.vector([0., 0., 2.])
+    assert projection(u, v).values() == pytest.approx(((u | v) / v).values())
+    projection(u, v)
+    assert alg.registry['projection'].codegen is projection.__wrapped__
+    assert len(alg.registry['projection']) == 1
+
+    x, y = alg.vector(name='x'), alg.vector(name='y')
+    assert str(projection(x, y)) == str((x | y) / y)
+    assert len(alg.registry['projection']) == 1

@@ -179,7 +179,7 @@ def test_einops(features):
     tensors = [torch.randn(4, 48, i, device='cuda'), torch.randn(1, 3, o, i, device='cuda'), torch.randn(1, o, device='cuda')]
     results = []
     for backend in ('torch', 'triton'):
-        alg = Algebra(2, backend=backend, simp_func=lambda v: v)
+        alg = Algebra(2, backend=backend)
         alg.add_operator(layer, symbolic=True, codegen_symbolcls=sympy.Symbol)
         ts = [t.clone().requires_grad_(True) for t in tensors]
         args = alg.multivector(ts[0]), alg.scalar(e=ts[1][0]), alg.scalar(e=ts[2][0])

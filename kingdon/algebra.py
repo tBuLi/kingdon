@@ -1,7 +1,7 @@
 import operator
 import re
 from itertools import product
-from functools import partial, reduce, cached_property
+from functools import partial, reduce, cached_property, wraps
 from collections import Counter
 from dataclasses import dataclass, field, fields, InitVar
 from collections.abc import Mapping, Callable
@@ -29,6 +29,10 @@ from kingdon.codegen import resolve_layout, CompiledExpression, lambdify
 operation_field = partial(field, default_factory=dict, init=False, repr=False, compare=False)
 
 KVECTORS = [Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector]
+
+
+def _expand_and_simplify(v):
+    return v if not isinstance(v, sympy.Expr) else sympy.simplify(sympy.expand(v))
 
 
 @dataclass(unsafe_hash=True)
@@ -72,6 +76,7 @@ class Algebra:
     :param lambdifier: The function that turns the symbolic expressions of an operation into a python function.
         Defaults to :func:`~kingdon.codegen.lambdify`; provide your own to take over code generation entirely.
     :param simp_func: This function is applied as a filter function to every multivector coefficient.
+        By default sympy's expand and simplify, and under the torch and triton backends the identity.
     :param pretty_blade: character to use for basis blades when pretty printing to string. Default is 𝐞.
     :param large: if true this is considered a large algebra. This means various cashing options are removed to save
         memory, and codegen is replaced by direct computation since codegen is very resource intensive for big
@@ -154,7 +159,7 @@ class Algebra:
     backend: str = field(default='', repr=False, compare=False)
 
     # This simplify func is applied to every component after a symbolic expression is called, to simplify and filter by.
-    simp_func: Callable = field(default=lambda v: v if not isinstance(v, sympy.Expr) else sympy.simplify(sympy.expand(v)), repr=False, compare=False)
+    simp_func: Callable = field(default=_expand_and_simplify, repr=False, compare=False)
 
     signs: dict = field(init=False, repr=False, compare=False)
     blades: "BladeDict" = field(init=False, repr=False, compare=False)
@@ -235,6 +240,9 @@ class Algebra:
                 self.lambdifier = triton_lambdify
             if not chosen_lambdifier:
                 self.lambdifier = partial(self.lambdifier, printer=torch_backend.TorchPrinter())
+            # Expanding would multiply out the gated products of an operator over sympy symbols. The identity, rather than None, still drops the zeros.
+            if self.simp_func is _expand_and_simplify:
+                self.simp_func = lambda v: v
         elif self.backend:
             raise ValueError(f"Unknown backend {self.backend!r}; kingdon has 'torch', 'triton' and 'einops'.")
 
@@ -772,6 +780,38 @@ class Algebra:
                 return False
         return {k: float(f) if is_number(f := str(v)) else ...
                 for k, v in symbolic_mv.items()}
+
+
+def add_operator(expr=None, /, **kwargs):
+    """
+    :meth:`Algebra.add_operator` for a function written before there is an algebra: it becomes an operator of the algebra of the first multivector it is called with.
+    Called with symbolic multivectors, inside another operator say, it is the function itself, so that the operator it is part of is generated as a whole.
+
+    .. code-block ::
+
+        @add_operator(symbolic=True)
+        def proj(a, b):
+            return (a | b) / b
+
+        proj(alg.vector([1, 2, 3]), alg.vector([0, 0, 1]))
+
+    :param kwargs: those of :meth:`Algebra.add_operator`.
+    """
+    if expr is None:
+        return partial(add_operator, **kwargs)
+
+    @wraps(expr)
+    def call(*args):
+        mvs = [a for a in args if isinstance(a, MultiVector)]
+        if any(mv.issymbolic for mv in mvs):
+            return expr(*args)
+        algebra, name = mvs[0].algebra, kwargs.get('name') or expr.__name__
+        # Registered anew, as Algebra.add_operator would, if the name is another's.
+        if getattr(algebra.registry.get(name), 'codegen', None) is not expr:
+            algebra.add_operator(expr, **kwargs)
+        return algebra.registry[name](*args)
+    return call
+
 
 def _swap_blades(blade1: str, blade2: str, target: str = '') -> (int, str, str):
     """

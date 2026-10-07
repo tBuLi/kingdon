@@ -6,7 +6,7 @@ __version__ = '2.1.1'
 
 from sympy import symbols
 
-from kingdon.algebra import Algebra
+from kingdon.algebra import Algebra, add_operator
 from kingdon.multivector import (
     MultiVector, # Generic MultiVector type.
     Scalar, Vector, Bivector, Trivector, Quadvector, Pentavector, Hexavector, Heptavector, Octovector, # k-vectors
