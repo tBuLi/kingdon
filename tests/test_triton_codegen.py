@@ -164,7 +164,7 @@ def test_sqrt():
 
 @pytest.mark.parametrize('features', [(4, 6), (16, 32)])
 def test_einops(features):
-    """An operator with einops calls is one kernel over blocks of rows: a linear map per grade, a gate and a mean over the features, in registers. Features of 16 or more contract by tl.dot."""
+    """An operator with einops calls is one kernel over blocks of rows: a linear map per grade, a gate and a mean over the features, in registers. Features as many as the card's tl.dot takes contract by one."""
     import sympy
     from einops import einsum, reduce
     from kingdon import Scalar

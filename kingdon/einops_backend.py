@@ -189,6 +189,18 @@ class KingdonBackend(AbstractBackend):
             values = [backend.concat([c[i] for c in coefficients], axis) for i in range(len(keys))]
         return mvs[0].fromkeysvalues(mvs[0].algebra, keys, values)
 
+    def stack_on_zeroth_dimension(self, mvs: list[MultiVector]) -> MultiVector:
+        """
+        The multivectors `mvs` as one, along a new first axis, which einops does to a list of them: :code:`rearrange([f(X.grade(g)) for g in X.grades], 'k ... -> k ...')`
+        for a scalar valued `f` is a scalar per grade, which :code:`[X.gradeidx_of_blades]` gathers for every blade. A blade a multivector lacks is zero in it, as for :meth:`concat`.
+        """
+        if not any(mv.issymbolic for mv in mvs):
+            return self.concat([self.add_axis(mv, 0) for mv in mvs], 0)
+        keys, coefficients = _union_keys(mvs), [dict(mv.items()) for mv in mvs]
+        res = mvs[0].algebra.mvtype.fromkeysvalues(mvs[0].algebra, keys, [Stack(*(c.get(k, 0) for c in coefficients)) for k in keys], raw=True)
+        res.shape = (len(mvs), *next(mv.shape for mv in mvs if mv.issymbolic))
+        return res
+
     def einsum(self, pattern, *operands):
         """
         Einstein summation over the array dimensions of multivectors, e.g.
