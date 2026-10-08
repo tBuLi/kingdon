@@ -1,44 +1,8 @@
 """
-Interoperability between :class:`~kingdon.multivector.MultiVector` and :code:`torch`, so that a
-multivector over torch coefficients can be handed to a :code:`torch.nn` module directly::
-
-    >>> import torch
-    >>> from kingdon import Algebra
-    >>> alg = Algebra.fromname('3DPGA', backend='torch')
-    >>> p = alg.point(torch.randn(3, 32, 4))
-    >>> p.shape
-    Point[(32, 4)]
-    >>> torch.nn.Sequential(torch.nn.Linear(4, 10), torch.nn.GELU())(p).shape
-    Point[(32, 10)]
-
-Asking for the backend is what imports this module, and importing it is what puts
-:code:`MultiVector.__torch_function__` on a multivector to make multivectors
-work with :code:`torch`.
-
-A torch function is handed :code:`mv.values()`, and its result becomes the coefficients of the
-multivector that comes back. That is the whole of it, and it is enough because a multivector over
-an array of shape :code:`(blades, ..., channels)` has shape :code:`(..., channels)`: the blade axis
-is a *leading* axis, and everything :code:`torch.nn` is built out of treats leading axes as batch
-axes. So a :code:`torch.nn.Linear` with weights of :code:`(channels, channels_out)` acts on the
-coefficients of every blade at once and cannot reach the blades, and nothing here needs to keep a
-list of which functions those are.
-
-To address the axes of the multivector itself, :code:`einops` speaks multivector: use
-:code:`einops.reduce`, :code:`einops.rearrange`, :code:`einops.einsum` and :code:`einops.pack` on
-it, where the patterns refer to :code:`mv.shape` and the blade axis stays out of it. This module
-already registers :class:`~kingdon.einops_backend.KingdonBackend` for you if :code:`einops` is installed.
-
-The exception to all of the above is one rule: **if a multivector has an operation of that name,
-torch's name means the multivector's.** :code:`_OPERATIONS` is that rule as a table, and it holds on
-whichever side of an operator the multivector sits -- :code:`tensor | mv` is the inner product just
-as :code:`mv | tensor` is. So :code:`torch.mul` is the geometric product like :code:`*` is,
-:code:`torch.matmul` is the projection like :code:`@` is, and :code:`torch.exp` is the exponential
-of the multivector like :meth:`~kingdon.multivector.MultiVector.exp` is. A name a multivector does
-not have is handed the coefficients as ever, so :code:`torch.relu(mv)` is the relu of every one of
-them, and :code:`mv.values()` is there when the coefficients are what you mean::
-
-    >>> torch.exp(bivector)            # a rotor
-    >>> torch.exp(bivector.values())   # the exponential of every coefficient
+Interoperability between :class:`~kingdon.multivector.MultiVector` and :code:`torch`: a torch function is handed :code:`mv.values()`,
+whose leading blade axis every :code:`torch.nn` module treats as a batch axis, unless the multivector has an operation of that name,
+which torch's name then means. :code:`Algebra(..., backend='torch')` imports this module, which puts :code:`MultiVector.__torch_function__`
+in place. See :doc:`backends/torch`.
 """
 from __future__ import annotations
 
@@ -49,6 +13,7 @@ import sympy
 import sympy.printing.pytorch
 import torch
 
+from kingdon.codegen import FloatConstants
 from kingdon.multivector import MultiVector
 
 try:
@@ -78,37 +43,55 @@ def _constant(values: tuple, device, dtype=None) -> torch.Tensor:
     return torch.tensor(values, dtype=dtype, device=device)
 
 
-class TorchPrinter(sympy.printing.pytorch.TorchPrinter):
+class TorchPrinter(FloatConstants, sympy.printing.pytorch.TorchPrinter):
     """
-    Prints an operator whose codegen_symbolcls is a sympy symbol, and which can therefore call sympy's functions -- :code:`erf`, say -- as torch code.
-    A constant is printed as a number, since :code:`torch.sqrt(2)` wants a tensor.
+    Prints an operator whose codegen_symbolcls is a sympy symbol, and which can therefore call sympy's functions -- :code:`erf`, say -- as torch code,
+    and the einops nodes of :mod:`kingdon.codegen` in it. values_asarray is in the namespace of every function generated for an algebra over torch.
     """
     namespace = {'torch': torch, 'cat_blades': cat_blades, 'take': take}
 
-    def _print(self, expr, **kwargs):
-        if isinstance(expr, sympy.Basic) and expr.is_number and not expr.is_Integer:
-            return repr(float(expr))
-        return super()._print(expr, **kwargs)
+    def _print_Stack(self, e):
+        if len(e.args) == 1 and not e.args[0].is_number:
+            return f"({self._print(e.args[0])})[None]"  # A view.
+        return f"values_asarray([{', '.join(map(self._print, e.args))}])"
 
-    def _print_ArrayBase(self, expr):
-        return _ARRAY_OPS[type(expr).__name__](self._print, *expr.args)
+    def _print_Cat(self, e):
+        return f"cat_blades([{', '.join(map(self._print, e.args))}])"
 
+    def _print_Blades(self, e):
+        array, start, stop, *_ = e.args
+        return f"{self._print(array)}[{start}:{stop}]"
 
-#: How torch spells every kingdon.codegen.ArrayBase, given the printer and the arguments of the node.
-#: values_asarray is in the namespace of every function generated for an algebra over torch; a lone coefficient becomes an array as a view.
-_ARRAY_OPS = {
-    'Stack': lambda p, *vs: f"({p(vs[0])})[None]" if len(vs) == 1 and not vs[0].is_number else f"values_asarray([{', '.join(map(p, vs))}])",
-    'Cat': lambda p, *arrays: f"cat_blades([{', '.join(map(p, arrays))}])",
-    'Blades': lambda p, array, start, stop, *_: f"{p(array)}[{start}:{stop}]",
-    'BladeSum': lambda p, array: f"torch.sum({p(array)}, 0)",
-    'Split': lambda p, array, sizes: f"torch.split({p(array)}, {list(map(int, sizes))})",
-    'Unbind': lambda p, array: f"torch.unbind({p(array)})",
-    'Item': lambda p, pieces, i: f"{p(pieces)}[{i}]",
-    'Einsum': lambda p, pattern, *operands: f"torch.einsum({pattern.name!r}, {', '.join(map(p, operands))})",
-    'Reduce': lambda p, array, operation, axes: f"torch.{ {'max': 'amax', 'min': 'amin'}.get(operation.name, operation.name)}({p(array)}, dim={tuple(map(int, axes))})",
-    'Reshape': lambda p, array, k, sizes: f"torch.unflatten(torch.flatten({p(array)}, {-int(k)}), -1, {tuple(map(int, sizes))})",
-    'Take': lambda p, array, index: f"take({p(array)}, {_nested(index)})",
-}
+    def _print_BladeSum(self, e):
+        return f"torch.sum({self._print(e.args[0])}, 0)"
+
+    def _print_Split(self, e):
+        array, sizes = e.args
+        return f"torch.split({self._print(array)}, {list(map(int, sizes))})"
+
+    def _print_Unbind(self, e):
+        return f"torch.unbind({self._print(e.args[0])})"
+
+    def _print_Item(self, e):
+        pieces, i = e.args
+        return f"{self._print(pieces)}[{i}]"
+
+    def _print_Einsum(self, e):
+        pattern, *operands = e.args
+        return f"torch.einsum({pattern.name!r}, {', '.join(map(self._print, operands))})"
+
+    def _print_Reduce(self, e):
+        array, operation, axes = e.args
+        name = {'max': 'amax', 'min': 'amin'}.get(operation.name, operation.name)
+        return f"torch.{name}({self._print(array)}, dim={tuple(map(int, axes))})"
+
+    def _print_Reshape(self, e):
+        array, k, sizes = e.args
+        return f"torch.unflatten(torch.flatten({self._print(array)}, {-int(k)}), -1, {tuple(map(int, sizes))})"
+
+    def _print_Take(self, e):
+        array, index = e.args
+        return f"take({self._print(array)}, {_nested(index)})"
 
 
 def _nested(index):
@@ -118,34 +101,24 @@ def _nested(index):
 
 def values_asarray(values):
     """
-    The coefficients of a multivector as a single tensor whose first axis is the blade axis. This
-    is what :code:`Algebra(..., backend='torch')` sets as its
-    :code:`values_asarray`; pass it yourself if you want it without the rest of the backend::
+    The coefficients of a multivector as a single tensor whose first axis is the blade axis: the :code:`values_asarray` of
+    :code:`Algebra(..., backend='torch')`, which you may also pass on its own::
 
         >>> alg = Algebra.fromname('3DPGA', values_asarray=values_asarray)
 
-    Coefficients that do not already agree are broadcast against each other, so that the plain
-    python numbers a type's layout contributes -- the :code:`1.0` that a normalized :code:`Point`
-    carries on :code:`e123`, say -- do not stop a multivector from having a shape. Which of the two
-    it is gets decided by inspecting the values, not by catching what :code:`torch.stack` raises:
-    an exception out of a torch call is a graph break, and one here would break the graph of every
-    :code:`torch.compile` that traces a multivector expression.
-
-    `values` that hold no tensor at all are returned untouched, leaving them to kingdon's default
-    of a plain list. That is not an edge case: :class:`~kingdon.algebra.BladeDict` builds every
-    basis blade of the algebra out of a plain :code:`1`, so an algebra cannot even be constructed
-    without it. Symbolic multivectors never get here, since every path that makes one passes
-    :code:`raw=True` to :meth:`~kingdon.multivector.MultiVector.fromkeysvalues`.
+    Coefficients that do not agree are broadcast against each other, so that a number a type's layout contributes, the :code:`1.0`
+    of a normalized :code:`Point` say, does not stop a multivector from having a shape. Which case it is, is decided by looking at
+    the values rather than by catching what :code:`torch.stack` raises, since an exception out of a torch call breaks the graph of
+    :code:`torch.compile`. Values without any tensor, as the plain :code:`1` every basis blade is built from, are left as they are.
     """
     if not isinstance(values, (list, tuple)):
-        return values  # Already one tensor, which is what this is for in the first place.
+        return values
     like = next((v for v in values if isinstance(v, torch.Tensor)), None)
     if like is None:
-        return values  # No tensor here at all: the plain 1s that alg.blades is built from.
+        return values
     if all(isinstance(v, torch.Tensor) and v.shape == like.shape and v.device == like.device
            for v in values):
-        return torch.stack(values)  # The common case; note that torch promotes the dtypes itself.
-    # Different shapes, or a plain number among the tensors.
+        return torch.stack(values)  # torch promotes the dtypes itself.
     return torch.stack(torch.broadcast_tensors(
         *(torch.as_tensor(v, dtype=like.dtype, device=like.device) for v in values)))
 
@@ -154,8 +127,7 @@ def values_asarray(values):
 #: The operators are the ones the two spell differently, and the last four are torch's dunders,
 #: since it has no name of its own for :code:`|` and friends. The rest are asked of
 #: :class:`~kingdon.multivector.MultiVector`, so that the rule follows kingdon rather than a list
-#: here going stale: every operation it has that torch has a name for. Today that is exp, norm and
-#: sqrt, and also layout, which torch spells as a class, so no call of it ever arrives here.
+#: here going stale: every operation it has that torch has a name for.
 _OPERATIONS = {'add': 'add', 'sub': 'sub', 'subtract': 'sub', 'mul': 'gp', 'multiply': 'gp',
                'div': 'div', 'divide': 'div', 'true_divide': 'div', 'neg': 'neg',
                'negative': 'neg', 'matmul': 'proj', '__or__': 'ip', '__xor__': 'op',
@@ -258,20 +230,12 @@ _pytree_registered = set()
 
 def register_pytree_nodes(types):
     """
-    Register multivector `types` with :code:`torch.utils._pytree`, so that :code:`torch.export` can
-    take and give back a multivector rather than refuse it as a type it does not know how to
-    flatten.
+    Register multivector `types` with :code:`torch.utils._pytree`, so that :code:`torch.export`, which flattens whatever crosses
+    its boundary, can take and give back a multivector. :code:`torch.compile` traces through one as the python object it is.
 
-    :code:`torch.compile` needs none of this: dynamo traces straight through a multivector as the
-    plain python object it is, and reaches one graph with no breaks either way. Export is the one
-    that flattens whatever crosses its boundary, and it wants the keyed flatten besides.
-
-    The coefficients are the only child, since they are the tensor to trace; the type, the algebra
-    and the keys are static context, which is what makes the sparsity pattern of a multivector a
-    compile time constant that the graph specializes on. Export hashes that context, which is why
-    :class:`~kingdon.algebra.Algebra` defines :code:`Algebra.__hash__`. Types are
-    registered per algebra, because :class:`~kingdon.algebra.Algebra` generates classes of its own
-    for the layouts it is given.
+    The coefficients are the only child; the type, the algebra and the keys are static context, so the sparsity of a multivector
+    is a constant the graph specializes on. Export hashes that context, hence :code:`Algebra.__hash__`. Types are registered per
+    algebra, since an algebra generates classes of its own for the layouts it is given.
 
     :param types: multivector classes to register. Registering one twice is a no-op.
     """
@@ -292,10 +256,6 @@ def register_pytree_nodes(types):
             register_pytree_node(cls, flatten, unflatten, flatten_with_keys_fn=flatten_with_keys)
             _pytree_registered.add(cls)
 
-
-# ---------------------------------------------------------------------------------------------
-# Installation
-# ---------------------------------------------------------------------------------------------
 
 _kingdon_getattr = MultiVector.__getattr__
 

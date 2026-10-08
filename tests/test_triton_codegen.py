@@ -202,14 +202,20 @@ def test_gather(monkeypatch, unrolled):
     import sympy
     from einops import einsum
     from kingdon import Scalar
+    from kingdon.codegen import Stack
     import kingdon.triton_codegen
 
     monkeypatch.setattr(kingdon.triton_codegen, '_UNROLLED', unrolled)
 
+    def asscalar(X: MultiVector) -> Scalar:
+        res = X.algebra.scalar(e=Stack(*X.values()))
+        res.shape = (len(X.keys()), *X.shape)
+        return res
+
     def gathered(X: MultiVector, Y: MultiVector, w: Scalar) -> MultiVector:
         J = X.fromkeysvalues(X.algebra, X.keys(), [[(c + 3 * a) % 8 for a in range(8)] for c in range(8)], raw=True)
         P = X.fromkeysvalues(X.algebra, X.keys(), [[(5 * c + 7 * a) % 30 for a in range(8)] for c in range(8)], raw=True)
-        return einsum(X.blades, Y.blades[J], einops.pack([w, -w, 0 * w], "* f")[0][P], "a ... f, a ... f, a f -> ... f")
+        return einsum(asscalar(X), asscalar(Y)[J], einops.pack([w, -w, 0 * w], "* f")[0][P], "a ... f, a ... f, a f -> ... f")
 
     torch.manual_seed(0)
     tensors = [torch.randn(8, 48, 16, device='cuda'), torch.randn(8, 48, 16, device='cuda'), torch.randn(1, 10, 16, device='cuda')]

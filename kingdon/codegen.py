@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 import string
 from bisect import bisect_right
@@ -53,19 +54,14 @@ class CompiledExpression:
         values_in = tuple(mv.values() for mv in mvs)
         values_out = self.func(*values_in) if issymbolic else self.wrapped_func(*values_in)
         if self.output_mv_idx is not None: return None  # The function uses .set
-        if isinstance(self.mvtype, tuple):
-            sizes = [len(keys) for keys in self.keys_out]
-            # A tensor splits in one step and its backward joins in one, where a slice per output costs a zero-filled copy of the whole per output.
-            parts = values_out.split(sizes) if hasattr(values_out, 'split') else [values_out[end - size:end] for size, end in zip(sizes, accumulate(sizes))]
-            res = tuple(mvtype.fromkeysvalues(self.algebra, keys, part, values_asarray=self.values_asarray, raw=issymbolic)
-                        for mvtype, keys, part in zip(self.mvtype, self.keys_out, parts))
-        else:
-            res = self.mvtype.fromkeysvalues(self.algebra, self.keys_out, values_out, values_asarray=self.values_asarray, raw=issymbolic)
-        if issymbolic:  # Symbolic values cannot tell the shape they stand for, so it is that of the symbolic inputs.
-            shape = np.broadcast_shapes(*(mv.shape for mv in mvs if mv.issymbolic))
-            for mv in res if isinstance(res, tuple) else (res,):
-                mv.shape = shape
-        return res
+        # Symbolic values cannot tell the shape they stand for, so it is that of the symbolic inputs.
+        shape = np.broadcast_shapes(*(mv.shape for mv in mvs if mv.issymbolic)) if issymbolic else None
+        if not isinstance(self.mvtype, tuple):
+            return self.mvtype.fromkeysvalues(self.algebra, self.keys_out, values_out, values_asarray=self.values_asarray, raw=issymbolic, shape=shape)
+        sizes = [len(keys) for keys in self.keys_out]
+        # A tensor splits in one step and its backward joins in one, where a slice per output costs a zero-filled copy of the whole per output.
+        parts = values_out.split(sizes) if hasattr(values_out, 'split') else [values_out[end - size:end] for size, end in zip(sizes, accumulate(sizes))]
+        return tuple(mvtype.fromkeysvalues(self.algebra, keys, part, values_asarray=self.values_asarray, raw=issymbolic, shape=shape) for mvtype, keys, part in zip(self.mvtype, self.keys_out, parts))
 
 
 def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None, default: type = MultiVector):
@@ -143,12 +139,14 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
 
     with distribute(False):  # A number stays outside a sum, rather than multiplying each of its terms.
         res = codegen(*(mv.asmvtype() for mv in mvs))
+    several = isinstance(res, tuple)
+    outputs = res if several else (res,)
 
-    MVType = algebra.mvtype
+    MVTypes = (algebra.mvtype,)
     output_mv_idx = None  # If codegen modified one of the mvs using set, this will be the index of the modified mv.
     if res is None:
         output_mv_idx = next(i for i, mv in enumerate(mvs) if mv != mvs_orig[i])
-        res = mvs[output_mv_idx]
+        outputs = (mvs[output_mv_idx],)
         mvs = mvs_orig
     else:
         def number(x):
@@ -165,17 +163,14 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
                 res = {k: res[k] for k, v in layout.items() if v == ... and k in res}
             return MVType, res
 
-        MVType, res = zip(*map(typed, res)) if isinstance(res, tuple) else typed(res)
+        MVTypes, outputs = zip(*map(typed, outputs))
 
     funcname = f'{codegen.__name__}_' + '_x_'.join(f"{format(mv[0].type_number if isinstance(mv, list) else mv.type_number, 'X')}" for mv in mvs)
     args = {arg_name: [tuple(chain(*(x.values() for x in arg)))] if isinstance(arg, list) else arg.values()
             for arg_name, arg in zip(string.ascii_uppercase, mvs)}
 
-    outputs = res if isinstance(res, tuple) else (res,)
-    keys, exprs = tuple(tuple(r.keys()) for r in outputs), [e for r in outputs for e in r.values()]
-    keys = keys if isinstance(res, tuple) else keys[0]
-    if output_mv_idx is not None:
-        keys = ()
+    keys = tuple(tuple(r.keys()) for r in outputs) if output_mv_idx is None else ((),)
+    exprs = [e for r in outputs for e in r.values()]
     # Only a lambdifier that asks for values_asarray or shapes is given them, so that one which
     # forwards its keyword arguments elsewhere, to sympy.lambdify say, keeps working.
     accepted = inspect.signature(lambdifier).parameters
@@ -187,7 +182,7 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
     with distribute(False):  # Rebuilding an expression, as cse does, would otherwise distribute the number after all.
         func = lambdifier(args, exprs, funcname=funcname, cse=algebra.cse, output_mv_idx=output_mv_idx, **extra)
     return CompiledExpression(
-        algebra, keys, func, MVType or algebra.mvtype, output_mv_idx, wrapper(func) if wrapper else func, values_asarray=values_asarray
+        algebra, keys if several else keys[0], func, MVTypes if several else MVTypes[0], output_mv_idx, wrapper(func) if wrapper else func, values_asarray=values_asarray
     )
 
 def do_compile(codegen, *tapes, wrapper=None, values_asarray=None) -> CompiledExpression:
@@ -342,25 +337,49 @@ def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, 
     namespace = None if asarray is None else {'builtins': builtins, 'range': range, asarray: values_asarray}
     return _build_and_cache_func(header, body_lines, funcname, namespace=namespace)
 
+
 class ArrayBase(sympy.Function):
-    """
-    An operation on an array of all the blades of a multivector at once, as a sympy node for a printer that knows arrays: kingdon.einops_backend returns multivectors whose coefficients are blades of such nodes.
-    Stack(*coefficients) is them as one array, whose first axis is the blade axis, and Cat(*arrays) joins arrays along it.
-    Blade(array, i, n, sizes) is blade i, a coefficient of n axes, of an array of grades of `sizes` blades; Blades(array, start, stop, n, sizes) those blades as a view, and BladeSum(array) their sum.
-    Split(array, sizes) is the pieces of `sizes` blades an array consists of, Unbind(array) its blades, and Item(pieces, i) one of either.
-    Einsum(pattern, *operands) has the blade axis in its pattern; Reduce(array, operation, axes) and Reshape(array, k, sizes) count axes from the end, the latter unflattening the last k into `sizes`.
-    Take(array, index) is the entries along the first axis of an array that a nested tuple of integers holds, in its shape.
-    """
+    """ An operation on an array of all the blades of a multivector at once, as a sympy node for a printer that knows arrays: kingdon.einops_backend returns multivectors whose coefficients are blades of such nodes. """
     is_commutative = True
     is_number = False  # Even of numbers, lest a printer turn it into a float.
 
 
-Stack, Cat, Blade, Blades, BladeSum, Split, Unbind, Item, Einsum, Reduce, Reshape, Take = (type(name, (ArrayBase,), {}) for name in ('Stack', 'Cat', 'Blade', 'Blades', 'BladeSum', 'Split', 'Unbind', 'Item', 'Einsum', 'Reduce', 'Reshape', 'Take'))
+class Stack(ArrayBase): """ Stack(*coefficients): them as one array, whose first axis is the blade axis. """
+class Cat(ArrayBase): """ Cat(*arrays): arrays joined along the blade axis. """
+class Blade(ArrayBase): """ Blade(array, i, n, sizes): blade i, a coefficient of n axes, of an array of grades of `sizes` blades. """
+class Blades(ArrayBase): """ Blades(array, start, stop, n, sizes): those blades of such an array, as a view. """
+class BladeSum(ArrayBase): """ BladeSum(array): the sum of its blades. """
+class Split(ArrayBase): """ Split(array, sizes): the pieces of `sizes` blades an array consists of. """
+class Unbind(ArrayBase): """ Unbind(array): its blades. """
+class Item(ArrayBase): """ Item(pieces, i): one of the pieces of a Split or the blades of an Unbind. """
+class Einsum(ArrayBase): """ Einsum(pattern, *operands): an einsum whose pattern has the blade axis in it. """
+class Reduce(ArrayBase): """ Reduce(array, operation, axes): a reduction over axes counted from the end. """
+class Reshape(ArrayBase): """ Reshape(array, k, sizes): the last k axes unflattened into `sizes`, a -1 among them absorbing the rest. """
+class Take(ArrayBase): """ Take(array, index): the entries along the first axis that a nested tuple of integers holds, in its shape. """
+
+
+class FloatConstants:
+    """ A printer that prints a constant as a float, which every array library takes where it may not take sympy's spelling of it: :code:`torch.sqrt(2)` wants a tensor. """
+    def _print(self, expr, **kwargs):
+        if isinstance(expr, sympy.Basic) and expr.is_number and not expr.is_Integer:
+            return repr(float(expr))
+        return super()._print(expr, **kwargs)
 
 
 def grade_sizes(keys) -> tuple[int, ...]:
     """ The number of blades of every run of consecutive `keys` of one grade. """
     return tuple(len(list(run)) for _, run in groupby(keys, key=int.bit_count))
+
+
+def as_array(mv: MultiVector) -> sympy.Expr:
+    """ The coefficients of the symbolic `mv` as one array, or its one coefficient, which has no blade axis. """
+    return mv._values[0] if len(mv._keys) == 1 else Stack(*mv._values)
+
+
+def from_array(mv: MultiVector, array: sympy.Expr, shape: tuple[int, ...]) -> MultiVector:
+    """ A multivector with the type and keys of the symbolic `mv` and of `shape`, whose coefficients are the blades of `array`, or `array` itself for one blade. """
+    values = [array] if len(mv._keys) == 1 else [Blade(array, i, len(shape), grade_sizes(mv._keys)) for i in range(len(mv._keys))]
+    return mv.fromkeysvalues(mv.algebra, mv._keys, values, raw=True, shape=shape)
 
 
 def _grade(i, sizes) -> tuple[int, int, int]:
@@ -462,7 +481,7 @@ def lambdify(
         _exprs = [tosympy(expr) for expr in exprs]
 
     # For an operator with einops calls in it, a printer that knows arrays gets whole arrays wherever the blades of whole grades go through the same expression, and every array taken apart once into the pieces used.
-    arrays = hasattr(printer, '_print_ArrayBase') and values_asarray and output_mv_idx is None and any(e.has(ArrayBase) for e in flatten(_exprs))
+    arrays = hasattr(printer, '_print_Stack') and values_asarray and output_mv_idx is None and any(e.has(ArrayBase) for e in flatten(_exprs))
     if arrays:
         flat = {name: values for name, values in args.items() if not any(isinstance(v, Tuple) for v in values)}  # Not those typehinted MultiVector[None].
         ndim = {name: len(shapes[name]) for name in args}
@@ -521,7 +540,14 @@ def _vectorize(expr, leaves: dict, ndims: dict):
     """
     @cache
     def ndim(e):
-        return int(e.args[2]) if isinstance(e, Blade) else int(e.args[3]) if isinstance(e, Blades) else 99 if isinstance(e, ArrayBase) and not isinstance(e, BladeSum) else max(map(ndim, e.args), default=ndims.get(e, 0))
+        """ How many axes the coefficients of `e` have: an einops node may have any number, so it counts as more than any. """
+        if isinstance(e, Blade):
+            return int(e.args[2])
+        if isinstance(e, Blades):
+            return int(e.args[3])
+        if isinstance(e, ArrayBase) and not isinstance(e, BladeSum):
+            return math.inf
+        return max(map(ndim, e.args), default=ndims.get(e, 0))
 
     def lift(es):
         """ The one expression whose blades are `es`, if they only differ in whole grades of arrays, else None. """

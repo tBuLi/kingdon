@@ -263,7 +263,6 @@ class Algebra:
             setattr(self, name, op)
 
         self._kvectors = []
-        self._evenoddmv = [EvenMV, OddMV]
         if self.large:
             if self.types or extra_types or self.full_layout:
                 raise TypeError('A large algebra has no multivector types, so `types`, `extra_types` and '
@@ -276,7 +275,7 @@ class Algebra:
             if not self.types:
                 self._kvectors = KVECTORS[:self.d+1]
                 self.types = [*self._kvectors]
-                if self.d >= 2: self.types.extend([Bireflection, *self._evenoddmv])
+                if self.d >= 2: self.types.extend([Bireflection, EvenMV, OddMV])
                 if extra_types: self.types.extend(extra_types)
             # Dynamically generate classes for types if they are not already.
             self.types = [type(t['name'], (self.mvtype,), {'layout': t['layout']}) if isinstance(t, dict) else t
@@ -292,7 +291,6 @@ class Algebra:
             for k, cls in enumerate(self._kvectors):
                 if self.d - k < len(self._kvectors):
                     setattr(self, f"pseudo{cls.__name__.lower()}", partial(self._kvectors[self.d - k], self))
-
 
         # Blades are not precomputed for large algebras, except for basis vectors.
         self.blades = BladeDict(algebra=self, lazy=self.large)
@@ -546,13 +544,13 @@ class Algebra:
 
     def evenmv(self, *args, **kwargs) -> MultiVector:
         """ Create a new :class:`~kingdon.multivector.MultiVector` in the even subalgebra. """
-        return self._evenoddmv[0](self, *args, **kwargs)
+        return EvenMV(self, *args, **kwargs)
 
     def oddmv(self, *args, **kwargs) -> MultiVector:
         """
         Create a new :class:`~kingdon.multivector.MultiVector` of odd grades.
         """
-        return self._evenoddmv[1](self, *args, **kwargs)
+        return OddMV(self, *args, **kwargs)
 
     def purevector(self, *args, grade, **kwargs) -> MultiVector:
         """
