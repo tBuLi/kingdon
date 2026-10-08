@@ -107,8 +107,13 @@ _ARRAY_OPS = {
     'Einsum': lambda p, pattern, *operands: f"torch.einsum({pattern.name!r}, {', '.join(map(p, operands))})",
     'Reduce': lambda p, array, operation, axes: f"torch.{ {'max': 'amax', 'min': 'amin'}.get(operation.name, operation.name)}({p(array)}, dim={tuple(map(int, axes))})",
     'Reshape': lambda p, array, k, sizes: f"torch.unflatten(torch.flatten({p(array)}, {-int(k)}), -1, {tuple(map(int, sizes))})",
-    'Take': lambda p, array, index: f"take({p(array)}, {tuple(tuple(map(int, i)) if isinstance(i, sympy.Tuple) else int(i) for i in index)})",
+    'Take': lambda p, array, index: f"take({p(array)}, {_nested(index)})",
 }
+
+
+def _nested(index):
+    """ A sympy Tuple of integers, or of such Tuples, as python's. """
+    return tuple(map(_nested, index)) if isinstance(index, sympy.Tuple) else int(index)
 
 
 def values_asarray(values):

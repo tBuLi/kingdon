@@ -477,7 +477,9 @@ class MultiVector(metaclass=MultiVectorType):
             if self.issymbolic:  # Its coefficient is one array, so this is one gather.
                 from .codegen import Take
                 from .einops_backend import _symbolic
-                return _symbolic(item, Take(values, Tuple(*(Tuple(*i) if isinstance(i, (list, tuple)) else i for i in index))), (*np.shape(index)[1:], *self.shape[1:]))
+                index = [Tuple(*i) if isinstance(i, (list, tuple)) else i for i in index]
+                # The coefficient of a multivector of one blade has no blade axis to gather along.
+                return _symbolic(item, Take(values, Tuple(*index) if len(index) > 1 else index[0]), (*np.shape(list(item.values()))[1:], *self.shape[1:]))
             res = item.fromkeysvalues(self.algebra, item.keys(), values[np.asarray(index)] if hasattr(values, 'shape') else [values[i] for i in index], raw=True)
             if 'shape' in self.__dict__:
                 res.shape = self.shape[1:]

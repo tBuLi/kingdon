@@ -193,3 +193,39 @@ def test_einops(features):
     torch.testing.assert_close(got, want, rtol=1e-5, atol=1e-4)
     for want_grad, got_grad in zip(want_grads, got_grads):
         torch.testing.assert_close(got_grad, want_grad, rtol=1e-4, atol=1e-3)
+
+
+@pytest.mark.parametrize('unrolled', [256, -1])
+def test_gather(monkeypatch, unrolled):
+    """An einsum over gathered blades and signed weights: spelled out per blade up to the limit of the printer, and looped over by tables beyond, here forced."""
+    import einops
+    import sympy
+    from einops import einsum
+    from kingdon import Scalar
+    import kingdon.triton_codegen
+
+    monkeypatch.setattr(kingdon.triton_codegen, '_UNROLLED', unrolled)
+
+    def gathered(X: MultiVector, Y: MultiVector, w: Scalar) -> MultiVector:
+        J = X.fromkeysvalues(X.algebra, X.keys(), [[(c + 3 * a) % 8 for a in range(8)] for c in range(8)], raw=True)
+        P = X.fromkeysvalues(X.algebra, X.keys(), [[(5 * c + 7 * a) % 30 for a in range(8)] for c in range(8)], raw=True)
+        return einsum(X.blades, Y.blades[J], einops.pack([w, -w, 0 * w], "* f")[0][P], "a ... f, a ... f, a f -> ... f")
+
+    torch.manual_seed(0)
+    tensors = [torch.randn(8, 48, 16, device='cuda'), torch.randn(8, 48, 16, device='cuda'), torch.randn(1, 10, 16, device='cuda')]
+    results = []
+    for backend in ('torch', 'triton'):
+        alg = Algebra(3, backend=backend)
+        alg.add_operator(gathered, symbolic=True, codegen_symbolcls=sympy.Symbol)
+        ts = [t.clone().requires_grad_(True) for t in tensors]
+        args = alg.multivector(ts[0]), alg.multivector(ts[1]), alg.scalar(e=ts[2][0])
+        values = alg.registry['gathered'](*args).values()
+        (values * values).sum().backward()
+        results.append((values.detach(), [t.grad for t in ts]))
+    dispatch = alg.registry['gathered'][args].func
+    built = dict(zip(dispatch.__code__.co_freevars, (c.cell_contents for c in dispatch.__closure__)))['built']
+    assert built and all(built.values()), 'fell back to torch'
+    (want, want_grads), (got, got_grads) = results
+    torch.testing.assert_close(got, want, rtol=1e-5, atol=1e-4)
+    for want_grad, got_grad in zip(want_grads, got_grads):
+        torch.testing.assert_close(got_grad, want_grad, rtol=1e-4, atol=1e-3)
