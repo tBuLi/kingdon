@@ -1037,7 +1037,7 @@ def _scattered(operand, adjoint):
 def _fused_gradients(plan, exprs, printer):
     """
     `exprs` as a program of named values, the forward, and the gradient of ``sum_k go_k * exprs[k]`` by the symbol of every array operand, the backward:
-    the expressions of the outputs, the values they name, those values the backward may load rather than compute, and (expression, sink) roots in the order a kernel computes them with the values they name,
+    the expressions of the outputs, the values they name, those values the backward loads rather than computes, and (expression, sink) roots in the order a kernel computes them with the values they name,
     a sink being the leaf whose gradient the root is, the cotangent of a Loop node it is, which goes to memory, a LoopGrad, whose loop it stands for, or None.
     The forward is sympy's cse of `exprs`, and every value it names that has rows, and is not :func:`_cheap`, is cut out as a symbol, as is every einops node, a node over multivectors a symbol per blade.
     Reverse mode over the cuts, each once every cut using it is gone through, with sympy's diff within each.
@@ -1166,7 +1166,10 @@ def _fused_gradients(plan, exprs, printer):
             users[j] -= 1
             if not users[j]:
                 ready.append(j)
-    return outputs, forward, [s for s in owner if printer.shapes[s][0] and not _simple(forward[s])], roots, defs
+    # A layer that sums over no axis does a few operations for every coefficient it loads, and so is bound by memory: its backward computes again what the forward did, rather than
+    # store and load it. One that does may not have the registers to, and loads every value that takes more than simple arithmetic.
+    contracts = any(isinstance(v, (Reduce, Loop)) or isinstance(v, Einsum) and set(''.join(_terms(v)[0]).replace('.', '')) - set(_terms(v)[1]) for v in forward.values())
+    return outputs, forward, [s for s in owner if contracts and printer.shapes[s][0] and not _simple(forward[s])], roots, defs
 
 
 def _simple(v):
@@ -1464,8 +1467,7 @@ def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_prin
     """
     :func:`_source` for a kernel over blocks of rows, which holds every coefficient as a tile of all its features, see :func:`_fused_layout`.
     The forward and the backward are those of :func:`_fused_gradients`, every value and load of either emitted where :func:`_emit` needs it.
-    Every value of the forward that has rows, and takes more than :func:`_simple` arithmetic, the backward loads rather than computes, from where the forward stores it:
-    to compute them the backward would hold them, dots and gates of the whole layer, besides its own sums, see :func:`_registers_of`.
+    Every value of the forward the backward loads, see :func:`_fused_gradients`, it loads from where the forward stores it.
     """
     outputs, forward, saved, roots, defs = gradients
     arrays = [(op, tile) for op, tile in zip(plan, tiles) if op.array]
