@@ -54,8 +54,10 @@ class _Gather:
 
 #: The rows a block of a fused kernel takes, the fewest a tl.dot does, see fused_build.
 _ROWS = 16
-#: The lanes of a warp, all of a block of a fused kernel.
+#: The lanes of a warp.
 _WARP = 32
+#: The bytes of the widest load a lane makes, 128 bits.
+_VECTOR = 16
 #: The most gathered products a kernel spells out one by one, see _gathered: a 4-dimensional algebra's full product.
 #: Beyond, it loops over them, since the code, and the time ptxas takes over it, would grow with their number.
 _UNROLLED = 256
@@ -76,6 +78,8 @@ class TritonPrinter(FloatConstants, PythonCodePrinter):
         super().__init__({'user_functions': {name: f'tl.{name}' for name in ('erf', 'exp', 'log', 'sin', 'cos', 'sigmoid')}})
         #: The smallest (M, N, K) a tl.dot takes, see _min_dot, or None for no tl.dot at all.
         self.shapes, self.precision, self.dot, self.counts, self.loops = shapes, precision, dot, {}, ()
+        #: The warps of a block, over which a tile is spread.
+        self.warps = 1
         # The symbols loaded with zeros in their padding, which a contraction need not zero again.
         self.zeroed = set()
         self.shape = functools.cache(self._shape)
@@ -727,12 +731,14 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
         grad_printer = TritonPrinter({**leaves, **{sympy.Symbol(f'go{k}'): out_tile for k in range(len(exprs))}}, precision, dot)
         grad_printer.loops = loops
         gradients = _fused_gradients(plan, exprs, grad_printer)
-        # A tile holds every feature of its rows, and of the whole layer, so a block has the fewest rows a tl.dot takes, _ROWS, and one warp: triton lays the dots of a kernel with several
-        # out along the rows, so another warp would hold the same rows again, and a warp of its own keeps every change of layout to shuffles within it.
-        rows = [((_ROWS,), 1, 1)]
+        # A tile holds every feature of its rows, and of the whole layer, so a block has the fewest rows a tl.dot takes, _ROWS, and as many warps as the widest tile it holds,
+        # of an operand or of a value between, fills with a vector of the widest load a lane: more would hold copies of what fewer hold, fewer would each hold more of it, and spill or stage it.
+        widest = max(math.prod(map(_pad, features)) for rows, features in grad_printer.shapes.values() if rows)
+        printer.warps = grad_printer.warps = warps = max(1, _ROWS * widest * dtype.itemsize // (_VECTOR * _WARP))
+        rows = [((_ROWS,), warps, 1)]
         # What the values of a segment may take of a thread's registers, see _split, as single precision ones: a quarter stays for what that does not count --
         # indices, masks and addresses, the fragments of a tl.dot, a tile changing layout.
-        budget = _registers(next(v for v in values if torch.is_tensor(v)).device, 1) * 3 // 4 * 4 // dtype.itemsize
+        budget = _registers(next(v for v in values if torch.is_tensor(v)).device, warps) * 3 // 4 * 4 // dtype.itemsize
         span = max(len(exprs) * math.prod(out_tile[1]), *(op.slots * math.prod(tile[1]) for op, tile in zip(plan, tiles) if op.array))
         return run(_fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_printer, span, dtype, budget), plan, values, len(exprs), (math.prod(batch),), span, rows)
 
@@ -891,7 +897,7 @@ def _gathered(exprs, args, shapes, unrolled=None):
         return e
 
     exprs = [resolve(e) for e in exprs]
-    if any(e.has(s) for e in exprs for s in rows):
+    if _leaves(exprs) & rows.keys():
         raise Unsupported('an array gathered from and used whole')
     return exprs, {name: [rows[vals[0]]] if vals[0] in rows else vals for name, vals in args.items()}, loops, products
 
@@ -1141,12 +1147,26 @@ def _fused_gradients(plan, exprs, printer):
             users[j] -= 1
             if not users[j]:
                 ready.append(j)
-    return outputs, forward, [s for s in owner if printer.shapes[s][0] and not _simple(forward[s])], roots, defs
+    # What the backward loads rather than computes: the values of the forward with rows that sum over an axis. Any other it computes again where it uses it,
+    # which costs arithmetic a GPU has to spare, where storing and loading it costs memory traffic it has not.
+    contracting = lambda v: _contracts(v) or isinstance(v, Blade) and v.args[0] in forward and _contracts(forward[v.args[0]])
+    return outputs, forward, [s for s in owner if printer.shapes[s][0] and contracting(forward[s])], roots, defs
 
 
 def _simple(v):
     """Whether `v` takes a few multiplications and additions and nothing else: no function, no root, no einops."""
     return sympy.count_ops(v) <= 4 and not v.atoms(sympy.Function) and all(p.exp.is_Integer for p in v.atoms(sympy.Pow))
+
+
+def _contracts(v):
+    """Whether `v` sums over an axis: an einsum that contracts one, a reduction or a gather loop, a value worth holding rather than doing again where it is used."""
+    return any(isinstance(e, (Reduce, Loop, LoopGrad)) or isinstance(e, Einsum) and _summed(e) for e in v.atoms(ArrayBase))
+
+
+def _summed(einsum):
+    """Whether the Einsum node `einsum` sums over a letter of its operands."""
+    terms, right = _terms(einsum)
+    return bool(set(''.join(terms).replace('.', '')) - set(right))
 
 
 def _cheap(v, values):
@@ -1161,6 +1181,16 @@ def _cheap(v, values):
 def _symbols(e):
     """The symbols of `e`, in the order they appear."""
     return list(dict.fromkeys(s for s in sympy.preorder_traversal(e) if isinstance(s, sympy.Symbol)))
+
+
+def _leaves(exprs):
+    """The symbols of `exprs`, each shared subexpression gone through once: a network of operators is a DAG far smaller than the tree it unfolds into."""
+    seen, todo = set(), list(exprs)
+    while todo:
+        if (e := todo.pop()) not in seen:
+            seen.add(e)
+            todo.extend(e.args)
+    return {e for e in seen if isinstance(e, sympy.Symbol)}
 
 
 def _topological(values):
@@ -1236,9 +1266,9 @@ def _emit(roots, defs, printer, load, seeds=(), stage=None, budget=math.inf, pin
     for s in _topological(values):
         if backward.intersection(_symbols(values[s])):
             backward.add(s)
-    # A cheap value of the forward is computed by each root, and each segment, that takes it, from values held anyway, rather than stored for a later segment;
-    # one of the backward is held, since computing it anew would hold what it adds up, and ptxas schedules those worse.
-    cheap = {s for s, v in values.items() if s not in backward and _cheap(v, values)}
+    # A value of the forward that sums over no axis is cheap: computed by each root, and each segment, that takes it, from values held anyway, rather than held or stored
+    # for a later segment; one of the backward is held, since computing it anew would hold what it adds up, and ptxas schedules those worse.
+    cheap = {s for s, v in values.items() if s not in backward and not _contracts(v)}
     for s in _topological(values):
         printer.shapes[s] = printer.shape(values[s])
 
@@ -1275,7 +1305,7 @@ def _emit(roots, defs, printer, load, seeds=(), stage=None, budget=math.inf, pin
             for s in [*symbols, *_symbols(e)]:
                 taken.setdefault(s, []).append(len(lines))
             # A tl.dot holds its operands once more, in the layout it takes them in, and tf32x3 splits each in two.
-            if fragments := sum(_registers_of(printer.shape(op)) for node in e.atoms(Einsum) for op in node.args[1:]):
+            if fragments := sum(_registers_of(printer.shape(op), printer.warps) for node in e.atoms(Einsum) for op in node.args[1:]):
                 dots.append((len(lines), fragments * (1 + (printer.precision == 'tf32x3'))))
 
         def point(local, partial=None):
@@ -1324,7 +1354,7 @@ def _emit(roots, defs, printer, load, seeds=(), stage=None, budget=math.inf, pin
     with _printing(printer):
         lines, taken, points, leaves, born, dots = run()
         if budget < math.inf:
-            starts = _split(taken, {s: _registers_of(printer.shapes[s]) for s in taken}, points, budget, leaves, dots)
+            starts = _split(taken, {s: _registers_of(printer.shapes[s], printer.warps) for s in taken}, points, budget, leaves, dots)
             cuts = sorted(points[k] for k in starts)
             # A segment computes a cheap value anew from what it takes, which is therefore needed as far as the cheap value is.
             last = {s: t[-1] for s, t in taken.items()}
@@ -1354,10 +1384,10 @@ def _places(staged, spans, tiles, pinned=()):
     return places
 
 
-def _registers_of(tile):
-    """What a thread holds of a value of `tile`: a warp's rows of it, as many as a block has, over the lanes of the warp."""
+def _registers_of(tile, warps):
+    """What a thread holds of a value of `tile`: a block's rows of it, over the lanes of its `warps`."""
     rows, features = tile
-    return max(1, (_ROWS if rows else 1) * math.prod(map(_pad, features)) // _WARP)
+    return max(1, (_ROWS if rows else 1) * math.prod(map(_pad, features)) // (_WARP * warps))
 
 
 def _split(taken, registers, points, budget, leaves, dots=()):
@@ -1429,8 +1459,8 @@ def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_prin
     """
     :func:`_source` for a kernel over blocks of rows, which holds every coefficient as a tile of all its features, see :func:`_fused_layout`.
     The forward and the backward are those of :func:`_fused_gradients`, every value and load of either emitted where :func:`_emit` needs it.
-    Every value of the forward that has rows, and takes more than :func:`_simple` arithmetic, the backward loads rather than computes, from where the forward stores it:
-    to compute them the backward would hold them, dots and gates of the whole layer, besides its own sums, see :func:`_registers_of`.
+    Every value of the forward that has rows and sums over an axis, see :func:`_contracts`, the backward loads rather than computes, from where the forward stores it;
+    any other it computes again where it uses it.
     """
     outputs, forward, saved, roots, defs = gradients
     arrays = [(op, tile) for op, tile in zip(plan, tiles) if op.array]
