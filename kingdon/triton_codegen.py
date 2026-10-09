@@ -367,8 +367,8 @@ def _registers(device, warps):
     return min(255, torch.cuda.get_device_properties(device).regs_per_multiprocessor // (_WARP * warps))
 
 
-def _spills(kernel, tile, *args, **kwargs):
-    """How many registers `kernel` spills per thread at `tile`, compiled for `args` and loaded, or infinitely many if it does not compile."""
+def _compiled(kernel, tile, *args, **kwargs):
+    """`kernel` at `tile`, compiled for `args` and loaded, or None if it does not compile."""
     import torch
     from triton.errors import TritonError
 
@@ -378,8 +378,25 @@ def _spills(kernel, tile, *args, **kwargs):
         compiled = kernel.warmup(*args, **kwargs, **_sizes(shape), num_warps=warps, num_stages=stages, maxnreg=_registers(device, warps), grid=(1,))
         compiled._init_handles()
     except TritonError:
-        return math.inf
-    return compiled.n_spills
+        return None
+    return compiled
+
+
+def _spills(kernel, tile, *args, **kwargs):
+    """How many registers `kernel` spills per thread at `tile`, or infinitely many if it does not compile."""
+    compiled = _compiled(kernel, tile, *args, **kwargs)
+    return math.inf if compiled is None else compiled.n_spills
+
+
+def _resident(kernel, tile, *args, **kwargs):
+    """How many programs of `kernel` at `tile` the card runs at once, as their threads, registers and shared memory allow: the grid of a kernel that goes over its blocks in turn."""
+    import torch
+
+    compiled = _compiled(kernel, tile, *args, **kwargs)
+    card = torch.cuda.get_device_properties(next(a.device for a in args if torch.is_tensor(a)))
+    threads = card.warp_size * tile[1]
+    fits = min(card.max_threads_per_multi_processor // threads, card.regs_per_multiprocessor // (compiled.n_regs * threads), card.shared_memory_per_multiprocessor // max(compiled.metadata.shared, 1))
+    return card.multi_processor_count * max(1, fits)
 
 
 def _widest_clean(kernel, tiles, *args, **kwargs):
@@ -638,6 +655,8 @@ def _choose_tiles(namespace, funcname, plan, values, n_out, extents, span=None, 
     kernel = namespace[f'{funcname}_bwd']
     # A kernel over given tiles, a whole layer's, times only those of them its backward holds without spilling, if any: a spilling one never won there.
     namespace['_BACKWARD'] = _affordable(kernel, _widest_clean(kernel, candidates, *bwd, WIDE=wide, **even, **flags) if tiles else candidates, reference.device, *bwd, WIDE=wide, **even, **flags)
+    if tiles:
+        namespace['_RESIDENT'] = _resident(kernel, namespace['_BACKWARD'][0], *bwd, WIDE=wide, **even, **flags)
     namespace[f'{funcname}_bwd'] = autotune(kernel, namespace['_BACKWARD'], sizes + list(flags), reset_to_zero=[f'd{op.name}' for _, op in arrays if not all(op.varies)])
 
 
@@ -1147,26 +1166,12 @@ def _fused_gradients(plan, exprs, printer):
             users[j] -= 1
             if not users[j]:
                 ready.append(j)
-    # What the backward loads rather than computes: the values of the forward with rows that sum over an axis. Any other it computes again where it uses it,
-    # which costs arithmetic a GPU has to spare, where storing and loading it costs memory traffic it has not.
-    contracting = lambda v: _contracts(v) or isinstance(v, Blade) and v.args[0] in forward and _contracts(forward[v.args[0]])
-    return outputs, forward, [s for s in owner if printer.shapes[s][0] and contracting(forward[s])], roots, defs
+    return outputs, forward, [s for s in owner if printer.shapes[s][0] and not _simple(forward[s])], roots, defs
 
 
 def _simple(v):
     """Whether `v` takes a few multiplications and additions and nothing else: no function, no root, no einops."""
     return sympy.count_ops(v) <= 4 and not v.atoms(sympy.Function) and all(p.exp.is_Integer for p in v.atoms(sympy.Pow))
-
-
-def _contracts(v):
-    """Whether `v` sums over an axis: an einsum that contracts one, a reduction or a gather loop, a value worth holding rather than doing again where it is used."""
-    return any(isinstance(e, (Reduce, Loop, LoopGrad)) or isinstance(e, Einsum) and _summed(e) for e in v.atoms(ArrayBase))
-
-
-def _summed(einsum):
-    """Whether the Einsum node `einsum` sums over a letter of its operands."""
-    terms, right = _terms(einsum)
-    return bool(set(''.join(terms).replace('.', '')) - set(right))
 
 
 def _cheap(v, values):
@@ -1208,14 +1213,14 @@ def _topological(values):
     return order
 
 
-def _emit(roots, defs, printer, load, seeds=(), stage=None, budget=math.inf, pinned=()):
+def _emit(roots, defs, printer, load, seeds=(), stage=None, budget=math.inf, pinned=(), spare=lambda registers: None):
     """
     The lines computing `roots`, (expression, sink) pairs, in order, each value handed to its sink, which returns the lines that store it.
     Every value is computed, and every leaf loaded, right before its first use.
     Each root gets its leaves itself, which the compiler merges with what its segment got already.
     `defs` names values the roots, and each other, refer to by symbol; those depending on the `seeds`, the incoming cotangents, are sums the backward holds.
     Where what the kernel holds would take more than `budget` registers a thread, it goes in segments, see :func:`_split`: what one takes from an earlier one is stored at the place `stage` gives,
-    one value after another, see :func:`_places`, but a `pinned` one, which keeps its own.
+    one value after another, see :func:`_places`, but a `pinned` one, which keeps its own. The registers every segment leaves of the budget go to `spare`, before the lines returned are written.
     """
     # Einops nodes make a DAG whose shared parts are large, and ordering the arguments of a sum or product counts the nodes of each as a tree, so cse leaves them in their order.
     pairs, reduced = sympy.cse([*defs.values(), *(e for e, _ in roots)], symbols=sympy.numbered_symbols('_t'), order='none')
@@ -1266,9 +1271,9 @@ def _emit(roots, defs, printer, load, seeds=(), stage=None, budget=math.inf, pin
     for s in _topological(values):
         if backward.intersection(_symbols(values[s])):
             backward.add(s)
-    # A value of the forward that sums over no axis is cheap: computed by each root, and each segment, that takes it, from values held anyway, rather than held or stored
-    # for a later segment; one of the backward is held, since computing it anew would hold what it adds up, and ptxas schedules those worse.
-    cheap = {s for s, v in values.items() if s not in backward and not _contracts(v)}
+    # A cheap value of the forward is computed by each root, and each segment, that takes it, from values held anyway, rather than stored for a later segment;
+    # one of the backward is held, since computing it anew would hold what it adds up, and ptxas schedules those worse.
+    cheap = {s for s, v in values.items() if s not in backward and _cheap(v, values)}
     for s in _topological(values):
         printer.shapes[s] = printer.shape(values[s])
 
@@ -1352,19 +1357,18 @@ def _emit(roots, defs, printer, load, seeds=(), stage=None, budget=math.inf, pin
         return lines, taken, [*points, len(lines)], leaves, born, dots
 
     with _printing(printer):
-        lines, taken, points, leaves, born, dots = run()
-        if budget < math.inf:
-            starts = _split(taken, {s: _registers_of(printer.shapes[s], printer.warps) for s in taken}, points, budget, leaves, dots)
-            cuts = sorted(points[k] for k in starts)
-            # A segment computes a cheap value anew from what it takes, which is therefore needed as far as the cheap value is.
-            last = {s: t[-1] for s, t in taken.items()}
-            for s in reversed(_topological(values)):
-                if s in cheap and s in last:
-                    for d in _symbols(values[s]):
-                        last[d] = max(last.get(d, 0), last[s])
-            staged = [s for s in born if bisect.bisect(cuts, taken[s][0]) < bisect.bisect(cuts, last[s])]
-            lines, *_ = run(starts, _places(staged, {s: (taken[s][0], last[s]) for s in staged}, printer.shapes, pinned))
-    return lines
+        _, taken, points, leaves, born, dots = run()
+        starts, most = _split(taken, {s: _registers_of(printer.shapes[s], printer.warps) for s in taken}, points, budget, leaves, dots) if budget < math.inf else (set(), 0)
+        spare(budget - most)
+        cuts = sorted(points[k] for k in starts)
+        # A segment computes a cheap value anew from what it takes, which is therefore needed as far as the cheap value is.
+        last = {s: t[-1] for s, t in taken.items()}
+        for s in reversed(_topological(values)):
+            if s in cheap and s in last:
+                for d in _symbols(values[s]):
+                    last[d] = max(last.get(d, 0), last[s])
+        staged = [s for s in born if bisect.bisect(cuts, taken[s][0]) < bisect.bisect(cuts, last[s])]
+        return run(starts, _places(staged, {s: (taken[s][0], last[s]) for s in staged}, printer.shapes, pinned))[0]
 
 
 def _places(staged, spans, tiles, pinned=()):
@@ -1393,7 +1397,7 @@ def _registers_of(tile, warps):
 def _split(taken, registers, points, budget, leaves, dots=()):
     """
     Which of the `points`, the lines a segment of the kernel may start at, and the end, it does start at, given per symbol the lines that take it, and per line that contracts
-    the registers its fragments take, as (line, registers) in order.
+    the registers its fragments take, as (line, registers) in order; and the most registers any segment takes.
     A segment holds a symbol to the last of its lines that takes it -- the compiler merges a load, or a value, it has already -- and from the first, or, for what it loads, a leaf
     or a value of an earlier segment, from its start, since ptxas issues the loads of a stretch without barriers first. Each segment runs as far as that takes at most `budget`
     registers a thread, and the barrier before the next keeps the compiler from merging across: what a segment takes from an earlier one goes through memory, as whole tiles,
@@ -1410,13 +1414,14 @@ def _split(taken, registers, points, budget, leaves, dots=()):
             pressure[line - a + 1] -= fragments
         return pressure.cumsum().max()
 
-    starts, start = set(), 0
+    starts, start, most = set(), 0, 0
     while True:
         # A segment only takes more as it runs further, so its end is a bisection away, and the next segment starts there, a point on at least.
-        end = bisect.bisect(range(len(points)), budget, start + 1, key=lambda end: peak(points[start], points[end])) - 1
-        start = max(start + 1, end)
+        end = max(start + 1, bisect.bisect(range(len(points)), budget, start + 1, key=lambda end: peak(points[start], points[end])) - 1)
+        most = max(most, peak(points[start], points[end]))
+        start = end
         if start >= len(points) - 1:
-            return starts
+            return starts, most
         starts.add(start)
 
 
@@ -1459,8 +1464,8 @@ def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_prin
     """
     :func:`_source` for a kernel over blocks of rows, which holds every coefficient as a tile of all its features, see :func:`_fused_layout`.
     The forward and the backward are those of :func:`_fused_gradients`, every value and load of either emitted where :func:`_emit` needs it.
-    Every value of the forward that has rows and sums over an axis, see :func:`_contracts`, the backward loads rather than computes, from where the forward stores it;
-    any other it computes again where it uses it.
+    Every value of the forward that has rows, and takes more than :func:`_simple` arithmetic, the backward loads rather than computes, from where the forward stores it:
+    to compute them the backward would hold them, dots and gates of the whole layer, besides its own sums, see :func:`_registers_of`.
     """
     outputs, forward, saved, roots, defs = gradients
     arrays = [(op, tile) for op, tile in zip(plan, tiles) if op.array]
@@ -1510,17 +1515,35 @@ def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_prin
     def store(pointers, mask):
         return lambda value: [_store_line(pointers, mask, value)]
 
+    sums, held_sums = {}, set()
+
     def gradient(s):
-        """Where the gradient by `s` goes: stored, for an operand with rows, else added into this block's stripe."""
+        """
+        Where the gradient by `s` goes: stored, for an operand with rows, else added into the gradient, which every block adds into, see :func:`_module`,
+        or, if `s` is one of the `held_sums`, into the sum the program holds over its blocks, which it adds into the gradient once.
+        """
         op, i, tile = where[s]
         pointers, mask = at(f'd{op.name}', i, tile)
         mask = f', mask={mask}' if mask else ''
         if tile[0]:
             return lambda value: [f'    if G{op.name}:', f'        tl.store({pointers}, {value}{mask})']
-        return lambda value: [f'    if G{op.name}:', f'        tl.atomic_add({pointers} + (_pid % STRIPES) * {op.slots * math.prod(tile[1])}, {value}{mask}, sem="relaxed")']
+        sums.setdefault(s, (op, pointers, mask, tile))
+        k = list(sums).index(s)
+        return lambda value: [f'    if G{op.name}:', f'        _w{k} += {value}' if s in held_sums else f'        tl.atomic_add({pointers}, {value}{mask}, sem="relaxed")']
+
+    def spare(registers):
+        """
+        The sums a program holds over its blocks: as many as fit in the `registers` every segment of the backward leaves, which they would take throughout.
+        Each saves as many atomic adds a block as it takes registers, so a backward does not split further for more of them, which costs it more than they save.
+        """
+        for s, (*_, tile) in sorted(sums.items(), key=lambda item: _registers_of(item[1][3], grad_printer.warps)):
+            if (r := _registers_of(tile, grad_printer.warps)) <= registers:
+                held_sums.add(s)
+                registers -= r
 
     # Where the rows fill every block the mask is all true, which triton folds away: a masked load would be a predicate, and zeros put in the registers first.
-    index = ['    _pid = tl.program_id(0)', '    _r0 = _pid * T0', '    if WIDE:', '        _r0 = _r0.to(tl.int64)', '    _x0 = _r0 + tl.arange(0, T0)', '    _m0 = _x0 < e0', '    if EVEN:', '        _m0 = tl.full([T0], 1, tl.int1)']
+    block = lambda start: [f'    _r0 = {start} * T0', '    if WIDE:', '        _r0 = _r0.to(tl.int64)', '    _x0 = _r0 + tl.arange(0, T0)', '    _m0 = _x0 < e0', '    if EVEN:', '        _m0 = tl.full([T0], 1, tl.int1)']
+    index = ['    _pid = tl.program_id(0)', *block('_pid')]
     saved = set(saved)
     printer.zeroed, grad_printer.zeroed = set(where), {*where, *saved, *(sympy.Symbol(f'go{k}') for k in range(len(outputs)))}
 
@@ -1616,12 +1639,16 @@ def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_prin
             return lambda _: loops[s]
         return gradient(s) if s in where else store(*hold(s))
 
-    bwd = _emit([(g, sink(s)) for g, s in roots], {s: v for s, v in defs.items() if s not in saved and s not in fixed}, grad_printer, load, [sympy.Symbol(f'go{k}') for k in range(len(outputs))], hold, budget)
+    bwd = _emit([(g, sink(s)) for g, s in roots], {s: v for s, v in defs.items() if s not in saved and s not in fixed}, grad_printer, load, [sympy.Symbol(f'go{k}') for k in range(len(outputs))], hold, budget, spare=spare)
+    holding = [(k, op, pointers, mask, tile) for k, (s, (op, pointers, mask, tile)) in enumerate(sums.items()) if s in held_sums]
+    bwd = ['    _pid = tl.program_id(0)', *(f'    _w{k} = tl.zeros({_padded(tile)}, {acc})' for k, *_, tile in holding),
+           '    for _blk in range(_pid, tl.cdiv(e0, T0), tl.num_programs(0)):', *('    ' + line for line in [*block('_blk'), *bwd]),
+           *(line for k, op, pointers, mask, _ in holding for line in (f'    if G{op.name}:', f'        tl.atomic_add({pointers}, _w{k}{mask}, sem="relaxed")'))]
     fwd = _emit([*before, *((s, store(*keep(s))) for s in forward if s in slots and s not in fixed), *((e, store(*at('out', k, out_tile))) for k, e in enumerate(outputs))],
                 {s: v for s, v in forward.items() if s not in written and not isinstance(v, Loop)}, printer, load, stage=functools.partial(keep, shapes=printer.shapes), budget=budget, pinned=set(slots))
     batch = ', '.join(f'{op.name}.shape[{op.lead}:{op.name}.ndim - {len(tile[1])}]' for op, tile in arrays)
     kept, scratch = filled(slots), filled(held)
-    return _module(funcname, plan, 1, [*index, *fwd], [*index, *bwd], len(outputs), f'batch = torch.broadcast_shapes({batch}); data, extents = (*batch, *{out_tile[1]}), (math.prod(batch),)',
+    return _module(funcname, plan, 1, [*index, *fwd], bwd, len(outputs), f'batch = torch.broadcast_shapes({batch}); data, extents = (*batch, *{out_tile[1]}), (math.prod(batch),)',
                    max(span, kept, scratch), dtype, kept, scratch, _ROWS, tables)
 
 
@@ -1629,15 +1656,16 @@ def _module(funcname, plan, n, fwd, bwd, n_out, layout, span, dtype, kept=0, sta
     """
     The forward and backward kernels, from the bodies `fwd` and `bwd`, and the autograd function that launches them:
     `layout` sets the output's `data` shape and the grid's `extents`, the forward stores `kept` coefficients a row in `saved`, for the backward and for its own later segments,
-    and the backward `staged` a row in `scratch`, for its later segments. Kernels over blocks of a fixed number of `rows` learn whether the rows fill every block, as EVEN.
+    and the backward `staged` a row in `scratch`, for its later segments. Kernels over blocks of a fixed number of `rows` learn whether the rows fill every block, as EVEN,
+    and their backward goes over those blocks with as many programs as the card runs at once, _RESIDENT, so that a sum a program holds over them it adds into a gradient once.
     """
     arrays = [op for op in plan if op.array]
     saved, scratch = ', saved' if kept else '', ', scratch' if staged else ''
     names = [op.name for op in arrays]
     flags = [f'G{name}' for name in names]
     # An operand shared along the outermost axis -- a weight, shared over the batch -- sums its gradient into one of several copies, picked by block and added up by the
-    # launcher, so that the blocks along that axis do not all contend for the same one.
-    shared = any(not op.varies[0] for op in arrays)
+    # launcher, so that the blocks along that axis do not all contend for the same one. Blocks of rows add a tile's sum over its rows, not each element, and so contend too little to pay for copies.
+    shared = not rows and any(not op.varies[0] for op in arrays)
     sizes = ", ".join(f"e{k}" for k in range(n))
     # Every constexpr follows every runtime argument: inductor launches a user kernel without its constexprs, yet finds the gradients to zero between timed configs by
     # their position in the whole signature. WIDE precedes the tile so that :func:`_widest_clean` can pass it positionally.
@@ -1655,10 +1683,10 @@ def _module(funcname, plan, n, fwd, bwd, n_out, layout, span, dtype, kept=0, sta
     for op, flag in zip(arrays, flags):
         # A gradient gathered from several blocks starts at zero and accumulates in at least single precision.
         make = (f'torch.empty_like({op.name})' if all(op.varies) else
-                f'torch.zeros(({"" if op.varies[0] else "stripes, "}*{op.name}.shape,), device={op.name}.device, dtype=torch.promote_types({op.name}.dtype, torch.float32))')
+                f'torch.zeros(({"" if op.varies[0] or rows else "stripes, "}*{op.name}.shape,), device={op.name}.device, dtype=torch.promote_types({op.name}.dtype, torch.float32))')
         buffers.append(f'd{op.name} = {make} if {flag} else {op.name}.new_empty(0)')
     scalars = [var for op in plan if not op.array for var in op.vars]
-    returns = ', '.join('None' if not op.array else f'(d{op.name}{"" if op.varies[0] else ".sum(0)"}.to({op.name}.dtype) if G{op.name} else None)' for op in plan)
+    returns = ', '.join('None' if not op.array else f'(d{op.name}{"" if op.varies[0] or rows else ".sum(0)"}.to({op.name}.dtype) if G{op.name} else None)' for op in plan)
 
     launcher = f"""
 _KEPT, _STAGED = tl.constexpr({kept}), tl.constexpr({staged})
@@ -1668,6 +1696,10 @@ _tables = functools.cache(lambda device: torch.tensor(_TABLES, dtype=torch.int32
 
 def _grid(meta):
     return ({" * ".join(f'triton.cdiv(meta["e{k}"], meta["T{k}"])' for k in range(n))},)
+
+
+def _grid_bwd(meta):
+    return {"(min(_grid(meta)[0], _RESIDENT),)" if rows else "_grid(meta)"}
 
 
 class _Fn(torch.autograd.Function):
@@ -1694,7 +1726,7 @@ class _Fn(torch.autograd.Function):
         {"; ".join(buffers)}
         {f"scratch = gout.new_empty(extents[0] * {staged})" if staged else "pass"}
         {f"TAB = _tables(gout.device)" if tables else "pass"}
-        {funcname}_bwd[_grid]({bwd_args('*extents')}, stripes, WIDE=math.prod(extents) * {span} >= 2 ** 31{even}, {', '.join(f'{f}={f}' for f in flags)})
+        {funcname}_bwd[_grid_bwd]({bwd_args('*extents')}, stripes, WIDE=math.prod(extents) * {span} >= 2 ** 31{even}, {', '.join(f'{f}={f}' for f in flags)})
         return {returns}
 
 
