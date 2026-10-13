@@ -951,7 +951,8 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
                tuple(v.requires_grad if torch.is_tensor(v) else False for v in values))
         if key not in built:
             try:
-                built[key] = build(values)
+                # Eagerly, also when a compiled model meets a new key, an evaluation without gradients say: traced, Dynamo intercepts Triton's warmup launches and fails on their symbolic sizes.
+                built[key] = torch.compiler.disable(build)(values)
             except Unsupported:
                 built[key] = False
         kernel = built[key]
