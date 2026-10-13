@@ -334,7 +334,11 @@ class MultiVector(metaclass=MultiVectorType):
     @staticmethod
     def _issymbolic(algebra, values) -> bool:
         """ True if any of the `values` is a Symbol, False otherwise. """
-        if getattr(values, 'dtype', object) != object:
+        dtype = getattr(values, 'dtype', object)
+        # Comparing torch.dtype with the class object invokes an unsupported
+        # reflected comparison in older Dynamo. NumPy object arrays compare
+        # equal to the string 'object'; containers without dtype use identity.
+        if dtype is not object and dtype != 'object':
             return False  # A numeric array holds no symbols.
         symbol_classes = (Expr, RationalPolynomial)
         if algebra.codegen_symbolcls:
@@ -607,7 +611,7 @@ class MultiVector(metaclass=MultiVectorType):
     def asmvtype(self, MVType=None):
         """ Cast to a specific multivector type. If no type is provided, use the algebra's own. """
         MVType = MVType or self.algebra.mvtype
-        if type(self) == MVType:
+        if type(self) is MVType:
             return self
         if layout := self.type_layout:
             # Sort the layout to canonical order, since a layout may be in whatever order its type likes.
@@ -620,7 +624,7 @@ class MultiVector(metaclass=MultiVectorType):
         else:
             keys, values = self.keys(), self.values()
         # fromkeysvalues is faster than the generic constructor because it doesn't validate the input.
-        res = MVType.fromkeysvalues(self.algebra, keys, values, raw=self.issymbolic) if MVType == self.algebra.mvtype else MVType(self.algebra, keys=keys, values=values)
+        res = MVType.fromkeysvalues(self.algebra, keys, values, raw=self.issymbolic) if MVType is self.algebra.mvtype else MVType(self.algebra, keys=keys, values=values)
         if 'shape' in self.__dict__:  # See __getitem__.
             res.shape = self.shape
         return res

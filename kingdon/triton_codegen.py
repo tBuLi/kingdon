@@ -273,6 +273,24 @@ def _padded(tile):
     return f'[{", ".join(["T0"] * rows + [str(_pad(n)) for n in features])}]'
 
 
+def _broadcast(text, tile, target):
+    """Promote a sum's first term without conflating row and feature axes.
+
+    tl.broadcast_to requires equal ranks. Insert the absent row axis first and
+    new leading feature axes after it; a present row axis stays at position0.
+    expand_dims also accepts scalar constants and preserves operand dtype.
+    """
+    rows, features = tile
+    target_rows, target_features = target
+    missing = len(target_features) - len(features)
+    if rows > target_rows or missing < 0:
+        raise Unsupported('a sum term cannot broadcast to its result tile')
+    axes = ([0] if target_rows and not rows else []) + list(range(target_rows, target_rows + missing))
+    if axes:
+        text = f'tl.expand_dims({text}, {axes})'
+    return f'tl.broadcast_to({text}, {_padded(target)})'
+
+
 def _axes(tile):
     """Per axis of a tile its index and its mask, or None where no lane is padding."""
     rows, features = tile
@@ -342,6 +360,38 @@ def _tiles(widths, tiles, outers=(1,)):
     return list(dict.fromkeys(_fit(tile, widths, outer) for tile in tiles for outer in outers))
 
 
+def _check_device(device):
+    """Reject targets this scheduler cannot model; dispatch uses ordinary Torch.
+
+    Register pressure, staging and occupancy currently use CUDA's 32-bit
+    register file and 32-lane warps. HIP's VGPR/SGPR allocation needs a separate
+    model, even on wave32 targets. Do not infer it from CUDA-compatible names.
+    """
+    import torch
+
+    try:
+        import triton
+    except ImportError:
+        raise Unsupported('Triton is not installed') from None
+    card = torch.cuda.get_device_properties(device)
+    resources = ('multi_processor_count', 'max_threads_per_multi_processor',
+                 'regs_per_multiprocessor', 'shared_memory_per_multiprocessor',
+                 'total_memory')
+    if (torch.version.hip or getattr(card, 'warp_size', None) != _WARP
+            or any(getattr(card, name, 0) <= 0 for name in resources)):
+        raise Unsupported('target needs a different register/occupancy model')
+
+
+def _dot_precision(device, dtype):
+    """Keep IEEE outside TF32-capable CUDA targets; honor Torch's FP32 policy."""
+    import torch
+
+    if (dtype != torch.float32 or torch.version.hip
+            or getattr(torch.cuda.get_device_properties(device), 'major', 0) < 8):
+        return 'ieee'
+    return 'tf32x3' if torch.get_float32_matmul_precision() == 'highest' else 'tf32'
+
+
 @functools.cache
 def _min_dot(device, dtype):
     """The smallest (M, N, K) of a tl.dot of `dtype` that the backend of `device` takes, as Triton itself checks it."""
@@ -364,7 +414,8 @@ def _registers(device, warps):
     """
     import torch
 
-    return min(255, torch.cuda.get_device_properties(device).regs_per_multiprocessor // (_WARP * warps))
+    card = torch.cuda.get_device_properties(device)
+    return min(255, card.regs_per_multiprocessor // (card.warp_size * warps))
 
 
 def _compiled(kernel, tile, *args, **kwargs):
@@ -373,7 +424,18 @@ def _compiled(kernel, tile, *args, **kwargs):
     from triton.errors import TritonError
 
     shape, warps, stages = tile
+    if 'EVEN' in kernel.arg_names:
+        kwargs.setdefault('EVEN', dict(zip(kernel.arg_names, args))['e0'] % shape[0] == 0)
     device = next(a.device for a in args if torch.is_tensor(a))
+    if 'RESIDENT' in kernel.arg_names and 'RESIDENT' not in kwargs:
+        # This constexpr only sizes the launch grid. Preflight with the likely
+        # runtime value so the expensive compilation is reusable by autotuning.
+        # _resident still reads actual registers/shared memory and corrects it.
+        card = torch.cuda.get_device_properties(device)
+        threads = card.warp_size * warps
+        blocks = min(card.max_threads_per_multi_processor // threads,
+                     card.regs_per_multiprocessor // (_registers(device, warps) * threads))
+        kwargs['RESIDENT'] = card.multi_processor_count * max(1, blocks)
     try:
         compiled = kernel.warmup(*args, **kwargs, **_sizes(shape), num_warps=warps, num_stages=stages, maxnreg=_registers(device, warps), grid=(1,))
         compiled._init_handles()
@@ -418,14 +480,18 @@ def _widest_clean(kernel, tiles, *args, **kwargs):
 def _affordable(kernel, tiles, device, *args, **kwargs):
     """
     `tiles` less those whose spills would not fit: the driver reserves local memory for them on behalf of every thread the card can hold, and a card that cannot find it resets.
-    So a tile that would need more than a sixteenth of the card that way is dropped, unless nothing needs less.
+    A tile needing more than a sixteenth of VRAM is rejected. If none fit, use
+    the torch fallback rather than launch a kernel that risks a driver reset.
     """
     import torch
 
     card = torch.cuda.get_device_properties(device)
     threads = card.multi_processor_count * card.max_threads_per_multi_processor
     local = {tile: 4 * _spills(kernel, tile, *args, **kwargs) * threads for tile in tiles}
-    return [tile for tile in tiles if local[tile] <= card.total_memory / 16] or [min(tiles, key=local.get)]
+    safe = [tile for tile in tiles if local[tile] <= card.total_memory / 16]
+    if not safe:
+        raise Unsupported('no tile fits the device local-memory budget')
+    return safe
 
 
 def _stripes(extents, tiles, device):
@@ -491,6 +557,23 @@ def _plan(bases, shapes):
 def _var(value):
     """The name of the symbol a coefficient is, or ``'_'`` for one that is not a symbol, a structural zero say."""
     return value.name if isinstance(value, sympy.Symbol) else rp_var_name(value)
+
+
+def _pointer_names(args):
+    """Separate argument pointers from the user expressions' coefficient names.
+
+    Kingdon labels argument buffers A/B/C, which may also be coefficient names.
+    Allocate private names against all coefficients, including gathered entries;
+    generated CSE temporaries use different prefixes. Wrappers bind positionally.
+    """
+    occupied = {_var(value) for values in args.values() for value in
+                (values[0] if any(isinstance(v, (list, tuple)) for v in values) else values)}
+    names, candidates = {}, (f'_ptr{k}' for k in itertools.count())
+    for argument in args:
+        name = next(name for name in candidates if name not in occupied)
+        occupied.add(name)
+        names[argument] = name
+    return names
 
 
 def _sympy_body(exprs):
@@ -619,6 +702,20 @@ def _sizes(shape):
     return {f'T{k}': size for k, size in enumerate(shape)}
 
 
+def _benchmark(kernel_call, quantiles):
+    """Measure replay throughput after the producer stream has finished.
+
+    Triton's graph timer creates its own stream. Its initial launch must not
+    race the producer of the inputs, including an autograd worker's stream.
+    Synchronization happens only during tuning, never on a cached launch.
+    """
+    import torch
+    from triton.testing import do_bench_cudagraph
+
+    torch.cuda.current_stream().synchronize()
+    return do_bench_cudagraph(kernel_call, rep=10, quantiles=quantiles)
+
+
 def _choose_tiles(namespace, funcname, plan, values, n_out, extents, span=None, tiles=None):
     """
     Autotune the forward over the tiles that do not spill, and the backward over the same sizes in every shape :func:`_fit` gives them.
@@ -630,34 +727,83 @@ def _choose_tiles(namespace, funcname, plan, values, n_out, extents, span=None, 
 
     reference = next(v for v in values if torch.is_tensor(v))
     call = [x for v, op in zip(values, plan) for x in ((v,) if op.array else v)] + ([namespace['_tables'](reference.device)] if 'TAB' in namespace[f'{funcname}_fwd'].arg_names else [])
-    out = torch.empty((n_out, math.prod(extents)), device=reference.device, dtype=reference.dtype)
-    saved = [out.new_empty(extents[0] * namespace['_KEPT'].value)] if namespace['_KEPT'].value else []
-    scratch = [out.new_empty(extents[0] * namespace['_STAGED'].value)] if namespace['_STAGED'].value else []
-    wide = math.prod(extents) * (span or max(n_out, *(op.slots for op in plan if op.array))) >= 2 ** 31
-    sizes = [f'e{k}' for k in range(1, len(extents))]
+    try:
+        from triton.runtime.jit import MockTensor
+    except ImportError:
+        raise Unsupported('Triton lacks compilation-only tensor arguments') from None
 
-    def autotune(kernel, tiles, key, **kwargs):
-        configs = [triton.Config(_sizes(shape), num_warps=w, num_stages=s, maxnreg=_registers(reference.device, w)) for shape, w, s in tiles]
+    def temporary(elements):
+        mock = MockTensor(reference.dtype, shape=(elements,))
+        # Preserve the real buffer's pointer-range specialization on big cards.
+        mock.ptr_range = lambda: elements * reference.element_size()
+        return mock
+
+    out = temporary(n_out * math.prod(extents))
+    saved = [temporary(extents[0] * namespace['_KEPT'].value)] if namespace['_KEPT'].value else []
+    stage_size = namespace['_STAGED'].value + namespace.get('_WSTAGED', 0)
+    scratch = [temporary(extents[0] * stage_size)] if stage_size else []
+    wide = math.prod(extents) * (span or max(n_out, *(op.slots for op in plan if op.array))) >= 2 ** 31
+    sizes = [f'e{k}' for k in range(len(extents))]
+
+    def autotune(kernel, tiles, key, variants=None, **kwargs):
+        configs = []
+        for (shape, warps, stages), extra in variants or [(tile, {}) for tile in tiles]:
+            constants = _sizes(shape)
+            constants.update(extra)
+            configs.append(triton.Config(constants, num_warps=warps, num_stages=stages,
+                                         maxnreg=_registers(reference.device, warps)))
+        # Tune replay throughput without host launch gaps or L2-flush traffic.
+        if tiles and reference.is_cuda:
+            kwargs['do_bench'] = _benchmark
         return triton.autotune(configs=configs, key=key, **kwargs)(kernel)
 
     widths = _widths(extents)
-    even = {'EVEN': extents[0] % _ROWS == 0} if 'EVEN' in namespace[f'{funcname}_fwd'].arg_names else {}
+    # Dynamo can rebuild an autotuner around nested heuristics and lose
+    # reset_to_zero. A common multiple is safe for every admitted row tile.
+    namespace['_EVEN_ROWS'] = math.lcm(*(shape[0] for shape, _, _ in tiles)) if tiles else 1
+    even = {'EVEN': extents[0] % namespace['_EVEN_ROWS'] == 0} if tiles else {}
     clean = _widest_clean(namespace[f'{funcname}_fwd'], tiles or _tiles(widths, CONFIGS), *call, out, *saved, *extents, wide, **even)
+    # A clean larger tile does not prove every narrower variant compiles. The
+    # narrowest may also spill when none is clean. Preflight every admitted
+    # forward variant before autotuning, just as for backward variants below.
+    clean = _affordable(namespace[f'{funcname}_fwd'], clean, reference.device,
+                        *call, out, *saved, *extents, wide, **even)
     namespace[f'{funcname}_fwd'] = autotune(namespace[f'{funcname}_fwd'], clean, sizes)
 
     elements = list(dict.fromkeys((math.prod(shape), w, s) for shape, w, s in clean))
-    candidates = _tiles(widths, elements, [1 << k for k in range(max(e for e, _, _ in elements).bit_length())])
+    candidates = tiles or _tiles(widths, elements, [1 << k for k in range(max(e for e, _, _ in elements).bit_length())])
     arrays = [(v, op) for v, op in zip(values, plan) if op.array]
     grads = {f'd{op.name}': v if all(op.varies) else v.to(torch.promote_types(v.dtype, torch.float32)) for v, op in arrays}
-    flags = {f'G{op.name}': True for _, op in arrays}
+    flags = {f'G{op.name}': value.requires_grad and op.name in namespace['_GRADIENTS']
+             for value, op in arrays}
     stripes = _stripes(extents, candidates, reference.device)
-    bwd = [*call, *extents, *grads.values(), out, *saved, *scratch, stripes]
+    bwd = [*call, *extents, *grads.values(), out, *saved, *scratch, *([extents[0]] if tiles else []), stripes]
     kernel = namespace[f'{funcname}_bwd']
-    # A kernel over given tiles, a whole layer's, times only those of them its backward holds without spilling, if any: a spilling one never won there.
-    namespace['_BACKWARD'] = _affordable(kernel, _widest_clean(kernel, candidates, *bwd, WIDE=wide, **even, **flags) if tiles else candidates, reference.device, *bwd, WIDE=wide, **even, **flags)
-    if tiles:
-        namespace['_RESIDENT'] = _resident(kernel, namespace['_BACKWARD'][0], *bwd, WIDE=wide, **even, **flags)
-    namespace[f'{funcname}_bwd'] = autotune(kernel, namespace['_BACKWARD'], sizes + list(flags), reset_to_zero=[f'd{op.name}' for _, op in arrays if not all(op.varies)])
+    # A small spill can beat a different warp layout with no spills. Exclude
+    # unsafe local-memory allocations, then let the actual timings decide.
+    variants = []
+    for schedule in range(namespace.get('_SCHEDULES', 1)):
+        options = {'SCHEDULE': schedule} if tiles else {}
+        try:
+            affordable = _affordable(kernel, candidates, reference.device, *bwd,
+                                     WIDE=wide, **even, **flags, **options)
+        except Unsupported:
+            continue
+        for tile in affordable:
+            constants = dict(options)
+            if tiles:
+                constants['RESIDENT'] = _resident(kernel, tile, *bwd, WIDE=wide,
+                                                  **even, **flags, **options)
+            variants.append((tile, constants))
+    if not variants:
+        raise Unsupported('no backward schedule fits the device local-memory budget')
+    # A CTA owns one staging tile, reused at every persistent iteration.
+    # The maximum over admitted Triton configs keeps autotuning safe.
+    namespace['_CAPACITY'] = max(tile[0][0] * options['RESIDENT'] for tile, options in variants) if tiles else extents[0]
+    namespace['_BACKWARD'] = list(dict.fromkeys(tile for tile, _ in variants))
+    namespace[f'{funcname}_bwd'] = autotune(kernel, namespace['_BACKWARD'], sizes + list(flags),
+                                          variants=variants,
+                                          reset_to_zero=[f'd{op.name}' for _, op in arrays if not all(op.varies)])
 
 
 def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_asarray=None, shapes=None, keys=None, printer=None):
@@ -673,6 +819,13 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
 
     plain = lambdify(args, exprs, funcname, printer=printer, cse=cse, output_mv_idx=output_mv_idx, values_asarray=values_asarray, shapes=shapes, keys=keys)
     fused = any(isinstance(e, sympy.Basic) and e.has(ArrayBase) for e in exprs)
+    # Tensor packing can keep a zero-gradient dependency even when gathering
+    # eliminates every contributing blade. Match the original torch graph's
+    # connectivity; absence of emitted gradient roots alone does not imply None.
+    original_leaves = {_var(s) for s in _leaves([sympy.sympify(e) for e in exprs])} if fused else set()
+    connected = {name for name, vals in args.items() if any(
+        _var(v) in original_leaves for v in
+        (vals[0] if any(isinstance(v, (list, tuple)) for v in vals) else vals))}
     try:
         if output_mv_idx is not None:
             raise Unsupported('writes into an argument')
@@ -687,10 +840,19 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
     import torch
 
     built = {}
+
+    @torch.compiler.assume_constant_result
+    def matmul_precision():
+        # Precision is a compile policy. Dynamo cannot put the string returned
+        # by torch.get_float32_matmul_precision into an FX tensor graph.
+        return torch.get_float32_matmul_precision()
+
+    pointer_names = _pointer_names(args)
+    connected = {pointer_names[name] for name in connected}
     bases = []
     for name, vals in args.items():
         nested = any(isinstance(v, (list, tuple)) for v in vals)
-        bases.append(Operand(name, tuple(_var(v) for v in (vals[0] if nested else vals)), nested))
+        bases.append(Operand(pointer_names[name], tuple(_var(v) for v in (vals[0] if nested else vals)), nested))
     if fused:
         franks = tuple(max((ranks.get(sympy.Symbol(var), math.inf) for _, var in base.live), default=math.inf) for base in bases)
 
@@ -704,6 +866,9 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
         """
         if len(values) != len(bases):
             return None
+        devices = {v.device for v in values if torch.is_tensor(v)}
+        if len(devices) != 1:
+            return None
         shapes_in, dtypes = [], []
         for value, base in zip(values, bases):
             # The kernel takes a scalar by value and gives it no gradient, which only holds for plain numbers.
@@ -712,7 +877,7 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
                     return None
                 shapes_in.append(None)
                 dtypes.append(None)
-            elif not torch.is_tensor(value) or value.is_cpu:
+            elif not torch.is_tensor(value) or value.device.type != 'cuda':
                 return None
             elif tuple(value.shape[:base.lead]) != ((1, base.slots) if base.nested else (base.slots,)):
                 return None
@@ -729,6 +894,7 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
 
     def build(values):
         """The kernel for the layout the operands arrive with: not that of `shapes`, since an operator is often made by a symbolic call inside another's codegen, where every multivector is shapeless."""
+        _check_device(next(v.device for v in values if torch.is_tensor(v)))
         datashapes = tuple(datashape(value, base) for value, base in zip(values, bases))
         dtype = functools.reduce(torch.promote_types, [v.dtype for v in values if torch.is_tensor(v)])
         if fused:
@@ -742,24 +908,27 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
         plan = [replace(base, varies=tile and (tile[0],), shape=shape) for base, shape, tile in zip(bases, datashapes, tiles)]
         leaves = {sympy.Symbol(var): tile or (False, ()) for op, tile in zip(plan, tiles) for _, var in op.live}
         # As torch's own matmul, on tensor cores: a float32 dot on the cores that do fused multiply-adds instead holds so much of both operands per thread that it spills. tf32x3 is as close to float32 as tensor cores get.
-        precision = 'ieee' if dtype != torch.float32 or torch.version.hip else 'tf32x3' if torch.get_float32_matmul_precision() == 'highest' else 'tf32'
+        precision = _dot_precision(next(v.device for v in values if torch.is_tensor(v)), dtype)
         dot = _min_dot(next(v for v in values if torch.is_tensor(v)).device, dtype)
         printer = TritonPrinter(dict(leaves), precision, dot)
         printer.loops = loops
-        out_tile = (True, tuple(np.broadcast_shapes(*(printer.shape(e)[1] for e in exprs))))
+        expressions = _pointwise(exprs, printer)
+        out_tile = (True, tuple(np.broadcast_shapes(*(printer.shape(e)[1] for e in expressions))))
         grad_printer = TritonPrinter({**leaves, **{sympy.Symbol(f'go{k}'): out_tile for k in range(len(exprs))}}, precision, dot)
         grad_printer.loops = loops
-        gradients = _fused_gradients(plan, exprs, grad_printer)
+        gradients = _fused_gradients(plan, expressions, grad_printer)
         # A tile holds every feature of its rows, and of the whole layer, so a block has the fewest rows a tl.dot takes, _ROWS, and as many warps as the widest tile it holds,
         # of an operand or of a value between, fills with a vector of the widest load a lane: more would hold copies of what fewer hold, fewer would each hold more of it, and spill or stage it.
         widest = max(math.prod(map(_pad, features)) for rows, features in grad_printer.shapes.values() if rows)
         printer.warps = grad_printer.warps = warps = max(1, _ROWS * widest * dtype.itemsize // (_VECTOR * _WARP))
-        rows = [((_ROWS,), warps, 1)]
+        # Different warp layouts can cut the live registers per thread without
+        # changing the expression or row tile. Let Triton's autotuner choose.
+        rows = [((m,), w, 1) for m in (_ROWS, 2 * _ROWS) for w in (warps, warps * 2) if w <= 32]
         # What the values of a segment may take of a thread's registers, see _split, as single precision ones: a quarter stays for what that does not count --
         # indices, masks and addresses, the fragments of a tl.dot, a tile changing layout.
         budget = _registers(next(v for v in values if torch.is_tensor(v)).device, warps) * 3 // 4 * 4 // dtype.itemsize
         span = max(len(exprs) * math.prod(out_tile[1]), *(op.slots * math.prod(tile[1]) for op, tile in zip(plan, tiles) if op.array))
-        return run(_fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_printer, span, dtype, budget), plan, values, len(exprs), (math.prod(batch),), span, rows)
+        return run(_fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_printer, span, dtype, budget, connected), plan, values, len(exprs), (math.prod(batch),), span, rows)
 
     def run(src, plan, values, n_out, extents, *tuning):
         filename = f'{funcname}#{next(_BUILDS)}'
@@ -776,6 +945,10 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
         key = signature(values)
         if key is None:
             return plain(*values)
+        # Source selection depends on this device's contraction capabilities
+        # and on torch's float32 precision policy, not just tensor layout.
+        key = (next(v.device for v in values if torch.is_tensor(v)), matmul_precision(), key,
+               tuple(v.requires_grad if torch.is_tensor(v) else False for v in values))
         if key not in built:
             try:
                 built[key] = build(values)
@@ -964,10 +1137,12 @@ def _fused_layout(shapes, ranks):
     The rows the operands share, and each operand's tile, or None for a plain number: its axes before the trailing `ranks` features are rows, if any of them is not one.
     An operand with rows has all of them, since one broadcast along some rows only would need a row axis of its own.
     """
+    import torch
+
     split = [None if shape is None else (shape[:len(shape) - min(len(shape), rank)], shape[len(shape) - min(len(shape), rank):]) for shape, rank in zip(shapes, ranks)]
     try:
-        batch = np.broadcast_shapes(*(rows for rows, _ in filter(None, split)))
-    except ValueError as error:
+        batch = tuple(torch.broadcast_shapes(*(rows for rows, _ in filter(None, split))))
+    except (ValueError, RuntimeError) as error:
         raise Unsupported(f'{shapes} do not broadcast') from error
     # A size can be symbolic under torch.compile, where a key holding the test rather than its outcome fails in sympy: branching settles it, as in _layout.
     tiles = [None if s is None else (True if math.prod(s[0]) > 1 else False, s[1]) for s in split]
@@ -1032,6 +1207,51 @@ def _scattered(operand, adjoint):
             yield element, Einsum(Str(f'{",".join(terms)}->{right[1:]}'), *(Stack(*(op.args[i] for i in at)) if isinstance(op, Stack) else op for op in adjoint.args[1:]))
         else:
             yield element, sympy.Add(*(adjoint.args[i] for i in at))
+
+
+def _pointwise(exprs, printer):
+    """Expose broadcast-only einsums to scalar CSE and differentiation.
+
+    A pointwise multivector einsum otherwise creates one adjoint cut for all of
+    its blades, keeping unrelated grades live across a chain of such nodes.
+    Contractions and axis permutations retain their array representation.
+    """
+    @_bottom_up
+    def rewrite(e):
+        if isinstance(e, sympy.Add) and not e.has(ArrayBase):
+            powers = [term.as_powers_dict() for term in e.args]
+            common = set.intersection(*(set(p) for p in powers))
+            factors = {base: min(p[base] for p in powers) for base in common
+                       if all(p[base].is_Integer and p[base] > 0 for p in powers)}
+            if factors:
+                # normsq(g*X) = g**2 * normsq(X): keep the common scale
+                # outside the blade sum so CSE sees the scalar recurrence.
+                factor = sympy.Mul(*(base ** n for base, n in factors.items()))
+                return factor * sympy.Add(*(term / factor for term in e.args))
+        if isinstance(e, Blade) and isinstance(e.args[0], Stack):
+            return e.args[0].args[int(e.args[1])]
+        if not isinstance(e, Einsum):
+            return e
+        counts = [printer.count(op) for op in e.args[1:]]
+        blade, kept, terms, right = _unbladed(e, counts)
+        if blade is not None:
+            if kept and all(term in (right, right.replace('...', '')) for term in terms):
+                return Stack(*(rewrite(printer._blade(e, i)) for i in range(next(filter(None, counts)))))
+            return e
+        if not all(term in (right, right.replace('...', '')) for term in terms):
+            return e
+        # Ordinary multiplication must broadcast along exactly the same axes.
+        # In particular, a row-only vector needs an explicit extra axis when
+        # multiplied by a row/feature matrix, and must remain an einsum.
+        full = lambda tile: (*([_ROWS] if tile[0] else []), *tile[1])
+        try:
+            if np.broadcast_shapes(*(full(printer.shape(op)) for op in e.args[1:])) != full(printer.shape(e)):
+                return e
+        except ValueError:
+            return e
+        return sympy.Mul(*e.args[1:])
+
+    return [rewrite(e) for e in exprs]
 
 
 def _fused_gradients(plan, exprs, printer):
@@ -1148,7 +1368,7 @@ def _fused_gradients(plan, exprs, printer):
         g = [gathered(s) for s in ys]
         if any(g):
             # A blade named as one before it has its gradient there already.
-            g = [sympy.S.Zero if s in ys[:i] else define(f'_d{len(defs)}', d) for i, (s, d) in enumerate(zip(ys, g))]
+            g = [sympy.S.Zero if d == 0 or s in ys[:i] else define(f'_d{len(defs)}', d) for i, (s, d) in enumerate(zip(ys, g))]
             # A loop reads the cotangents of a Loop node from memory, where each goes as it is computed, see _fused_source.
             roots.extend((d, d if isinstance(value, Loop) else None) for d in g if d != 0)
             if isinstance(value, ArrayBase):
@@ -1156,7 +1376,14 @@ def _fused_gradients(plan, exprs, printer):
                     if isinstance(adjoint, LoopGrad):
                         roots.append((sympy.S.Zero, adjoint))
                     for element, gradient in _scattered(operand, adjoint):
-                        push(define(f'_g{len(defs)}', gradient), element, k)
+                        # Naming an identically zero blade hides its zero from
+                        # sympy: subsequent VJPs then retain its nonlinear path.
+                        if isinstance(gradient, Blade) and isinstance(gradient.args[0], Einsum):
+                            blade = printer._blade(gradient.args[0], int(gradient.args[1]))
+                            if isinstance(blade, Einsum) and 0 in blade.args[1:]:
+                                continue
+                        if gradient != 0:
+                            push(define(f'_g{len(defs)}', gradient), element, k)
             else:
                 loss.append(g[0] * value)
         for leaf in value.free_symbols & pending.keys():
@@ -1336,7 +1563,9 @@ def _emit(roots, defs, printer, load, seeds=(), stage=None, budget=math.inf, pin
                 if line:
                     take(s, e=line[0])
                     # The first term of a sum may broadcast against the others, and the sum so far be stored where a segment starts amid it.
-                    text = printer.doprint(line[0]) if printer.shape(line[0]) == printer.shapes[s] else f'tl.broadcast_to({printer.doprint(line[0])}, {_padded(printer.shapes[s])})'
+                    text = printer.doprint(line[0])
+                    if printer.shape(line[0]) != printer.shapes[s]:
+                        text = _broadcast(text, printer.shape(line[0]), printer.shapes[s])
                     lines.append(f'    {s} = {text}')
                     if line[1] and s in born:
                         born[s] = segment
@@ -1463,29 +1692,31 @@ def _source(funcname, plan, n, lines, outs, grad_lines, grads, dtype):
                    f'data, extents, _ = _layout(({", ".join(f"{op.name}.shape[{op.lead}:]" for op in arrays)},))', max(len(outs), *(op.slots for op in arrays)), dtype)
 
 
-def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_printer, span, dtype, budget=math.inf):
+def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_printer, span, dtype, budget=math.inf, connected=None):
     """
     :func:`_source` for a kernel over blocks of rows, which holds every coefficient as a tile of all its features, see :func:`_fused_layout`.
     The forward and the backward are those of :func:`_fused_gradients`, every value and load of either emitted where :func:`_emit` needs it.
     Every value of the forward the backward loads, see :func:`_fused_gradients`, it loads from where the forward stores it.
     """
+    import torch
+
     outputs, forward, saved, roots, defs = gradients
     arrays = [(op, tile) for op, tile in zip(plan, tiles) if op.array]
     where = {sympy.Symbol(var): (op, i, tile) for op, tile in arrays for i, var in op.live}
     slots = {}
 
-    def at(name, i, tile, stride=None):
+    def at(name, i, tile, stride=None, row_index='_x0', row_start='_r0'):
         """
         The pointers and the mask of coefficient i of an operand of `tile`, whose rows are flattened, and follow each other `stride` apart if given.
         A value without rows given a stride is its block's own, in the place of the block's first row: the blocks run at once, and would take each other's.
         """
         rows, features = tile
-        axes = _axes(tile)
+        axes = [(row_index if index == '_x0' else index, mask) for index, mask in _axes(tile)]
         offsets = [f'{_expand(index, k, len(axes))} * {stride if stride and k < rows else math.prod(features[k - rows + 1:])}' for k, (index, _) in enumerate(axes)]
-        block = [f'_r0 * {stride}'] if stride and not rows else []
+        block = [f'{row_start} * {stride}'] if stride and not rows else []
         return ' + '.join([name, f'{i} * {"e0 * " * rows}{math.prod(features)}', *block, *offsets]), ' & '.join(_expand(mask, k, len(axes)) for k, (_, mask) in enumerate(axes) if mask)
 
-    def keep(s, slots=slots, name='saved', shapes=grad_printer.shapes):
+    def keep(s, slots=slots, name='saved', shapes=grad_printer.shapes, pitch=None, row_index='_x0', row_start='_r0'):
         """
         Where the forward stores the value `s` for the backward, or a segment a value it stages for a later one: after the values given a place before it in each row of `name`.
         A row holds all of them, `stride` apart, so that each is the same pointers plus a constant, which the compiler folds into the load rather than hold an address per value.
@@ -1493,10 +1724,11 @@ def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_prin
         if s not in slots:
             slots[s] = (filled(slots), shapes[s])
         offset, tile = slots[s]
-        return at(f'{name} + {offset}', 0, tile, '_KEPT' if name == 'saved' else '_STAGED')
+        return at(f'{name} + {offset}', 0, tile, pitch or ('_KEPT' if name == 'saved' else '_STAGED'), row_index, row_start)
 
     held = {}
-    hold = functools.partial(keep, slots=held, name='scratch')
+    hold = functools.partial(keep, slots=held, name='scratch', pitch='_BSTRIDE',
+                             row_index='_s0', row_start='_sr0')
     filled = lambda slots: sum(_slot(tile) for _, tile in slots.values())
 
     def load(s):
@@ -1545,7 +1777,8 @@ def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_prin
 
     # Where the rows fill every block the mask is all true, which triton folds away: a masked load would be a predicate, and zeros put in the registers first.
     block = lambda start: [f'    _r0 = {start} * T0', '    if WIDE:', '        _r0 = _r0.to(tl.int64)', '    _x0 = _r0 + tl.arange(0, T0)', '    _m0 = _x0 < e0', '    if EVEN:', '        _m0 = tl.full([T0], 1, tl.int1)']
-    index = ['    _pid = tl.program_id(0)', *block('_pid')]
+    index = ['    _pid = tl.program_id(0)', '    if WIDE:',
+             '        e0 = e0.to(tl.int64)', *block('_pid')]
     saved = set(saved)
     printer.zeroed, grad_printer.zeroed = set(where), {*where, *saved, *(sympy.Symbol(f'go{k}') for k in range(len(outputs)))}
 
@@ -1625,13 +1858,85 @@ def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_prin
         rows = [[[c, *(reads[k][o][1][gather.index[o][c][j]] for o in others), gather.sign[c][j]] for c, j in taken] + [[0] * (len(others) + 2)] * (width - len(taken)) for taken in pairs]
         terms, right = _pattern(gather.pattern)
         term = terms[m] if '...' in terms[m] or not tile[0] else f'...{terms[m]}'
-        operands = [(lambda i: at(f'scratch + {g_offset} + {i} * {g_size}', 0, cotangent, '_STAGED'), cotangent), *((reads[k][o][0], reads[k][o][2]) for o in others)]
-        return looped(grad_printer, rows, operands, f'{",".join([right, *(terms[o] for o in others)])}->{term}', lambda i: at(f'scratch + {offset} + {i} * {size}', 0, tile, '_STAGED'), tile)
+        operands = [(lambda i: at(f'scratch + {g_offset} + {i} * {g_size}', 0, cotangent, '_BSTRIDE', '_s0', '_sr0'), cotangent), *((reads[k][o][0], reads[k][o][2]) for o in others)]
+        return looped(grad_printer, rows, operands, f'{",".join([right, *(terms[o] for o in others)])}->{term}', lambda i: at(f'scratch + {offset} + {i} * {size}', 0, tile, '_BSTRIDE', '_s0', '_sr0'), tile)
 
     for y, value in forward.items():
         if isinstance(value, Loop):
             forward_loop(y, value)
     loops = {node: backward_loop(node) for _, node in roots if isinstance(node, LoopGrad)}
+
+    # Move large shared matrix contractions out of the row-local
+    # VJP. Its row adjoints are checkpointed once; framework GEMMs reduce the
+    # batch without holding matrix accumulators in every persistent CTA.
+    external, checkpointed, weight_slots, external_symbols = {}, {}, {}, {}
+
+    def outer_terms(value):
+        while isinstance(value, sympy.Symbol) and value in defs:
+            value = defs[value]
+        if value == 0:
+            return []
+        if isinstance(value, Blade) and isinstance(value.args[0], Einsum):
+            return outer_terms(grad_printer._blade(value.args[0], int(value.args[1])))
+        if not isinstance(value, Einsum) or len(value.args) != 3:
+            return None
+        counts = [grad_printer.count(op) for op in value.args[1:]]
+        blade, kept, terms, right = _unbladed(value, counts)
+        if blade is not None:
+            if kept:
+                return None
+            result = []
+            for k in range(next(filter(None, counts))):
+                taken = outer_terms(grad_printer._blade(value, k))
+                if taken is None:
+                    return None
+                result.extend(taken)
+            return result
+        if any(op == 0 for op in value.args[1:]):
+            return []
+        if len(right) != 2 or terms != [f'...{right[0]}', f'...{right[1]}']:
+            return None
+        if not all(isinstance(op, sympy.Symbol) and grad_printer.shape(op)[0]
+                   and len(grad_printer.shape(op)[1]) == 1 for op in value.args[1:]):
+            return None
+        return [tuple(value.args[1:])]
+
+    def checkpoint(value):
+        if value in checkpointed:
+            return checkpointed[value]
+        tile = grad_printer.shape(value)
+        if value in where:
+            op, slot, _ = where[value]
+            expression = f'{op.name}.reshape({op.slots}, extents[0], {tile[1][0]})[{slot}]'
+        elif value in forward:
+            saved.add(value)
+            keep(value)
+            offset = slots[value][0]
+            expression = f'saved.as_strided((extents[0], {tile[1][0]}), (_KEPT.value, 1), {offset})'
+        else:
+            target = sympy.Symbol(f'_wm{len(checkpointed)}')
+            grad_printer.shapes[target] = tile
+            offset = sum(width for _, width in weight_slots.values())
+            weight_slots[target] = (offset, tile[1][0])
+            expression = f'scratch.narrow(0, _STAGED.value * capacity + {offset} * extents[0], extents[0] * {tile[1][0]}).view(extents[0], {tile[1][0]})'
+            pending_checkpoints.append((value, target))
+        checkpointed[value] = expression
+        return expression
+
+    pending_checkpoints, rewritten = [], []
+    for value, target in roots:
+        entry = where.get(target)
+        terms = outer_terms(value) if (dtype == torch.float32 and entry
+            and not entry[2][0] and len(entry[2][1]) == 2
+            and math.prod(entry[2][1]) >= 256) else None
+        if terms is None:
+            rewritten.append((value, target))
+            continue
+        external.setdefault(target, []).extend((checkpoint(a), checkpoint(b)) for a, b in terms)
+        external_symbols.setdefault(target, []).extend(terms)
+        rewritten.extend(pending_checkpoints)
+        pending_checkpoints.clear()
+    roots = rewritten
 
     def sink(s):
         """Where a root goes, given what it is for: a leaf's gradient to the operand's, a Loop node's cotangent to its place in scratch, and a LoopGrad's loop there itself."""
@@ -1639,22 +1944,88 @@ def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_prin
             return lambda _: []
         if isinstance(s, LoopGrad):
             return lambda _: loops[s]
+        if s in weight_slots:
+            offset, _ = weight_slots[s]
+            return store(*at(f'scratch + _STAGED * SROWS + {offset} * e0', 0, grad_printer.shapes[s]))
         return gradient(s) if s in where else store(*hold(s))
 
-    bwd = _emit([(g, sink(s)) for g, s in roots], {s: v for s, v in defs.items() if s not in saved and s not in fixed}, grad_printer, load, [sympy.Symbol(f'go{k}') for k in range(len(outputs))], hold, budget, spare=spare)
-    holding = [(k, op, pointers, mask, tile) for k, (s, (op, pointers, mask, tile)) in enumerate(sums.items()) if s in held_sums]
-    bwd = ['    _pid = tl.program_id(0)', *(f'    _w{k} = tl.zeros({_padded(tile)}, {acc})' for k, *_, tile in holding),
-           '    for _blk in range(_pid, tl.cdiv(e0, T0), tl.num_programs(0)):', *('    ' + line for line in [*block('_blk'), *bwd]),
-           *(line for k, op, pointers, mask, _ in holding for line in (f'    if G{op.name}:', f'        tl.atomic_add({pointers}, _w{k}{mask}, sem="relaxed")'))]
-    fwd = _emit([*before, *((s, store(*keep(s))) for s in forward if s in slots and s not in fixed), *((e, store(*at('out', k, out_tile))) for k, e in enumerate(outputs))],
+    # Large shared parameter tiles compete with activation adjoints for registers.
+    # Compile a small family of CSE/staging schedules; Triton's ordinary autotuner
+    # selects their elapsed time along with the warp layout and gradient mask.
+    budgets = [budget / divisor for divisor in (1, 2, 4)] if (
+        any(not tile[0] and math.prod(tile[1]) >= 256 for _, tile in arrays)
+        or not any(value.has(ArrayBase) for value in forward.values())) else [budget]
+    bodies = []
+    fixed_slots, scratch = dict(held), filled(held)
+    for limit in budgets:
+        # Only one constexpr schedule runs: its temporaries can reuse the same
+        # allocation instead of reserving the union of all schedules' slots.
+        held.clear()
+        held.update(fixed_slots)
+        held_sums.clear()
+        body = _emit([(g, sink(s)) for g, s in roots], {s: v for s, v in defs.items() if s not in saved and s not in fixed}, grad_printer, load, [sympy.Symbol(f'go{k}') for k in range(len(outputs))], hold, limit, spare=spare)
+        holding = [(k, op, pointers, mask, tile) for k, (s, (op, pointers, mask, tile)) in enumerate(sums.items()) if s in held_sums]
+        bodies.append(['    if WIDE:', '        e0 = e0.to(tl.int64)',
+                       '        SROWS = SROWS.to(tl.int64)',
+                       '    _pid = tl.program_id(0)', '    _sr0 = _pid * T0',
+                       '    if WIDE:', '        _sr0 = _sr0.to(tl.int64)',
+                       '    _s0 = _sr0 + tl.arange(0, T0)', f'    _BSTRIDE = {filled(held)}', *(f'    _w{k} = tl.zeros({_padded(tile)}, {acc})' for k, *_, tile in holding),
+                       # All warps finish reading this CTA's stage before
+                       # the next persistent iteration overwrites it.
+                       '    for _blk in range(_pid, tl.cdiv(e0, T0), tl.num_programs(0)):', *('    ' + line for line in [*block('_blk'), *body]),
+                       *(['        tl.debug_barrier()'] if filled(held) else []),
+                       *(line for k, op, pointers, mask, _ in holding for line in (f'    if G{op.name}:', f'        tl.atomic_add({pointers}, _w{k}{mask}, sem="relaxed")'))])
+        scratch = max(scratch, filled(held))
+    bwd = bodies[0] if len(bodies) == 1 else [line for k, body in enumerate(bodies)
+        for line in [f'    {"if" if k == 0 else "elif"} SCHEDULE == {k}:', *('    ' + line for line in body)]]
+    def output_store(k, expression):
+        write = store(*at('out', k, out_tile))
+        # AD retains the shapes of original cut symbols, including aliases
+        # eliminated by the forward emitter's second CSE pass.
+        tile = grad_printer.shape(expression)
+        # A blade can be row-invariant (e.g. a scalar bias alongside vectors).
+        # Older Triton requires its rank to match the output pointer tile.
+        return lambda value: write(_broadcast(value, tile, out_tile) if tile != out_tile else value)
+
+    fwd = _emit([*before, *((s, store(*keep(s))) for s in forward if s in slots and s not in fixed), *((e, output_store(k, e)) for k, e in enumerate(outputs))],
                 {s: v for s, v in forward.items() if s not in written and not isinstance(v, Loop)}, printer, load, stage=functools.partial(keep, shapes=printer.shapes), budget=budget, pinned=set(slots))
     batch = ', '.join(f'{op.name}.shape[{op.lead}:{op.name}.ndim - {len(tile[1])}]' for op, tile in arrays)
-    kept, scratch = filled(slots), filled(held)
-    return _module(funcname, plan, 1, [*index, *fwd], bwd, len(outputs), f'batch = torch.broadcast_shapes({batch}); data, extents = (*batch, *{out_tile[1]}), (math.prod(batch),)',
-                   max(span, kept, scratch), dtype, kept, scratch, _ROWS, tables)
+    kept = filled(slots)
+    gemms = []
+    for target, terms in external.items():
+        if not terms:
+            continue
+        op, slot, (_, features) = where[target]
+        destination = f'd{op.name}.reshape({op.slots}, {features[0]}, {features[1]})[{slot}]'
+        gemms.append(f'        if G{op.name}:')
+        # Consecutive blade planes are already a single contiguous reduction
+        # dimension. Coalesce their GEMMs without a packing kernel or copy.
+        symbols = external_symbols[target]
+        left_slots = [next((weight_slots[sink] for value, sink in roots
+                            if value == left and sink in weight_slots), None)
+                      for left, _ in symbols]
+        right_slots = [where.get(right) for _, right in symbols]
+        if (len(terms) > 1 and all(left_slots) and all(right_slots)
+                and len({(entry[0].name, entry[2]) for entry in right_slots}) == 1
+                and [entry[1] for entry in right_slots] == list(range(right_slots[0][1], right_slots[0][1] + len(terms)))
+                and [offset for offset, _ in left_slots] == list(range(left_slots[0][0], left_slots[0][0] + len(terms) * features[0], features[0]))):
+            rows = f'{len(terms)} * extents[0]'
+            left = f'scratch.narrow(0, _STAGED.value * capacity + {left_slots[0][0]} * extents[0], {rows} * {features[0]}).view({rows}, {features[0]})'
+            right_op, right_slot, _ = right_slots[0]
+            right = f'{right_op.name}.reshape({right_op.slots} * extents[0], {features[1]}).narrow(0, {right_slot} * extents[0], {rows})'
+            terms = [(left, right)]
+        for left, right in terms:
+            gemms.append(f'            torch.addmm({destination}, {left}.T, {right}, beta=1, out={destination})')
+    wstaged = sum(width for _, width in weight_slots.values())
+    return _module(funcname, plan, 1, [*index, *fwd], bwd, len(outputs),
+                   f'batch = torch.broadcast_shapes({batch}); data, extents = (*batch, *{out_tile[1]}), (math.prod(batch),)',
+                   max(span, kept, scratch + wstaged), dtype, kept, scratch,
+                   _ROWS, tables, len(budgets), connected if connected is not None else
+                   {where[s][0].name for _, s in roots if s in where} | {where[s][0].name for s in external},
+                   wstaged=wstaged, epilogue=gemms)
 
 
-def _module(funcname, plan, n, fwd, bwd, n_out, layout, span, dtype, kept=0, staged=0, rows=None, tables=()):
+def _module(funcname, plan, n, fwd, bwd, n_out, layout, span, dtype, kept=0, staged=0, rows=None, tables=(), schedules=1, gradient_names=None, wstaged=0, epilogue=()):
     """
     The forward and backward kernels, from the bodies `fwd` and `bwd`, and the autograd function that launches them:
     `layout` sets the output's `data` shape and the grid's `extents`, the forward stores `kept` coefficients a row in `saved`, for the backward and for its own later segments,
@@ -1662,7 +2033,7 @@ def _module(funcname, plan, n, fwd, bwd, n_out, layout, span, dtype, kept=0, sta
     and their backward goes over those blocks with as many programs as the card runs at once, _RESIDENT, so that a sum a program holds over them it adds into a gradient once.
     """
     arrays = [op for op in plan if op.array]
-    saved, scratch = ', saved' if kept else '', ', scratch' if staged else ''
+    saved, scratch = ', saved' if kept else '', ', scratch' if staged or wstaged else ''
     names = [op.name for op in arrays]
     flags = [f'G{name}' for name in names]
     # An operand shared along the outermost axis -- a weight, shared over the batch -- sums its gradient into one of several copies, picked by block and added up by the
@@ -1672,14 +2043,14 @@ def _module(funcname, plan, n, fwd, bwd, n_out, layout, span, dtype, kept=0, sta
     # Every constexpr follows every runtime argument: inductor launches a user kernel without its constexprs, yet finds the gradients to zero between timed configs by
     # their position in the whole signature. WIDE precedes the tile so that :func:`_widest_clean` can pass it positionally.
     constexprs = f'WIDE: tl.constexpr, {"EVEN: tl.constexpr, " if rows else ""}{", ".join(f"T{k}: tl.constexpr" for k in range(n))}'
-    even = f', EVEN=extents[0] % {rows} == 0' if rows else ''
+    even = ', EVEN=(True if extents[0] % _EVEN_ROWS == 0 else False)' if rows else ''
 
     params = ", ".join([*_params(plan), *['TAB'] * bool(tables)])
     fwd_args = f'{params}, out{saved}'
-    bwd_args = lambda sizes: f'{params}, {sizes}, {", ".join("d" + name for name in names)}, gout{saved}{scratch}'
+    bwd_args = lambda sizes, capacity='SROWS': f'{params}, {sizes}, {", ".join("d" + name for name in names)}, gout{saved}{scratch}{", " + capacity if rows else ""}'
     kernels = ['@triton.jit', f'def {funcname}_fwd({fwd_args}, {sizes}, {constexprs}):', *fwd, '', '',
                # The stripe count follows the batch, and only picks a copy, so it is not worth a compilation per value triton would specialise it to.
-               '@triton.jit(do_not_specialize=["STRIPES"])', f'def {funcname}_bwd({bwd_args(sizes)}, STRIPES, {constexprs}, {", ".join(f"{f}: tl.constexpr" for f in flags)}):', *bwd, '', '']
+               f'@triton.jit(do_not_specialize={(["STRIPES", "SROWS"] if rows else ["STRIPES"])!r})', f'def {funcname}_bwd({bwd_args(sizes)}, STRIPES, {constexprs}, {", ".join(f"{f}: tl.constexpr" for f in flags)}{", RESIDENT: tl.constexpr = 1, SCHEDULE: tl.constexpr = 0" if rows else ""}):', *bwd, '', '']
 
     buffers = []
     for op, flag in zip(arrays, flags):
@@ -1692,6 +2063,11 @@ def _module(funcname, plan, n, fwd, bwd, n_out, layout, span, dtype, kept=0, sta
 
     launcher = f"""
 _KEPT, _STAGED = tl.constexpr({kept}), tl.constexpr({staged})
+_WSTAGED = {wstaged}
+_CAPACITY = 1
+_WGEMMS = {sum('torch.addmm(' in line for line in epilogue)}
+_SCHEDULES = {schedules}
+_GRADIENTS = {tuple(name for name in names if gradient_names is None or name in gradient_names)}
 _TABLES = {tuple(tables)}
 _tables = functools.cache(lambda device: torch.tensor(_TABLES, dtype=torch.int32, device=device))
 
@@ -1701,7 +2077,7 @@ def _grid(meta):
 
 
 def _grid_bwd(meta):
-    return {"(min(_grid(meta)[0], _RESIDENT),)" if rows else "_grid(meta)"}
+    return {"(min(_grid(meta)[0], meta['RESIDENT']),)" if rows else "_grid(meta)"}
 
 
 class _Fn(torch.autograd.Function):
@@ -1722,13 +2098,15 @@ class _Fn(torch.autograd.Function):
     def backward(ctx, gout):
         {", ".join(names)}{saved}, = ctx.saved_tensors
         ({", ".join(scalars)}{"," if scalars else ""}) = ctx.scalars
-        {", ".join(flags)}, = {", ".join(f"ctx.needs_input_grad[{i}]" for i, op in enumerate(plan) if op.array)},
+        {", ".join(flags)}, = {", ".join(f"ctx.needs_input_grad[{i}]" if gradient_names is None or op.name in gradient_names else "False" for i, op in enumerate(plan) if op.array)},
         gout, extents = gout.contiguous(), ctx.extents
         stripes = {"_stripes(extents, _BACKWARD, gout.device)" if shared else "1"}
         {"; ".join(buffers)}
-        {f"scratch = gout.new_empty(extents[0] * {staged})" if staged else "pass"}
+        capacity = min(extents[0], _CAPACITY) if {bool(rows)} else extents[0]
+        {f"scratch = gout.new_empty(capacity * {staged} + extents[0] * {wstaged})" if staged or wstaged else "pass"}
         {f"TAB = _tables(gout.device)" if tables else "pass"}
-        {funcname}_bwd[_grid_bwd]({bwd_args('*extents')}, stripes, WIDE=math.prod(extents) * {span} >= 2 ** 31{even}, {', '.join(f'{f}={f}' for f in flags)})
+        {funcname}_bwd[_grid_bwd]({bwd_args('*extents', 'capacity')}, stripes, WIDE=math.prod(extents) * {span} >= 2 ** 31{even}, {', '.join(f'{f}={f}' for f in flags)})
+{chr(10).join(epilogue)}
         return {returns}
 
 

@@ -84,7 +84,11 @@ class KingdonBackend(AbstractBackend):
         return x.shape
 
     def reshape(self, x: MultiVector, shape: tuple[int, ...]) -> MultiVector:
-        shape = tuple(math.prod(x.shape) // -math.prod(shape) if d == -1 else d for d in shape)  # A symbolic multivector has to know its sizes, and einops.pack asks for a -1.
+        # Dynamo can iterate Shape, but cannot proxy that tuple subclass into
+        # math.prod. Keep the public descriptive shape, and use a plain tuple
+        # at this array-backend boundary (including einops.pack's inferred axis).
+        original_shape = tuple(x.shape)
+        shape = tuple(math.prod(original_shape) // -math.prod(shape) if d == -1 else d for d in shape)
         if shape == x.shape:
             return x
         if x.issymbolic:
@@ -173,7 +177,7 @@ class KingdonBackend(AbstractBackend):
             # A coefficient has no blade axis, so its first axis is that of its multivector, along which a plain number is as many of it.
             cat = lambda *cs: Cat(*(c if isinstance(c, sympy.Basic) and not c.is_number else Stack(*[c] * mv.shape[0]) for c, mv in zip(cs, mvs)))
             return _joined(mvs, cat, (sum(mv.shape[0] for mv in mvs), *mvs[0].shape[1:]))
-        if len({type(mv) for mv in mvs}) != 1:
+        if not mvs or any(type(mv) is not type(mvs[0]) for mv in mvs[1:]):
             raise TypeError('To concat all multivectors must have the same type.')
         keys = _union_keys(mvs)
         # The result holds its coefficients in a single array only if all the inputs do.
