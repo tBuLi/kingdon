@@ -8,10 +8,11 @@ import inspect
 import string
 from types import GenericAlias
 
+import numpy as np
 import sympy
 
 from kingdon.multivector import MultiVector, MultiVectorType, Scalar, stack
-from kingdon.codegen import do_compile_symbolic, do_compile
+from kingdon.codegen import do_compile_symbolic, do_compile, typed
 from kingdon.taperecorder import TapeRecorder
 from kingdon.polynomial import RationalPolynomial
 
@@ -82,6 +83,10 @@ def do_operation(*mvs, codegen, algebra, MVType=None) -> MultiVector:
            for mv in mvs]
     if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
         raise AlgebraError("Cannot multiply elements of different algebra's.")
+    if algebra.backend == 'triton' and not any(mv.issymbolic for mv in mvs):
+        from kingdon.triton_codegen import Unsupported
+        raise Unsupported(f"{codegen.__name__} of a large algebra evaluates its definition on the coefficients, which backend='triton' does not do: "
+                          f"Algebra(..., backend='torch') does, and Algebra(..., large=False) compiles it to kernels.")
 
     res = codegen(*mvs)
     if isinstance(res, MultiVector):
@@ -150,7 +155,7 @@ class OperatorDict(Mapping):
         if types_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
             symbolic_mvs = self.make_symbolic_mvs(types_in, shapes_in)
-            compiled = self.operator_dict[types_in] = self.algebra.compile(self.codegen, *symbolic_mvs, lambdifier=self.lambdifier, wrapper=self.wrapper, values_asarray=self.values_asarray, **self.lambdifier_kwargs)
+            compiled = self.operator_dict[types_in] = self.algebra.compile(self.codegen, *symbolic_mvs, lambdifier=self.lambdifier, wrapper=self.wrapper, values_asarray=self.values_asarray, codegen_symbolcls=self.codegen_symbolcls, **self.lambdifier_kwargs)
             self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
         return self.operator_dict[types_in]
 
@@ -197,40 +202,30 @@ class OperatorDict(Mapping):
     @resolve_and_expand
     def __call__(self, *mvs):
         mvs = self._sanitize_mvs(mvs)
-        if len(mvs) == 2:
-            return self._call_binary(*mvs)
+        return self._construct(*mvs) if any(mv.issymbolic for mv in mvs) else self[mvs](*mvs)
 
-        compiled_expr = self[mvs]
-        mv_out = compiled_expr(*mvs)
-
-        issymbolic = any(mv.issymbolic for mv in mvs)
-        if issymbolic and self.algebra.simp_func:
-            if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
-                mvs[output_mv_idx].set(mvs[output_mv_idx].filter(self.algebra.simp_func, map=True))
-            else:
-                mv_out = _simplified(mv_out, self.algebra.simp_func)
-        return mv_out
-
-    def _call_binary(self, mv1, mv2):
-        """ Specialization for binary operators. """
-        compiled_expr = self[mv1, mv2]
-        mv_out = compiled_expr(mv1, mv2)
-
-        issymbolic = (mv1.issymbolic or mv2.issymbolic)
-        if issymbolic and self.algebra.simp_func:
-            if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
-                mvs = [mv1, mv2]
-                mvs[output_mv_idx].set(mvs[output_mv_idx].filter(self.algebra.simp_func, map=True))
-            else:
-                mv_out = _simplified(mv_out, self.algebra.simp_func)
-
-        return mv_out
-
-
-def _simplified(mv_out, simp_func):
-    if isinstance(mv_out, tuple):
-        return tuple(mv.filter(simp_func, map=True) for mv in mv_out)
-    return mv_out.filter(simp_func, map=True)
+    def _construct(self, *mvs):
+        """
+        The operator of symbolic `mvs`: its codegen evaluated on them, rather than compiled for them first, so that what it is part of is constructed, and printed, as a whole.
+        Its result has the types, keys and shape a compiled one would have.
+        """
+        before = [list(mv.values()) for mv in mvs]
+        res = self.codegen(*(mv.asmvtype() for mv in mvs))
+        simp_func = self.algebra.simp_func
+        if res is None:  # It set one of `mvs`.
+            mv = next(mv for mv, values in zip(mvs, before) if any(a is not b for a, b in zip(mv.values(), values)))
+            if simp_func:
+                mv.set(mv.filter(simp_func, map=True))
+            return None
+        shape = np.broadcast_shapes(*(mv.shape for mv in mvs if mv.issymbolic))
+        outs = []
+        for MVType, r in (typed(self.algebra, r) for r in (res if isinstance(res, tuple) else (res,))):
+            out = MVType.fromkeysvalues(self.algebra, tuple(r.keys()), list(r.values()), raw=True)
+            out = out.filter(simp_func, map=True) if simp_func else out
+            if out.issymbolic or not out.keys():  # Symbols, unlike the tuples of a stacked result, cannot tell the shape they stand for.
+                out.shape = shape
+            outs.append(out)
+        return tuple(outs) if isinstance(res, tuple) else outs[0]
 
 
 class UnaryOperatorDict(OperatorDict):
@@ -247,24 +242,14 @@ class UnaryOperatorDict(OperatorDict):
         type_in = (type(mv), mv.keys())
         if type_in not in self.operator_dict:
             symbolic_mv = self.make_symbolic_mvs((type_in,), (mv.shape,))[0]
-            compiled = self.operator_dict[type_in] = self.algebra.compile(self.codegen, symbolic_mv, lambdifier=self.lambdifier, wrapper=self.wrapper, values_asarray=self.values_asarray, **self.lambdifier_kwargs)
+            compiled = self.operator_dict[type_in] = self.algebra.compile(self.codegen, symbolic_mv, lambdifier=self.lambdifier, wrapper=self.wrapper, values_asarray=self.values_asarray, codegen_symbolcls=self.codegen_symbolcls, **self.lambdifier_kwargs)
             self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
         return self.operator_dict[type_in]
 
     @resolve_and_expand
     def __call__(self, mv):
         mv = self._sanitize_mvs((mv,))[0]
-        compiled_expr = self[mv]
-        mv_out = compiled_expr(mv)
-
-        issymbolic = mv.issymbolic
-        if issymbolic and self.algebra.simp_func:
-            if (output_mv_idx := compiled_expr.output_mv_idx) is not None:  # A function that contains .set
-                mv[output_mv_idx].set(mv.filter(self.algebra.simp_func, map=True))
-            else:
-                mv_out = mv_out.filter(self.algebra.simp_func, map=True)
-
-        return mv_out
+        return self._construct(mv) if mv.issymbolic else self[mv](mv)
 
 
 class Registry(OperatorDict):

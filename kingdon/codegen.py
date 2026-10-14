@@ -23,9 +23,7 @@ import sympy
 from sympy import Basic, Symbol, Tuple, sympify
 from sympy.core.parameters import distribute
 
-from kingdon.polynomial import (
-    poly_cse, poly_format, rational_cse, rp_var_name, Polynomial, RationalPolynomial
-)
+from kingdon.polynomial import rational_cse, rp_var_name, RationalPolynomial
 from kingdon.multivector import MultiVector, MultiVectorType
 
 
@@ -120,7 +118,27 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None, default
     return best_MVType, best_layout
 
 
-def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asarray=None, lambdifier_kwargs: dict | None = None) -> CompiledExpression:
+def typed(algebra, res: MultiVector) -> tuple[type, dict | MultiVector]:
+    """
+    The registered type of `res`, a result of a codegen, by its free coefficients and its constants, and `res` without the constants that type fixes.
+    Compiling a codegen and evaluating it on symbolic multivectors both type its result so.
+    """
+    def number(x):
+        if isinstance(x, Basic) and not x.is_number:  # The str of a large expression costs more than all of its codegen.
+            return None
+        try: return float(str(x))
+        except (ValueError, TypeError): return None
+
+    res = res.asmvtype()  # The constants of its own type, if it has one, count.
+    res_layout = {k: ... if (f := number(v)) is None else f for k, v in res.items()}
+    MVType, layout = resolve_layout(algebra._type_layouts, res_layout, default=algebra.mvtype)
+    if layout:
+        res = dict(res.items())
+        res = {k: res[k] for k, v in layout.items() if v == ... and k in res}
+    return MVType, res
+
+
+def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asarray=None, lambdifier_kwargs: dict | None = None, codegen_symbolcls=None) -> CompiledExpression:
     """
     :param codegen: callable that performs codegen for the given :code:`mvs`. This can be any callable
         that returns a :class:`~kingdon.multivector.MultiVector`, or a tuple of them, which are then
@@ -129,6 +147,7 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
     :param lambdifier: The function that turns the symbolic expressions into a python function.
         Defaults to :func:`lambdify`.
     :param lambdifier_kwargs: Keyword arguments bound onto the `lambdifier` before it is called.
+    :param codegen_symbolcls: The symbol class of the operator, which picks the CSE provider, see :func:`prepare`. By default the algebra's.
     :return: Instance of :class:`CompiledExpression`.
     """
     lambdifier = lambdifier or lambdify
@@ -149,21 +168,7 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
         outputs = (mvs[output_mv_idx],)
         mvs = mvs_orig
     else:
-        def number(x):
-            if isinstance(x, Basic) and not x.is_number:  # The str of a large expression costs more than all of its codegen.
-                return None
-            try: return float(str(x))
-            except (ValueError, TypeError): return None
-
-        def typed(res):
-            res_layout = {k: ... if (f := number(v)) is None else f for k, v in res.items()}
-            MVType, layout = resolve_layout(algebra._type_layouts, res_layout, default=algebra.mvtype)
-            if layout:
-                res = dict(res.items())
-                res = {k: res[k] for k, v in layout.items() if v == ... and k in res}
-            return MVType, res
-
-        MVTypes, outputs = zip(*map(typed, outputs))
+        MVTypes, outputs = zip(*(typed(algebra, r) for r in outputs))
 
     funcname = f'{codegen.__name__}_' + '_x_'.join(f"{format(mv[0].type_number if isinstance(mv, list) else mv.type_number, 'X')}" for mv in mvs)
     args = {arg_name: [tuple(chain(*(x.values() for x in arg)))] if isinstance(arg, list) else arg.values()
@@ -179,6 +184,8 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
         extra['shapes'] = {arg_name: mv.shape for arg_name, mv in zip(string.ascii_uppercase, mvs)}
     if 'keys' in accepted:
         extra['keys'] = {arg_name: mv.keys() for arg_name, mv in zip(string.ascii_uppercase, mvs)}
+    if 'codegen_symbolcls' in accepted:
+        extra['codegen_symbolcls'] = codegen_symbolcls or algebra.codegen_symbolcls
     with distribute(False):  # Rebuilding an expression, as cse does, would otherwise distribute the number after all.
         func = lambdifier(args, exprs, funcname=funcname, cse=algebra.cse, output_mv_idx=output_mv_idx, **extra)
     return CompiledExpression(
@@ -264,80 +271,6 @@ def _build_and_cache_func(header, body_lines, funcname, namespace=None, count_op
     return _compile_and_cache('\n'.join(all_lines), funcname, namespace)
 
 
-def unflatten(template, flat):
-    it = iter(flat)
-    def walk(t):
-        return type(t)(walk(x) for x in t) if isinstance(t, (list, tuple)) else next(it)
-    return walk(template)
-
-
-def _lambdify_poly_cse(args_dict, exprs, funcname, cse_pairs, numer_simplified, denom_simplified, output_mv_idx=None,
-                       values_asarray=None):
-    """
-    Build a Python function from pre-computed polynomial CSE results.
-
-    :param args_dict: dict mapping arg name (str) to list of :class:`~kingdon.polynomial.RationalPolynomial` values.
-    :param exprs: list of :class:`~kingdon.polynomial.RationalPolynomial` expressions (for denom checks).
-    :param funcname: name for the generated function.
-    :param cse_pairs: list of (name, poly_args) from :func:`rational_cse`.
-    :param numer_simplified: simplified numerator poly_args per expression.
-    :param denom_simplified: simplified denominator poly_args, or None.
-    :param output_mv_idx: index into the argument list of the MV to write the result into (for set-style codegen).
-    :param values_asarray: applied to the returned values inside the generated function, see :func:`lambdify`.
-    :return: compiled function with docstring containing op counts.
-    """
-    names = list(args_dict)
-    body_lines = []
-    for name, values in args_dict.items():
-        has_nested = any(isinstance(v, (list, tuple)) for v in values)
-        if has_nested:
-            temp_names = [f'_{name}_{i}' for i in range(len(values))]
-            body_lines.append(f'    [{", ".join(temp_names)}] = {name}')
-            for temp_name, v in zip(temp_names, values):
-                if isinstance(v, (list, tuple)):
-                    body_lines.append(f'    [{", ".join(rp_var_name(sv) for sv in v)}] = {temp_name}')
-                else:
-                    body_lines.append(f'    {rp_var_name(v)} = {temp_name}')
-        else:
-            body_lines.append(f'    [{", ".join(rp_var_name(v) for v in values)}] = {name}')
-
-    for cse_name, poly_args in cse_pairs:
-        body_lines.append(f'    {cse_name}={poly_format(poly_args)}')
-
-    # Emit denominator local variable if needed (avoids recomputing it per return component)
-    if denom_simplified is not None and sum(1 for e in exprs if e.denom != 1) > 1:
-        cse_names = {cse_name for cse_name, _ in cse_pairs}
-        denom_var = '_d'
-        while denom_var in cse_names:
-            denom_var += '_'
-        body_lines.append(f'    {denom_var}={poly_format(denom_simplified)}')
-        denom_ref = denom_var
-    else:
-        denom_ref = poly_format(denom_simplified) if denom_simplified is not None else None
-
-    ret_parts = [
-        poly_format(simp) if (denom_ref is None or e.denom == 1)
-        else f'({poly_format(simp)})/({denom_ref})'
-        for e, simp in zip(flatten(exprs), numer_simplified)
-    ]
-    ret_parts = unflatten(exprs, ret_parts)
-    asarray = 'values_asarray' if values_asarray else None
-    if output_mv_idx is not None:
-        output_name = names[output_mv_idx]
-        for i, part in enumerate(ret_parts):
-            part_str = str(part).replace("'", "")
-            body_lines.append(f'    {output_name}[{i}] = {part_str}')
-        body_lines.append('    return ()')
-        asarray = None  # The result is written into an argument, there is nothing to build.
-    else:
-        ret_str = str(ret_parts).replace("'", "")
-        body_lines.append(f'    return {ret_str}' if asarray is None else f'    return {asarray}({ret_str})')
-
-    header = f'def {funcname}({", ".join(names)}):'
-    namespace = None if asarray is None else {'builtins': builtins, 'range': range, asarray: values_asarray}
-    return _build_and_cache_func(header, body_lines, funcname, namespace=namespace)
-
-
 class ArrayBase(sympy.Function):
     """ An operation on an array of all the blades of a multivector at once, as a sympy node for a printer that knows arrays: kingdon.einops_backend returns multivectors whose coefficients are blades of such nodes. """
     is_commutative = True
@@ -366,6 +299,14 @@ class FloatConstants:
         return super()._print(expr, **kwargs)
 
 
+def unflatten(template, flat):
+    """ `flat` in the nested lists and tuples of `template`, which it is the leaves of. """
+    it = iter(flat)
+    def walk(t):
+        return type(t)(walk(x) for x in t) if isinstance(t, (list, tuple)) else next(it)
+    return walk(template)
+
+
 def grade_sizes(keys) -> tuple[int, ...]:
     """ The number of blades of every run of consecutive `keys` of one grade. """
     return tuple(len(list(run)) for _, run in groupby(keys, key=int.bit_count))
@@ -389,6 +330,26 @@ def _grade(i, sizes) -> tuple[int, int, int]:
     return g, bounds[g], bounds[g + 1]
 
 
+#: What the names of the bindings a CSE provider makes start with, see :func:`prepare`: neither those of the coefficients of an operator nor those a printer gives its own values do.
+TEMPORARY = '_v'
+
+
+def prepare(exprs: list, codegen_symbolcls) -> tuple[list, list]:
+    """
+    The Program of `exprs`: bindings (name, expression), each over those before it, and `exprs` over them, in their order.
+    The CSE provider follows from `codegen_symbolcls`: kingdon's polynomial CSE for its :class:`~kingdon.polynomial.RationalPolynomial`, sympy's for a sympy symbol.
+    No other function calls one.
+    """
+    polynomial = getattr(codegen_symbolcls, '__self__', codegen_symbolcls) is RationalPolynomial
+    if foreign := next((e for e in exprs if isinstance(e, Basic if polynomial else RationalPolynomial)), None):
+        raise TypeError(f"A {type(foreign).__name__} expression for the CSE of {'kingdon polynomials' if polynomial else 'sympy expressions'}: "
+                        f"codegen_symbolcls picks the CSE, and has to be the symbol class of the expressions, sympy.Symbol for sympy's.")
+    if polynomial:
+        return rational_cse(exprs, TEMPORARY)
+    # Ordering the arguments of a sum or product would count each einops DAG as a tree.
+    return sympy.cse(exprs, symbols=numbered_symbols(TEMPORARY), order='none')
+
+
 def lambdify(
         args: dict,
         exprs: list,
@@ -400,6 +361,7 @@ def lambdify(
         values_asarray=None,
         shapes: dict = None,
         keys: dict = None,
+        codegen_symbolcls=RationalPolynomial.fromname,
     ):
     """
     Function that turns symbolic expressions into Python functions. Heavily inspired by
@@ -440,8 +402,8 @@ def lambdify(
     :param printer: Instance of the sympy style printer used to print individual sympy expressions.
         Kingdon's own polynomials need none, and are printed without it unless a `func_printer` is given too.
     :param func_printer: Instance of the sympy style printer used to generate functions using the `printer`.
-    :param cse: If :code:`True` (default), CSE is applied to the expressions.
-        This typically greatly improves performance and reduces numba's initialization time.
+    :param cse: If :code:`True`, the expressions are printed as the Program :func:`prepare` makes of them,
+        which typically greatly improves performance and reduces numba's initialization time.
     :param output_mv_idx: Index of the multivector that stores the result returned by the codegen function.
         If :code:`None`, the generated function will return the values of the multivector.
     :param values_asarray: If given, the generated function applies it to the values it returns, so that
@@ -449,52 +411,37 @@ def lambdify(
         means one buffer out instead of one per blade, which is what lets a compiler such as
         :code:`torch.compile` fuse it. It is also called on symbolic values, so it has to leave those
         alone, as :func:`~kingdon.torch_backend.values_asarray` and the default :class:`list` both do.
+    :param codegen_symbolcls: The symbol class of the operator, which picks the CSE provider, see :func:`prepare`.
     :return: Function that represents that can be used to calculate the values of exprs.
     """
-    cses, _exprs = [], exprs
-    cse_pairs, numer_simplified, denom_simplified = None, None, None
-
-    flattened_exprs = flatten(exprs)
-    if exprs and all(isinstance(e, RationalPolynomial) for e in flattened_exprs):
-        if cse:
-            non_unit = [e for e in flattened_exprs if e.denom != 1]
-            if not non_unit or all(e.denom == non_unit[0].denom for e in non_unit):
-                common_denom = non_unit[0].denom if non_unit else None
-                cse_pairs, numer_simplified, denom_simplified = rational_cse(flattened_exprs, common_denom)
-
-                if func_printer is None:
-                    return _lambdify_poly_cse(args, exprs, funcname, cse_pairs, numer_simplified, denom_simplified,
-                                              output_mv_idx=output_mv_idx, values_asarray=values_asarray)
-
     tosympy = lambda x: x.tosympy() if hasattr(x, 'tosympy') else sympify(x)
-    if cse_pairs is not None:
-        args = {name: [tosympy(v) for v in values] for name, values in args.items()}
-        cses = [(name, tosympy(Polynomial(poly_args))) for name, poly_args in cse_pairs]
-        numer_syms = [tosympy(Polynomial(expr)) for expr in numer_simplified]
-        denom_sym = tosympy(Polynomial(denom_simplified)) if denom_simplified is not None else None
-        _exprs = [
-            numer if (denom_sym is None or e.denom == 1) else numer / denom_sym
-            for e, numer in zip(exprs, numer_syms)
-        ]
-    else:
-        args = {name: [tosympy(v) for v in values] for name, values in args.items()}
-        _exprs = [tosympy(expr) for expr in exprs]
+    exprs = list(exprs)
 
     # For an operator with einops calls in it, a printer that knows arrays gets whole arrays wherever the blades of whole grades go through the same expression, and every array taken apart once into the pieces used.
-    arrays = hasattr(printer, '_print_Stack') and values_asarray and output_mv_idx is None and any(e.has(ArrayBase) for e in flatten(_exprs))
+    arrays = hasattr(printer, '_print_Stack') and values_asarray and output_mv_idx is None and any(isinstance(e, Basic) and e.has(ArrayBase) for e in exprs)
     if arrays:
+        args = {name: [tosympy(v) for v in values] for name, values in args.items()}
         flat = {name: values for name, values in args.items() if not any(isinstance(v, Tuple) for v in values)}  # Not those typehinted MultiVector[None].
         ndim = {name: len(shapes[name]) for name in args}
         leaves = {v: Blade(Symbol(name), i, ndim[name], grade_sizes(keys[name])) for name, values in flat.items() for i, v in enumerate(values) if isinstance(v, Symbol)}
-        _exprs = [_taken_apart(_vectorize(Stack(*_exprs), leaves, {v: ndim[name] - 1 for name in args.keys() - flat.keys() for v in flatten(args[name])}))]
+        exprs = [_taken_apart(_vectorize(Stack(*exprs), leaves, {v: ndim[name] - 1 for name in args.keys() - flat.keys() for v in flatten(args[name])}))]
 
-    if cse and not cses:
-        if not callable(cse):
-            from sympy.simplify.cse_main import cse
-        cses, _exprs = cse(_exprs, list=False)
+    # The coefficients of a stacked multivector are one sequence each: the provider gets the expressions in them, and the printer them in their place again.
+    leaves = flatten(exprs, cls=(list, tuple))
+    cses, leaves = prepare(leaves, codegen_symbolcls) if cse else ([], leaves)
 
-    if not any(_exprs):
-        _exprs = list('0' for expr in _exprs)
+    # Kingdon's polynomials print themselves, unless a sympy style func_printer is given, which gets every binding as sympy's.
+    if func_printer is None and not any(isinstance(e, Basic) for e in [*leaves, *(e for _, e in cses)]):
+        printer = str
+        named = lambda v: type(v)(map(named, v)) if isinstance(v, (list, tuple)) else rp_var_name(v)
+        args = {name: named(values) for name, values in args.items()}
+    else:
+        args = {name: [tosympy(v) for v in values] for name, values in args.items()}
+        cses, leaves = [(name, tosympy(e)) for name, e in cses], [tosympy(e) for e in leaves]
+    exprs = unflatten(exprs, leaves)
+
+    if not any(exprs):
+        exprs = list('0' for expr in exprs)
 
     if printer is None:
         printer = LambdaPrinter(
@@ -509,8 +456,8 @@ def lambdify(
     iterable_args = tuple(args.values())
     returned = asarray = 'values_asarray' if values_asarray else None
     if arrays:
-        _exprs, iterable_args, returned = _exprs[0], tuple([] if name in flat else values for name, values in args.items()), None
-    funcstr = func_printer.doprint(funcname, iterable_args, names, _exprs, cses=cses,
+        exprs, iterable_args, returned = exprs[0], tuple([] if name in flat else values for name, values in args.items()), None
+    funcstr = func_printer.doprint(funcname, iterable_args, names, exprs, cses=cses,
                                    output_mv_idx=output_mv_idx, asarray=returned)
 
     # Provide lambda expression with builtins, and compatible implementation of range
@@ -637,13 +584,10 @@ class KingdonPrinter:
         if printer is None:
             printer = LambdaPrinter()
 
-        if inspect.isfunction(printer):
-            self._exprrepr = printer
-        else:
-            if inspect.isclass(printer):
-                printer = printer()
-
-            self._exprrepr = printer.doprint
+        if inspect.isclass(printer) and hasattr(printer, 'doprint'):
+            printer = printer()
+        # A sympy style printer, or a function, :class:`str` say, that prints an expression.
+        self._exprrepr = getattr(printer, 'doprint', printer)
 
         # Used to print the generated function arguments in a standard way
         self._argrepr = LambdaPrinter().doprint

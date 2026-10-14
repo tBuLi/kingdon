@@ -6,18 +6,20 @@ One Triton kernel per operator, instead of one torch call per symbolic multiply:
 
 Multivector in, multivector out, differentiable, same as any other lambdifier. The expressions
 are kingdon's polynomials or, for an operator whose codegen_symbolcls is a sympy symbol, sympy's,
-which may then call the functions triton has, :code:`erf` say. Anything else falls back to
-:func:`~kingdon.codegen.lambdify`. The backward is the expressions' own derivative, taken symbolically.
+which may then call the functions triton has, :code:`erf` say. Anything else raises :class:`Unsupported`,
+as does a call on another device than a CUDA one. The backward is the expressions' own derivative, taken symbolically.
 """
 from __future__ import annotations
 
 import bisect
 import contextlib
 import functools
+import graphlib
 import itertools
 import linecache
 import math
 from dataclasses import dataclass, replace
+from typing import NamedTuple
 
 import numpy as np
 import sympy
@@ -26,8 +28,8 @@ from sympy.printing.codeprinter import PrintMethodNotImplementedError
 from sympy.printing.precedence import PRECEDENCE
 from sympy.printing.pycode import PythonCodePrinter
 
-from kingdon.codegen import ArrayBase, Blade, Cat, Einsum, FloatConstants, Reduce, Reshape, Stack, Take, _bottom_up
-from kingdon.polynomial import RationalPolynomial, poly_format, rational_cse, rp_var_name
+from kingdon.codegen import ArrayBase, Blade, Cat, Einsum, FloatConstants, Reduce, Reshape, Stack, Take, _bottom_up, prepare
+from kingdon.polynomial import RationalPolynomial, Root, poly_format, rp_var_name
 
 #: Tiles to consider, as (elements, warps, stages). How many registers a tile needs does not follow from the coefficients it holds,
 #: so :func:`_widest_clean` compiles them and reads the spills instead. :func:`_fit` shapes each of these to the plane first.
@@ -37,7 +39,13 @@ _BUILDS = itertools.count()
 
 
 class Unsupported(Exception):
-    """Raised when an expression cannot be emitted as a kernel, so the caller falls back."""
+    """Raised when the triton backend has no kernel for an operator, its operands or their device."""
+
+
+def _noted(error, stage):
+    """`error`, with a note of the `stage` it was raised at and of the backend that runs what this one cannot."""
+    error.add_note(f"While {stage}. Algebra(..., backend='torch') runs it.")
+    return error
 
 
 class Loop(ArrayBase): """Loop(k, *entries): the gathered einsum k of :func:`_gathered`, whose operand m gathers from the Stack entries[m]."""
@@ -50,6 +58,19 @@ class _Gather:
     pattern: str
     index: tuple
     sign: tuple
+
+
+class _Program(NamedTuple):
+    """The Program of an operator with einops calls, see :func:`_fused_program`."""
+    outputs: list
+    values: dict
+    roots: list
+    forward: list
+    saved: list
+    defs: dict
+    shapes: dict
+    counts: dict
+    out_tile: tuple
 
 
 #: The rows a block of a fused kernel takes, the fewest a tl.dot does, see fused_build.
@@ -361,7 +382,7 @@ def _tiles(widths, tiles, outers=(1,)):
 
 
 def _check_device(device):
-    """Reject targets this scheduler cannot model; dispatch uses ordinary Torch.
+    """Reject targets this scheduler cannot model.
 
     Register pressure, staging and occupancy currently use CUDA's 32-bit
     register file and 32-lane warps. HIP's VGPR/SGPR allocation needs a separate
@@ -369,6 +390,8 @@ def _check_device(device):
     """
     import torch
 
+    if (device := torch.device(device)).type != 'cuda':
+        raise Unsupported(f'operands on {device}, where Triton kernels need a CUDA device')
     try:
         import triton
     except ImportError:
@@ -419,9 +442,13 @@ def _registers(device, warps):
 
 
 def _compiled(kernel, tile, *args, **kwargs):
-    """`kernel` at `tile`, compiled for `args` and loaded, or None if it does not compile."""
+    """
+    `kernel` at `tile`, compiled for `args` and loaded, or the error of a tile the card cannot take, as Triton's autotuner tells those apart.
+    Any other error is no matter of the tile, and passes.
+    """
     import torch
-    from triton.errors import TritonError
+    from triton.compiler.errors import CompileTimeAssertionFailure
+    from triton.runtime.errors import OutOfResources, PTXASError
 
     shape, warps, stages = tile
     if 'EVEN' in kernel.arg_names:
@@ -439,15 +466,15 @@ def _compiled(kernel, tile, *args, **kwargs):
     try:
         compiled = kernel.warmup(*args, **kwargs, **_sizes(shape), num_warps=warps, num_stages=stages, maxnreg=_registers(device, warps), grid=(1,))
         compiled._init_handles()
-    except TritonError:
-        return None
+    except (OutOfResources, CompileTimeAssertionFailure, PTXASError) as error:
+        return error
     return compiled
 
 
 def _spills(kernel, tile, *args, **kwargs):
-    """How many registers `kernel` spills per thread at `tile`, or infinitely many if it does not compile."""
+    """How many registers `kernel` spills per thread at `tile`, or infinitely many if the card cannot take it."""
     compiled = _compiled(kernel, tile, *args, **kwargs)
-    return math.inf if compiled is None else compiled.n_spills
+    return math.inf if isinstance(compiled, Exception) else compiled.n_spills
 
 
 def _resident(kernel, tile, *args, **kwargs):
@@ -480,29 +507,20 @@ def _widest_clean(kernel, tiles, *args, **kwargs):
 def _affordable(kernel, tiles, device, *args, **kwargs):
     """
     `tiles` less those whose spills would not fit: the driver reserves local memory for them on behalf of every thread the card can hold, and a card that cannot find it resets.
-    A tile needing more than a sixteenth of VRAM is rejected. If none fit, use
-    the torch fallback rather than launch a kernel that risks a driver reset.
+    A tile needing more than a sixteenth of VRAM is rejected. If none fit, it raises
+    rather than launch a kernel that risks a driver reset, from the errors of the tiles that do not compile.
     """
     import torch
 
     card = torch.cuda.get_device_properties(device)
     threads = card.multi_processor_count * card.max_threads_per_multi_processor
-    local = {tile: 4 * _spills(kernel, tile, *args, **kwargs) * threads for tile in tiles}
-    safe = [tile for tile in tiles if local[tile] <= card.total_memory / 16]
+    compiled = {tile: _compiled(kernel, tile, *args, **kwargs) for tile in tiles}
+    failed = [c for c in compiled.values() if isinstance(c, Exception)]
+    safe = [tile for tile, c in compiled.items() if not isinstance(c, Exception) and 4 * c.n_spills * threads <= card.total_memory / 16]
     if not safe:
-        raise Unsupported('no tile fits the device local-memory budget')
+        cause = ExceptionGroup('the tiles that do not compile', failed) if failed else None
+        raise Unsupported('no tile compiles' if len(failed) == len(tiles) else 'no tile fits the device local-memory budget') from cause
     return safe
-
-
-def _stripes(extents, tiles, device):
-    """
-    How many copies a gradient shared along the outermost axis is summed into: one per block along that axis, as far as the card runs them at once.
-    The copies are allocated before the autotuner picks a tile, so there are as many as whichever of `tiles` needs the most, and the others leave some at zero.
-    """
-    import triton
-
-    # Lists rather than generators, which torch.compile cannot trace into math.prod or max.
-    return max([max(1, min(triton.cdiv(extents[0], shape[0]), _programs(device) // math.prod([triton.cdiv(e, t) for e, t in zip(extents[1:], shape[1:])]))) for shape, _, _ in tiles])
 
 
 def _plane(shapes):
@@ -576,16 +594,6 @@ def _pointer_names(args):
     return names
 
 
-def _sympy_body(exprs):
-    """
-    :func:`_body` for sympy expressions.
-    Temporaries start with an underscore, as the names the kernel gives its own things do, clear of the symbols of the expressions.
-    """
-    pairs, outs = sympy.cse(exprs, symbols=sympy.numbered_symbols('_t'))
-    with _printing(TritonPrinter()) as printer:
-        return [f'    {name} = {printer.doprint(e)}' for name, e in pairs], [printer.doprint(e) for e in outs]
-
-
 @contextlib.contextmanager
 def _printing(printer):
     """Printing triton code with `printer`, or Unsupported where it cannot: a function triton does not have is printed from the module python has it in."""
@@ -597,27 +605,48 @@ def _printing(printer):
         raise Unsupported(f'functions from {foreign}')
 
 
-def _body(exprs):
-    """CSE'd assignment lines and one formatted expression per output."""
-    exprs = list(exprs)
+def _plane_program(exprs, names, cse, codegen_symbolcls):
+    """
+    The Program of an operator without einops calls: `exprs`, lowered, and the gradient of ``sum_k go_k * exprs[k]`` by each of the symbols `names`, in one provider call, see :func:`~kingdon.codegen.prepare`.
+    Sympy's expressions are lowered to floats with common factors out of their sums; kingdon's polynomials are printed as they are.
+    """
     if all(isinstance(e, sympy.Expr) for e in exprs):
-        return _sympy_body([sympy.factor_terms(e.evalf()) for e in exprs])
-    if not all(isinstance(e, RationalPolynomial) for e in exprs):
+        lowered = lambda e: sympy.factor_terms(e.evalf())
+    elif all(isinstance(e, (RationalPolynomial, int, float)) for e in exprs):
+        lowered = lambda e: e
+    else:
         raise Unsupported('not polynomial')
-    divided = [e for e in exprs if e.denom != 1]
-    if any(e.denom != divided[0].denom for e in divided):
-        raise Unsupported('denominators differ')
+    exprs = [lowered(e) for e in exprs]
+    symbol = sympy.Symbol if isinstance(exprs[0], sympy.Basic) else RationalPolynomial.fromname
+    loss = sum(symbol(f'go{k}') * e for k, e in enumerate(exprs))
+    exprs += [lowered(loss.diff(symbol(name))) for name in names]
+    return prepare(exprs, codegen_symbolcls) if cse else ([], exprs)
 
-    pairs, numer, denom = rational_cse(exprs, divided[0].denom if divided else None)
-    lines = [f'    {name} = {poly_format(poly)}' for name, poly in pairs]
-    quotient = '_d'
-    while any(quotient == name for name, _ in pairs):
-        quotient += '_'
-    if denom is not None:
-        lines.append(f'    {quotient} = {poly_format(denom)}')
-    outs = [poly_format(p) if denom is None or e.denom == 1 else f'({poly_format(p)})/({quotient})' for e, p in zip(exprs, numer)]
 
-    found = {root for e in exprs for root in e.roots}
+def _body(bindings, roots):
+    """
+    The lines that compute what of the `bindings` of a Program the `roots` need, in their order, and each root as one expression:
+    triton code, sympy's printed by :class:`TritonPrinter`, kingdon's polynomials by themselves.
+    """
+    def factors(args):
+        """The factors of a polynomial as :func:`~kingdon.polynomial.poly_cse` leaves it, those of the sums nested in it and of the bases of its roots included."""
+        return {g for monomial in args for f in monomial[1:] for g in (factors(f) if isinstance(f, list) else {f, *symbols(f.base)} if isinstance(f, Root) else {f})}
+
+    def symbols(e):
+        if isinstance(e, sympy.Basic):
+            return {s.name for s in e.free_symbols}
+        return factors(e.numer.args) | factors(e.denom.args) if isinstance(e, RationalPolynomial) else factors(getattr(e, 'args', ()))
+
+    needed, kept = set().union(*map(symbols, roots)), []
+    for name, e in reversed(bindings):
+        if str(name) in needed:
+            kept.insert(0, (name, e))
+            needed |= symbols(e)
+    if any(isinstance(e, sympy.Basic) for e in [*roots, *(e for _, e in kept)]):
+        with _printing(TritonPrinter()) as printer:
+            return [f'    {name} = {printer.doprint(e)}' for name, e in kept], [printer.doprint(e) for e in roots]
+    lines, outs = [f'    {name} = {e}' for name, e in kept], [str(e) for e in roots]
+    found = {r for f in needed if isinstance(f, Root) for r in (f, *f.base.roots)}
     lines, outs = _expand_roots(lines, found), _expand_roots(outs, found)
     if any('**' in text for text in (*lines, *outs)):
         raise Unsupported('fractional power')  # an integer one expands to x*x
@@ -685,14 +714,6 @@ def _loads(ops):
     return [f'    {var} = tl.load({op.name} + {_at(op.varies, i)}, mask=_m_{_tag(op.varies)})' for op in ops for i, var in op.live]
 
 
-@functools.cache
-def _programs(device):
-    """Enough programs to fill the card several times over, and so as many copies of a shared gradient as are worth keeping apart."""
-    import torch
-
-    return 8 * torch.cuda.get_device_properties(device).multi_processor_count
-
-
 def _params(plan):
     """Kernel parameters: a pointer per array argument, a value per scalar one."""
     return [var for op in plan for var in (op.vars if not op.array else [op.name])]
@@ -740,8 +761,7 @@ def _choose_tiles(namespace, funcname, plan, values, n_out, extents, span=None, 
 
     out = temporary(n_out * math.prod(extents))
     saved = [temporary(extents[0] * namespace['_KEPT'].value)] if namespace['_KEPT'].value else []
-    stage_size = namespace['_STAGED'].value + namespace.get('_WSTAGED', 0)
-    scratch = [temporary(extents[0] * stage_size)] if stage_size else []
+    scratch = [temporary(extents[0] * namespace['_STAGED'].value)] if namespace['_STAGED'].value else []
     wide = math.prod(extents) * (span or max(n_out, *(op.slots for op in plan if op.array))) >= 2 ** 31
     sizes = [f'e{k}' for k in range(len(extents))]
 
@@ -776,18 +796,18 @@ def _choose_tiles(namespace, funcname, plan, values, n_out, extents, span=None, 
     grads = {f'd{op.name}': v if all(op.varies) else v.to(torch.promote_types(v.dtype, torch.float32)) for v, op in arrays}
     flags = {f'G{op.name}': value.requires_grad and op.name in namespace['_GRADIENTS']
              for value, op in arrays}
-    stripes = _stripes(extents, candidates, reference.device)
-    bwd = [*call, *extents, *grads.values(), out, *saved, *scratch, *([extents[0]] if tiles else []), stripes]
+    bwd = [*call, *extents, *grads.values(), out, *saved, *scratch]
     kernel = namespace[f'{funcname}_bwd']
     # A small spill can beat a different warp layout with no spills. Exclude
     # unsafe local-memory allocations, then let the actual timings decide.
-    variants = []
+    variants, rejected = [], []
     for schedule in range(namespace.get('_SCHEDULES', 1)):
         options = {'SCHEDULE': schedule} if tiles else {}
         try:
             affordable = _affordable(kernel, candidates, reference.device, *bwd,
                                      WIDE=wide, **even, **flags, **options)
-        except Unsupported:
+        except Unsupported as error:
+            rejected.append(error)
             continue
         for tile in affordable:
             constants = dict(options)
@@ -796,7 +816,7 @@ def _choose_tiles(namespace, funcname, plan, values, n_out, extents, span=None, 
                                                   **even, **flags, **options)
             variants.append((tile, constants))
     if not variants:
-        raise Unsupported('no backward schedule fits the device local-memory budget')
+        raise Unsupported('no backward schedule is admitted') from ExceptionGroup('why each schedule is not', rejected)
     # A CTA owns one staging tile, reused at every persistent iteration.
     # The maximum over admitted Triton configs keeps autotuning safe.
     namespace['_CAPACITY'] = max(tile[0][0] * options['RESIDENT'] for tile, options in variants) if tiles else extents[0]
@@ -806,38 +826,80 @@ def _choose_tiles(namespace, funcname, plan, values, n_out, extents, span=None, 
                                           reset_to_zero=[f'd{op.name}' for _, op in arrays if not all(op.varies)])
 
 
-def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_asarray=None, shapes=None, keys=None, printer=None):
+def _entrywise(e):
+    """Whether `e` acts on each entry of what it takes alone: arithmetic, and the functions that are no einops node."""
+    return isinstance(e, (sympy.Add, sympy.Mul, sympy.Pow)) or isinstance(e, sympy.Function) and not isinstance(e, ArrayBase)
+
+
+def _unstacked(outputs, whole):
     """
-    A differentiable callable over stacked coefficient tensors, backed by a Triton kernel.
+    The entries of `outputs`, sequences of Stacks or of what acts entry by entry on Stacks, one after another, and how many they hold along each of their stacked axes:
+    a kernel writes each entry as an output of its own, which the call stacks again. A Stack along with an einops node or an array of `whole`, an argument, raises:
+    which of its entries goes with which entry of the Stack is the lowering's to tell, see :func:`_gathered`.
+    """
+    def stacked(parts):
+        if len({axes for _, axes in parts}) > 1:
+            raise Unsupported('entries stacked unlike each other')
+        return tuple(x for entries, _ in parts for x in entries), (len(parts), *parts[0][1])
+
+    @functools.cache
+    def split(e):
+        if isinstance(e, Stack):
+            return stacked([split(a) for a in e.args])
+        parts = [split(a) for a in e.args] if _entrywise(e) else []
+        if not (along := {axes for _, axes in parts if axes}):
+            return (e,), ()
+        if len(along) > 1 or any(not own and (a.has(ArrayBase) or a.free_symbols & whole) for a, (_, own) in zip(e.args, parts)):
+            raise Unsupported('a Stack along with an array')
+        axes = along.pop()
+        return tuple(e.func(*(entries[i] if own else a for a, (entries, own) in zip(e.args, parts))) for i in range(math.prod(axes))), axes
+
+    def walk(e):
+        return stacked([walk(a) for a in e]) if isinstance(e, (list, tuple)) else split(e)
+
+    entries, axes = walk(outputs)
+    return list(entries), axes
+
+
+def _sequenced(structure, array):
+    """`array`, whose leading axes are those `structure` stacks along, in the sequences of `structure`, a tensor for each of their entries: as lambdify returns a stack of multivectors."""
+    return type(structure)(_sequenced(e, a) if isinstance(e, (list, tuple)) else a for e, a in zip(structure, array.unbind()))
+
+
+def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, shapes=None, codegen_symbolcls=RationalPolynomial.fromname):
+    """
+    A differentiable callable over stacked coefficient tensors on a CUDA device, backed by a Triton kernel.
     An operator with einops calls in it is one kernel over blocks of rows, which contracts and reduces the features of its rows in registers.
+    An operator, operands or a device it has no kernel for raise :class:`Unsupported`, with a note of the operator and the stage: ``backend='torch'`` runs those.
 
     :param shapes: ``{argument name: shape}``, from :func:`~kingdon.codegen.do_compile_symbolic`.
-    :param keys: ``{argument name: keys}``, from the same.
-    :param printer: what :func:`~kingdon.codegen.lambdify` prints sympy expressions with, where there is no kernel.
+    :param codegen_symbolcls: the symbol class of the operator, which picks the CSE provider, see :func:`~kingdon.codegen.prepare`.
     """
-    from kingdon.codegen import lambdify
+    import torch
 
-    plain = lambdify(args, exprs, funcname, printer=printer, cse=cse, output_mv_idx=output_mv_idx, values_asarray=values_asarray, shapes=shapes, keys=keys)
-    fused = any(isinstance(e, sympy.Basic) and e.has(ArrayBase) for e in exprs)
-    # Tensor packing can keep a zero-gradient dependency even when gathering
-    # eliminates every contributing blade. Match the original torch graph's
-    # connectivity; absence of emitted gradient roots alone does not imply None.
-    original_leaves = {_var(s) for s in _leaves([sympy.sympify(e) for e in exprs])} if fused else set()
-    connected = {name for name, vals in args.items() if any(
-        _var(v) in original_leaves for v in
-        (vals[0] if any(isinstance(v, (list, tuple)) for v in vals) else vals))}
     try:
         if output_mv_idx is not None:
             raise Unsupported('writes into an argument')
+        structure = list(exprs)
+        exprs, stacked = _unstacked(structure, {vals[0] for vals in args.values() if len(vals) == 1 and isinstance(vals[0], sympy.Symbol)})
+        sequenced = any(isinstance(e, (list, tuple)) for e in structure)
+        fused = any(isinstance(e, sympy.Basic) and e.has(ArrayBase) for e in exprs)
+        # Tensor packing can keep a zero-gradient dependency even when gathering
+        # eliminates every contributing blade. Match the original torch graph's
+        # connectivity; absence of emitted gradient roots alone does not imply None.
+        original_leaves = {_var(s) for s in _leaves([sympy.sympify(e) for e in exprs])} if fused else set()
+        connected = {name for name, vals in args.items() if any(
+            _var(v) in original_leaves for v in
+            (vals[0] if any(isinstance(v, (list, tuple)) for v in vals) else vals))}
         if fused:
             exprs, args, loops, _ = _gathered([sympy.sympify(e) for e in exprs], args, shapes)
             ranks = _feature_ranks(exprs, loops)
         else:
-            lines, outs = _body(exprs)
-    except Unsupported:
-        return plain
-
-    import torch
+            names = [_var(v) for vals in args.values() for v in (vals[0] if any(isinstance(v, (list, tuple)) for v in vals) else vals) if _var(v) != '_']
+            bindings, reduced = _plane_program(exprs, names, cse, codegen_symbolcls)
+            lines, outs = _body(bindings, reduced[:len(exprs)])
+    except Unsupported as error:
+        raise _noted(error, f'lowering {funcname}')
 
     built = {}
 
@@ -865,61 +927,63 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
         The leading axes are checked exactly, so that a multivector torch would broadcast is turned away rather than read as though it had coefficients it lacks.
         """
         if len(values) != len(bases):
-            return None
+            raise Unsupported(f'{len(values)} operands rather than {len(bases)}')
         devices = {v.device for v in values if torch.is_tensor(v)}
         if len(devices) != 1:
-            return None
+            raise Unsupported(f'operands on the devices {devices}' if devices else 'no tensor among the operands')
         shapes_in, dtypes = [], []
         for value, base in zip(values, bases):
             # The kernel takes a scalar by value and gives it no gradient, which only holds for plain numbers.
             if isinstance(value, (list, tuple)):
                 if len(value) != base.slots or any(torch.is_tensor(v) for v in value):
-                    return None
+                    raise Unsupported('a sequence of tensors as an operand')
                 shapes_in.append(None)
                 dtypes.append(None)
-            elif not torch.is_tensor(value) or value.device.type != 'cuda':
-                return None
+            elif not torch.is_tensor(value):
+                raise Unsupported(f'an operand of {type(value).__name__}')
             elif tuple(value.shape[:base.lead]) != ((1, base.slots) if base.nested else (base.slots,)):
-                return None
+                raise Unsupported(f'an operand of {tuple(value.shape[:base.lead])} coefficients rather than {base.slots}')
             else:
                 shapes_in.append(datashape(value, base))
                 dtypes.append(value.dtype)
-        try:
-            if fused:
-                return tuple(zip(_fused_layout(tuple(shapes_in), franks)[1], dtypes))
-            _, extents, varies = _layout(tuple(shapes_in))
-        except Unsupported:
-            return None
+        if fused:
+            return tuple(zip(_fused_layout(tuple(shapes_in), franks)[1], dtypes))
+        _, extents, varies = _layout(tuple(shapes_in))
         return tuple(zip(varies, dtypes)), _widths(extents)
 
     def build(values):
-        """The kernel for the layout the operands arrive with: not that of `shapes`, since an operator is often made by a symbolic call inside another's codegen, where every multivector is shapeless."""
+        """The kernel for the layout the operands arrive with: not only that of `shapes`, the first call's."""
         _check_device(next(v.device for v in values if torch.is_tensor(v)))
         datashapes = tuple(datashape(value, base) for value, base in zip(values, bases))
         dtype = functools.reduce(torch.promote_types, [v.dtype for v in values if torch.is_tensor(v)])
         if fused:
             return fused_build(values, datashapes, dtype)
         plan, extents = _plan(bases, datashapes)
-        grad_lines, grads = _gradients(plan, exprs)
-        return run(_source(funcname, plan, len(extents), lines, outs, grad_lines, grads, dtype), plan, values, len(outs), extents)
+        arrays = [var for op in plan if op.array for _, var in op.live]
+        grad_lines, grads = _body(bindings, [reduced[len(outs) + names.index(var)] for var in arrays])
+        return run(_source(funcname, plan, len(extents), lines, outs, grad_lines, dict(zip(arrays, grads)), dtype), plan, values, len(outs), extents)
+
+    @functools.cache
+    def program(tiles):
+        """The Program of a layout, the `tiles` of the operands: every device's kernels print it."""
+        leaves = {sympy.Symbol(var): tile or (False, ()) for base, tile in zip(bases, tiles) for _, var in base.live}
+        arrays = {sympy.Symbol(var) for base, tile in zip(bases, tiles) if tile is not None for _, var in base.live}
+        return _fused_program(leaves, arrays, exprs, loops, cse, codegen_symbolcls)
 
     def fused_build(values, datashapes, dtype):
         batch, tiles = _fused_layout(datashapes, franks)
         plan = [replace(base, varies=tile and (tile[0],), shape=shape) for base, shape, tile in zip(bases, datashapes, tiles)]
-        leaves = {sympy.Symbol(var): tile or (False, ()) for op, tile in zip(plan, tiles) for _, var in op.live}
+        fused = program(tuple(tiles))
+        shapes, counts, out_tile = fused.shapes, fused.counts, fused.out_tile
         # As torch's own matmul, on tensor cores: a float32 dot on the cores that do fused multiply-adds instead holds so much of both operands per thread that it spills. tf32x3 is as close to float32 as tensor cores get.
         precision = _dot_precision(next(v.device for v in values if torch.is_tensor(v)), dtype)
         dot = _min_dot(next(v for v in values if torch.is_tensor(v)).device, dtype)
-        printer = TritonPrinter(dict(leaves), precision, dot)
-        printer.loops = loops
-        expressions = _pointwise(exprs, printer)
-        out_tile = (True, tuple(np.broadcast_shapes(*(printer.shape(e)[1] for e in expressions))))
-        grad_printer = TritonPrinter({**leaves, **{sympy.Symbol(f'go{k}'): out_tile for k in range(len(exprs))}}, precision, dot)
-        grad_printer.loops = loops
-        gradients = _fused_gradients(plan, expressions, grad_printer)
+        printer, grad_printer = TritonPrinter(dict(shapes), precision, dot), TritonPrinter(dict(shapes), precision, dot)
+        for p in (printer, grad_printer):
+            p.counts, p.loops = dict(counts), loops
         # A tile holds every feature of its rows, and of the whole layer, so a block has the fewest rows a tl.dot takes, _ROWS, and as many warps as the widest tile it holds,
         # of an operand or of a value between, fills with a vector of the widest load a lane: more would hold copies of what fewer hold, fewer would each hold more of it, and spill or stage it.
-        widest = max(math.prod(map(_pad, features)) for rows, features in grad_printer.shapes.values() if rows)
+        widest = max(math.prod(map(_pad, features)) for rows, features in shapes.values() if rows)
         printer.warps = grad_printer.warps = warps = max(1, _ROWS * widest * dtype.itemsize // (_VECTOR * _WARP))
         # Different warp layouts can cut the live registers per thread without
         # changing the expression or row tile. Let Triton's autotuner choose.
@@ -928,23 +992,21 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
         # indices, masks and addresses, the fragments of a tl.dot, a tile changing layout.
         budget = _registers(next(v for v in values if torch.is_tensor(v)).device, warps) * 3 // 4 * 4 // dtype.itemsize
         span = max(len(exprs) * math.prod(out_tile[1]), *(op.slots * math.prod(tile[1]) for op, tile in zip(plan, tiles) if op.array))
-        return run(_fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_printer, span, dtype, budget, connected), plan, values, len(exprs), (math.prod(batch),), span, rows)
+        return run(_fused_source(funcname, plan, tiles, fused, printer, grad_printer, span, dtype, budget, connected), plan, values, len(exprs), (math.prod(batch),), span, rows)
 
     def run(src, plan, values, n_out, extents, *tuning):
         filename = f'{funcname}#{next(_BUILDS)}'
-        namespace = {'_layout': _layout, '_stripes': _stripes}
+        namespace = {'_layout': _layout}
         linecache.cache[filename] = (len(src), None, src.splitlines(True), filename)
         exec(compile(src, filename, 'exec'), namespace)
         _choose_tiles(namespace, funcname, plan, values, n_out, extents, *tuning)
         return namespace[funcname]
 
     def dispatch(*values):
-        # A symbolic call, during another operator's codegen, has no tensors to build from, so it waits for real ones rather than remembering a failure.
-        if not any(torch.is_tensor(v) and not v.is_cpu for v in values):
-            return plain(*values)
-        key = signature(values)
-        if key is None:
-            return plain(*values)
+        try:
+            key = signature(values)
+        except Unsupported as error:
+            raise _noted(error, f'dispatching {funcname}')
         # Source selection depends on this device's contraction capabilities
         # and on torch's float32 precision policy, not just tensor layout.
         key = (next(v.device for v in values if torch.is_tensor(v)), matmul_precision(), key,
@@ -953,25 +1015,15 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, values_
             try:
                 # Eagerly, also when a compiled model meets a new key, an evaluation without gradients say: traced, Dynamo intercepts Triton's warmup launches and fails on their symbolic sizes.
                 built[key] = torch.compiler.disable(build)(values)
-            except Unsupported:
-                built[key] = False
-        kernel = built[key]
-        return kernel(*values) if kernel else plain(*values)
+            except Unsupported as error:
+                raise _noted(error, f'building {funcname} for {key[0]}, {key[2]}')
+        result = built[key](*values)
+        if sequenced:
+            return _sequenced(structure, result.unflatten(0, stacked))
+        return result.unflatten(0, stacked) if len(stacked) > 1 else result
 
     dispatch.__name__ = funcname
     return dispatch
-
-
-def _gradients(plan, exprs):
-    """d(sum_k go_k * out_k)/ds per input symbol, CSE'd together so they share work."""
-    symbol = RationalPolynomial.fromname if isinstance(exprs[0], RationalPolynomial) else sympy.Symbol
-    go = [symbol(f'go{k}') for k in range(len(exprs))]
-    loss = go[0] * exprs[0]
-    for g, e in zip(go[1:], exprs[1:]):
-        loss = loss + g * e
-    names = [var for op in plan if op.array for _, var in op.live]
-    lines, formatted = _body([loss.diff(symbol(var)) for var in names])
-    return lines, dict(zip(names, formatted))
 
 
 def _gathered(exprs, args, shapes, unrolled=None):
@@ -993,7 +1045,7 @@ def _gathered(exprs, args, shapes, unrolled=None):
         if e in whole:
             return rows.setdefault(e, tuple(sympy.Symbol(f'{e.name}_{k}') for k in range(shapes[whole[e]][0])))
         # A gather picks entries, so it goes through whatever acts on each entry alone, and through an einsum along the first axis of its output, as the einsum of the entries of the operands that axis is the first of.
-        if isinstance(e, (sympy.Add, sympy.Mul, sympy.Pow)) or isinstance(e, sympy.Function) and not isinstance(e, ArrayBase):
+        if _entrywise(e):
             parts = [None if a.is_number else entries(a) for a in e.args]
             return tuple(e.func(*(a if p is None else p[i] for a, p in zip(e.args, parts))) for i in range(len(next(filter(None, parts)))))
         if isinstance(e, Einsum) and (lead := _terms(e)[1][:1]).isalpha():
@@ -1159,10 +1211,13 @@ def _reshaped(e, tile, features):
 
 
 def _unbroadcast(g, tile, target):
-    """The cotangent `g`, of `tile`, summed over the rows and features it has broadcast beyond those of the tile `target`, as those."""
+    """
+    The cotangent `g`, of `tile`, summed over the rows and features it has broadcast beyond those of the tile `target`, as those.
+    Along an axis of one feature where the target has more, the cotangent of a mean say, it broadcasts to the target where it is used.
+    """
     (rows, features), (rows_to, to) = tile, target
     aligned = (0,) * (len(features) - len(to)) + to
-    axes = [-1 - len(features)] * (rows and not rows_to) + [k - len(features) for k, (n, m) in enumerate(zip(features, aligned)) if n != m]
+    axes = [-1 - len(features)] * (rows and not rows_to) + [k - len(features) for k, (n, m) in enumerate(zip(features, aligned)) if n != m and not (n == 1 and m)]
     kept = tuple(n for k, n in enumerate(features) if k - len(features) not in axes)
     return _reshaped(Reduce(g, Str('sum'), sympy.Tuple(*axes)), (rows and rows_to, kept), to) if axes else g
 
@@ -1255,18 +1310,20 @@ def _pointwise(exprs, printer):
     return [rewrite(e) for e in exprs]
 
 
-def _fused_gradients(plan, exprs, printer):
+def _fused_gradients(leaves, exprs, printer):
     """
-    `exprs` as a program of named values, the forward, and the gradient of ``sum_k go_k * exprs[k]`` by the symbol of every array operand, the backward:
-    the expressions of the outputs, the values they name, those values the backward loads rather than computes, and (expression, sink) roots in the order a kernel computes them with the values they name,
-    a sink being the leaf whose gradient the root is, the cotangent of a Loop node it is, which goes to memory, a LoopGrad, whose loop it stands for, or None.
-    The forward is sympy's cse of `exprs`, and every value it names that has rows, and is not :func:`_cheap`, is cut out as a symbol, as is every einops node, a node over multivectors a symbol per blade.
-    Reverse mode over the cuts, each once every cut using it is gone through, with sympy's diff within each.
-    A value's gradient joins the terms ``gradient * value``, from which its operands gather theirs by diff in their turn: what waits is the gradient of the value, rather than a sum for each of its operands.
-    A node's gradient goes back through it transposed, which sympy's diff does not do: its adjoints are added into its operands' gradients at once, each sum a root of its own, since a node feeds
-    a whole multivector of gradients that would otherwise wait. A leaf's gradient is a root once no cut left to go through has it in its value.
+    Reverse mode AD of `exprs`: the gradient of ``sum_k go_k * exprs[k]`` by each of the `leaves`, the symbols of the array operands.
+    Returns the definitions AD makes, `exprs` over them, and (expression, sink) roots in the order a kernel computes them, a sink being the leaf whose gradient the root is,
+    the cotangent of a Loop node it is, which goes to memory, a LoopGrad, whose loop it stands for, or None.
+    AD names every einops node, a node over multivectors a symbol per blade, every value with rows that is not :func:`_cheap`, and what it creates itself -- cotangents, adjoints and gradient sums --,
+    but no other value, and it compares none: a value is named for what it is, not for being met again. A pointwise stretch is differentiated between such nodes, by sympy's diff,
+    rather than as a whole, which would repeat the chain rule for every leaf instead of going back through each value once.
+    It goes through the nodes and the leaves in a :class:`graphlib.TopologicalSorter` pass, each once every node using it is gone through: a leaf as soon as it can, then an einsum, since it turns
+    a multivector of gradients into sums held already. A pointwise value's gradient joins the terms ``gradient * value``, from which its operands gather theirs by diff in their turn.
+    An einops node's gradient goes back through it transposed, which sympy's diff does not do, see :func:`_adjoints`: its adjoints are added into its operands' gradients at once, each sum a root of
+    its own, since a node feeds a whole multivector of gradients that would otherwise wait. A leaf's gradient is a root once no node left to go through has it in its value.
     """
-    defs, program, blades, cuts, roots, grads = {}, {}, {}, [], [], {}
+    defs, nodes, blades, roots, grads = {}, [], {}, [], {}
 
     def define(name, value):
         s = sympy.Symbol(name)
@@ -1274,77 +1331,45 @@ def _fused_gradients(plan, exprs, printer):
         return s
 
     def rule(e):
-        if e in program:
-            return program[e]
-        if isinstance(e, (Einsum, Reduce, Reshape, Loop)):
-            y = define(f'_y{len(cuts)}', e)
+        if isinstance(e, (Einsum, Reduce, Reshape, Loop)) or not e.is_Atom and not isinstance(e, ArrayBase) and printer.shape(e)[0] and not _cheap(e, defs):
+            y = define(f'_y{len(nodes)}', e)
             if printer.counts[y]:
-                # A blade the same as one before it, a gate of a grade gathered for each of its blades say, has that one's name, and is computed once.
-                first, symbols = {}, []
-                for i in range(printer.counts[y]):
-                    j = first.setdefault(printer._blade(e, i) if isinstance(e, Einsum) else i, i)
-                    symbols.append(define(f'{y}_{i}', Blade(y, i)) if i == j else symbols[j])
-                blades[e] = y = tuple(symbols)
-            cuts.append((e, y))
+                blades[e] = y = tuple(define(f'{y}_{i}', Blade(y, i)) for i in range(printer.counts[y]))
+            nodes.append((e, y))
             return e if e in blades else y
         if isinstance(e, Blade):
             a, i = e.args[0], int(e.args[1])
             return a.args[i] if isinstance(a, Stack) else blades[a][i]
         return e
 
-    visit = _bottom_up(rule)
-    # Products named by a cut, as powers of their factors: sympy flattens a product into the products it takes part in, gate * y * w for H * w with H = gate * y say,
-    # so a value would take H's factors again, rather than H.
-    products = []
+    outputs = list(map(_bottom_up(rule), exprs))
+    owner = {s: k for k, (_, y) in enumerate(nodes) for s in (y if isinstance(y, tuple) else (y,))}
+    # Per node and leaf the nodes using it, which go first.
+    users = {**{leaf: set() for leaf in leaves}, **{k: set() for k in range(len(nodes))}}
+    for k, (value, _) in enumerate(nodes):
+        for s in value.free_symbols:
+            if s in owner or s in leaves:
+                users[owner.get(s, s)].add(k)
+    gone = set()
 
-    def factored(e):
-        """`e` with each product holding a named one, as many times as it does, as that name times the rest."""
-        if not isinstance(e, sympy.Mul):
-            return e
-        powers = e.as_powers_dict()
-        for s, named in products:
-            if (k := min(powers.get(b, 0) // n for b, n in named.items())) > 0:
-                e = e / sympy.Mul(*(b ** (n * k) for b, n in named.items())) * s ** k
-                powers = e.as_powers_dict()
-        return e
-
-    pairs, outs = sympy.cse(exprs, symbols=sympy.numbered_symbols('_f'), order='none')
-    for t, e in pairs:
-        program[t] = v = _bottom_up(factored)(visited := visit(e))
-        # A node named by cse is taken apart by its name later, as the node factored has made of it.
-        if visited in blades:
-            blades[v] = blades[visited]
-        if not isinstance(v, (sympy.Symbol, ArrayBase)) and printer.shape(v)[0] and not _cheap(v, defs):
-            program[t] = define(str(t), v)
-            cuts.append((v, program[t]))
-            named = v.as_powers_dict() if isinstance(v, sympy.Mul) else {}
-            if len(named) > 1 and all(not b.is_number and n.is_Integer and n > 0 for b, n in named.items()):
-                products.insert(0, (program[t], named))
-    outputs, forward = [_bottom_up(factored)(visit(e)) for e in outs], dict(defs)
-    owner = {s: k for k, (_, y) in enumerate(cuts) for s in (y if isinstance(y, tuple) else [y])}
-    operands = [{owner[s] for s in value.free_symbols if s in owner} for value, _ in cuts]
-    users = [sum(k in ks for ks in operands) for k in range(len(cuts))]
-    # How many cuts left to go through have a leaf in their value: none, and its gradient is complete.
-    pending = {sympy.Symbol(var): sum(sympy.Symbol(var) in value.free_symbols for value, _ in cuts) for op in plan if op.array for _, var in op.live}
-
-    def push(weight, value, cut=None):
+    def push(weight, value, k):
         """
-        Add ``weight * d value / d s``, summed to the tile of s, to the gradient of every cut and leaf s in `value`, the value of `cut`: at once, but for a leaf that cut completes, whose store adds it.
+        Add ``weight * d value / d s``, summed to the tile of s, to the gradient of every node and leaf s in `value`, the value of node `k`: at once, but for a leaf k completes, whose store adds it.
         A leaf without rows, a weight, gets every term as a root of its own, which the kernel adds into its gradient right away rather than hold a sum.
         """
         for s in _symbols(value):
-            if (s in owner or s in pending) and (d := value.diff(s)) != 0:
+            if (s in owner or s in leaves) and (d := value.diff(s)) != 0:
                 g = weight * d
                 g = _unbroadcast(g, printer.shape(g), printer.shapes[s])
-                if s in pending and not printer.shapes[s][0]:
+                if s in leaves and not printer.shapes[s][0]:
                     roots.append((g, s))
                     continue
                 grads[s] = define(f'_d{len(defs)}', grads[s] + g if s in grads else g)
-                if pending.get(s, 2) > (cut is not None):
+                if s not in leaves or users[s] - gone - {k}:
                     roots.append((grads[s], None))
 
-    # The terms ``gradient * value`` of the values gone through: each value's gradient waits there until its operands gather theirs, by their diff.
-    loss = []
+    # The terms ``cotangent * output``, from which the nodes and leaves in the outputs gather their gradients by diff.
+    loss = [sympy.Symbol(f'go{k}') * e for k, e in enumerate(outputs)]
     free = functools.cache(lambda term: term.free_symbols)
 
     def gathered(s):
@@ -1352,57 +1377,85 @@ def _fused_gradients(plan, exprs, printer):
         g = grads.get(s, sympy.S.Zero) + sympy.Add(*(term.diff(s) for term in loss if s in free(term)))
         return _unbroadcast(g, printer.shape(g), printer.shapes[s])
 
-    def complete():
-        for leaf in [leaf for leaf, n in pending.items() if n == 0]:
-            if (g := gathered(leaf)) != 0 or printer.shapes[leaf][0]:
-                roots.append((g, leaf))
-            del pending[leaf]
-
-    loss += [sympy.Symbol(f'go{k}') * e for k, e in enumerate(outputs)]
-    complete()
-    # A cut is gone through once every cut using it is, and an einsum first, since it turns a multivector of gradients into sums already held.
-    ready = [k for k in range(len(cuts)) if not users[k]]
-    while ready:
-        ready.remove(k := max(ready, key=lambda k: (isinstance(cuts[k][0], Einsum), k)))
-        value, y = cuts[k]
-        ys = y if isinstance(y, tuple) else (y,)
-        g = [gathered(s) for s in ys]
-        if any(g):
-            # A blade named as one before it has its gradient there already.
-            g = [sympy.S.Zero if d == 0 or s in ys[:i] else define(f'_d{len(defs)}', d) for i, (s, d) in enumerate(zip(ys, g))]
-            # A loop reads the cotangents of a Loop node from memory, where each goes as it is computed, see _fused_source.
-            roots.extend((d, d if isinstance(value, Loop) else None) for d in g if d != 0)
-            if isinstance(value, ArrayBase):
-                for operand, adjoint in _adjoints(value, Stack(*g) if isinstance(y, tuple) else g[0], printer.shape):
-                    if isinstance(adjoint, LoopGrad):
-                        roots.append((sympy.S.Zero, adjoint))
-                    for element, gradient in _scattered(operand, adjoint):
-                        # Naming an identically zero blade hides its zero from
-                        # sympy: subsequent VJPs then retain its nonlinear path.
-                        if isinstance(gradient, Blade) and isinstance(gradient.args[0], Einsum):
-                            blade = printer._blade(gradient.args[0], int(gradient.args[1]))
-                            if isinstance(blade, Einsum) and 0 in blade.args[1:]:
-                                continue
-                        if gradient != 0:
-                            push(define(f'_g{len(defs)}', gradient), element, k)
-            else:
-                loss.append(g[0] * value)
-        for leaf in value.free_symbols & pending.keys():
-            pending[leaf] -= 1
-        complete()
-        for j in operands[k]:
-            users[j] -= 1
-            if not users[j]:
-                ready.append(j)
-    # A layer that sums over no axis does a few operations for every coefficient it loads, and so is bound by memory: its backward computes again what the forward did, rather than
-    # store and load it. One that does may not have the registers to, and loads every value that takes more than simple arithmetic.
-    contracts = any(isinstance(v, (Reduce, Loop)) or isinstance(v, Einsum) and set(''.join(_terms(v)[0]).replace('.', '')) - set(_terms(v)[1]) for v in forward.values())
-    return outputs, forward, [s for s in owner if contracts and printer.shapes[s][0] and not _simple(forward[s])], roots, defs
+    sorter, ready = graphlib.TopologicalSorter(users), []
+    sorter.prepare()
+    while sorter.is_active():
+        ready += sorter.get_ready()
+        ready.remove(n := max(ready, key=lambda n: (True, 0, 0) if n in leaves else (False, isinstance(nodes[n][0], Einsum), n)))
+        sorter.done(n)
+        if n in leaves:
+            if (g := gathered(n)) != 0 or printer.shapes[n][0]:
+                roots.append((g, n))
+            continue
+        value, y = nodes[n]
+        if not any(g := [gathered(s) for s in (y if isinstance(y, tuple) else (y,))]):
+            gone.add(n)
+            continue
+        g = [sympy.S.Zero if d == 0 else define(f'_d{len(defs)}', d) for d in g]
+        # A loop reads the cotangents of a Loop node from memory, where each goes as it is computed, see _fused_source.
+        roots.extend((d, d if isinstance(value, Loop) else None) for d in g if d != 0)
+        if not isinstance(value, ArrayBase):
+            loss.append(g[0] * value)
+            gone.add(n)
+            continue
+        for operand, adjoint in _adjoints(value, Stack(*g) if isinstance(y, tuple) else g[0], printer.shape):
+            if isinstance(adjoint, LoopGrad):
+                roots.append((sympy.S.Zero, adjoint))
+            for element, gradient in _scattered(operand, adjoint):
+                # Naming an identically zero blade hides its zero from
+                # sympy: subsequent VJPs then retain its nonlinear path.
+                if isinstance(gradient, Blade) and isinstance(gradient.args[0], Einsum):
+                    blade = printer._blade(gradient.args[0], int(gradient.args[1]))
+                    if isinstance(blade, Einsum) and 0 in blade.args[1:]:
+                        continue
+                if gradient != 0:
+                    push(define(f'_g{len(defs)}', gradient), element, n)
+        gone.add(n)
+    return outputs, defs, roots
 
 
-def _simple(v):
-    """Whether `v` takes a few multiplications and additions and nothing else: no function, no root, no einops."""
-    return sympy.count_ops(v) <= 4 and not v.atoms(sympy.Function) and all(p.exp.is_Integer for p in v.atoms(sympy.Pow))
+def _fused_program(leaves, arrays, exprs, loops, cse, codegen_symbolcls):
+    """
+    The Program of an operator with einops calls, for the tiles of its symbols, `leaves`, the gradients by its `arrays`: `exprs` lowered, see :func:`_pointwise`, their backward, see :func:`_fused_gradients`,
+    and one provider call over AD's definitions, the outputs and the roots of the backward, in that order, see :func:`~kingdon.codegen.prepare`.
+    Returns, as a :class:`_Program`, the outputs and the roots over the values of the Program, its bindings and AD's definitions; the values the forward computes, those of them the backward loads rather
+    than computes, the definitions as AD made them, the tiles and blade counts of every symbol, and the tile of the outputs.
+    A Stack, or a node over multivectors, is no value of its own: what uses it takes it as what it holds.
+    The forward computes the values its outputs need, and the backward any other value. A forward that sums over an axis saves each of its values with rows that is not :func:`_simple`,
+    which the backward would otherwise have to hold or stage, and each division, which it loads at each use rather than compute anew; one that does not is bound by memory, and saves nothing.
+    """
+    printer = TritonPrinter(dict(leaves))
+    printer.loops = loops
+    exprs = _pointwise(exprs, printer)
+    out_tile = (True, tuple(np.broadcast_shapes(*(printer.shape(e)[1] for e in exprs))))
+    seeds = [sympy.Symbol(f'go{k}') for k in range(len(exprs))]
+    printer.shapes.update(dict.fromkeys(seeds, out_tile))
+    outputs, defs, roots = _fused_gradients(arrays, exprs, printer)
+    program = [*defs.values(), *outputs, *(e for e, _ in roots)]
+    bindings, reduced = prepare(program, codegen_symbolcls) if cse else ([], program)
+    tuples = {}
+    for s, v in [*bindings, *zip(defs, reduced)]:
+        if isinstance(v := v.xreplace(tuples), Stack) or isinstance(v, (Einsum, Reduce, Reshape)) and printer.count(v):
+            tuples[s] = v
+    values = {s: v.xreplace(tuples) for s, v in [*bindings, *zip(defs, reduced)] if s not in tuples}
+    reduced = [e.xreplace(tuples) for e in reduced[len(defs):]]
+    roots = list(zip(reduced[len(outputs):], (sink for _, sink in roots)))
+    order = _order(values)
+    for s in order:
+        printer.shapes[s] = printer.shape(values[s])
+    needed = {s for e in reduced[:len(outputs)] for s in _symbols(e)}
+    for s in reversed(order):
+        if s in needed:
+            needed.update(_symbols(values[s]))
+    forward = [s for s in order if s in needed]
+    contracts = any(isinstance(v, (Reduce, Loop)) or set(''.join(_terms(v)[0]).replace('.', '')) - set(_terms(v)[1]) for s in forward for v in values[s].atoms(Einsum, Reduce, Loop))
+    saved = [s for s in forward if contracts and printer.shapes[s][0] and not _simple(values[s], divisions=False)]
+    return _Program(reduced[:len(outputs)], values, roots, forward, saved, defs, printer.shapes, printer.counts, out_tile)
+
+
+def _simple(v, divisions=True):
+    """Whether `v` takes a few multiplications and additions, and `divisions`, and nothing else: no function, no root, no einops."""
+    return sympy.count_ops(v) <= 4 and not v.atoms(sympy.Function) and all(p.exp.is_Integer and (divisions or p.exp.is_positive) for p in v.atoms(sympy.Pow))
 
 
 def _cheap(v, values):
@@ -1421,47 +1474,28 @@ def _symbols(e):
 
 def _leaves(exprs):
     """The symbols of `exprs`, each shared subexpression gone through once: a network of operators is a DAG far smaller than the tree it unfolds into."""
-    seen, todo = set(), list(exprs)
-    while todo:
-        if (e := todo.pop()) not in seen:
-            seen.add(e)
-            todo.extend(e.args)
-    return {e for e in seen if isinstance(e, sympy.Symbol)}
+    @functools.cache
+    def leaves(e):
+        return frozenset([e]) if isinstance(e, sympy.Symbol) else frozenset().union(*map(leaves, e.args))
+    return set().union(*map(leaves, exprs))
 
 
-def _topological(values):
+def _order(values):
     """The symbols of `values`, each after the values it refers to."""
-    order, seen = [], set()
-    for root in values:
-        todo = [(root, False)]
-        while todo:
-            s, done = todo.pop()
-            if done:
-                order.append(s)
-            elif s in values and s not in seen:
-                seen.add(s)
-                todo += [(s, True), *((d, False) for d in _symbols(values[s]))]
-    return order
+    return list(graphlib.TopologicalSorter({s: [d for d in _symbols(v) if d in values] for s, v in values.items()}).static_order())
 
 
-def _emit(roots, defs, printer, load, seeds=(), stage=None, budget=math.inf, pinned=(), spare=lambda registers: None):
+def _emit(roots, values, printer, load, seeds=(), stage=None, budget=math.inf, pinned=(), spare=lambda registers: None):
     """
     The lines computing `roots`, (expression, sink) pairs, in order, each value handed to its sink, which returns the lines that store it.
     Every value is computed, and every leaf loaded, right before its first use.
     Each root gets its leaves itself, which the compiler merges with what its segment got already.
-    `defs` names values the roots, and each other, refer to by symbol; those depending on the `seeds`, the incoming cotangents, are sums the backward holds.
+    `values` names the values of a Program the roots, and each other, refer to by symbol; those depending on the `seeds`, the incoming cotangents, are sums the backward holds.
     Where what the kernel holds would take more than `budget` registers a thread, it goes in segments, see :func:`_split`: what one takes from an earlier one is stored at the place `stage` gives,
     one value after another, see :func:`_places`, but a `pinned` one, which keeps its own. The registers every segment leaves of the budget go to `spare`, before the lines returned are written.
     """
-    # Einops nodes make a DAG whose shared parts are large, and ordering the arguments of a sum or product counts the nodes of each as a tree, so cse leaves them in their order.
-    pairs, reduced = sympy.cse([*defs.values(), *(e for e, _ in roots)], symbols=sympy.numbered_symbols('_t'), order='none')
-    # A multivector is never a value of its own: a Stack only names the tiles it holds, and a node over multivectors is computed blade by blade where each blade is used,
-    # since the operands of all its blades at once, a tl.dot's fragments say, would take more registers than anything else in the kernel.
-    tuples = {}
-    for s, v in [*pairs, *zip(defs, reduced)]:
-        if isinstance(v := v.xreplace(tuples), Stack) or isinstance(v, (Einsum, Reduce, Reshape)) and printer.count(v):
-            tuples[s] = v
-
+    # A node over multivectors is computed blade by blade where each blade is used, since the operands of all its blades at once, a tl.dot's fragments say, would take more registers
+    # than anything else in the kernel.
     def blade(a, i):
         """Blade i of the node `a` as its own node, or zero where it takes a zero: the gradient of a blade another one holds, see _fused_gradients."""
         e = printer._blade(a, i)
@@ -1481,16 +1515,23 @@ def _emit(roots, defs, printer, load, seeds=(), stage=None, budget=math.inf, pin
             return sympy.Add(*map(split, parts))
         return e
 
-    # A sum of more than a few multiplications is a value of its own, wherever it is, so that it goes a term at a time, see computed, with places between them a segment may start at.
+    # A sum of more than a few multiplications is a value of its own, so that it goes a term at a time, see computed, with places between them a segment may start at.
+    # It is the value's it is in: an equal sum in another value is that one's.
     sums = {}
 
-    @_bottom_up
-    def lift(e):
-        return sums.setdefault(e, sympy.Symbol(f'_u{len(sums)}')) if isinstance(e, sympy.Add) and not _simple(e) else e
+    def lifted(e):
+        @_bottom_up
+        def lift(e):
+            if isinstance(e, sympy.Add) and not _simple(e):
+                u = sympy.Symbol(f'_u{len(sums)}')
+                sums[u] = e
+                return u
+            return e
+        return lift(split(e))
 
-    values = {s: lift(split(v.xreplace(tuples))) for s, v in [*pairs, *zip(defs, reduced)] if s not in tuples}
-    exprs = [lift(split(e.xreplace(tuples))) for e in reduced[len(defs):]]
-    values.update({u: e for e, u in sums.items()})
+    values = {s: lifted(v) for s, v in values.items()}
+    exprs = [lifted(e) for e, _ in roots]
+    values.update(sums)
     # A value that is another's name is that value.
     aliases = {s: v for s, v in values.items() if isinstance(v, sympy.Symbol)}
     for s in aliases:
@@ -1499,13 +1540,13 @@ def _emit(roots, defs, printer, load, seeds=(), stage=None, budget=math.inf, pin
     values = {s: v.xreplace(aliases) for s, v in values.items() if s not in aliases}
     exprs = [e.xreplace(aliases) for e in exprs]
     backward = set(seeds)
-    for s in _topological(values):
+    for s in _order(values):
         if backward.intersection(_symbols(values[s])):
             backward.add(s)
     # A cheap value of the forward is computed by each root, and each segment, that takes it, from values held anyway, rather than stored for a later segment;
     # one of the backward is held, since computing it anew would hold what it adds up, and ptxas schedules those worse.
     cheap = {s for s, v in values.items() if s not in backward and _cheap(v, values)}
-    for s in _topological(values):
+    for s in _order(values):
         printer.shapes[s] = printer.shape(values[s])
 
     def needs(e):
@@ -1596,7 +1637,7 @@ def _emit(roots, defs, printer, load, seeds=(), stage=None, budget=math.inf, pin
         cuts = sorted(points[k] for k in starts)
         # A segment computes a cheap value anew from what it takes, which is therefore needed as far as the cheap value is.
         last = {s: t[-1] for s, t in taken.items()}
-        for s in reversed(_topological(values)):
+        for s in reversed(_order(values)):
             if s in cheap and s in last:
                 for d in _symbols(values[s]):
                     last[d] = max(last.get(d, 0), last[s])
@@ -1684,8 +1725,6 @@ def _source(funcname, plan, n, lines, outs, grad_lines, grads, dtype):
                 continue
             # A shared operand's gradient is summed by the adds themselves: every element of the tile adds into the coefficient it read. Summing the tile first would cost a
             # trip through shared memory and a barrier per coefficient, since the axes it is shared along are spread over warps.
-            if not op.varies[0]:
-                at += f' + (_pid % STRIPES) * {op.slots} * _n_{_tag(op.varies)}'
             stores.append(f'        tl.atomic_add(tl.broadcast_to({at}, {tile}), {grads[var]}, mask=_m_{_tag(full)}, sem="relaxed")')
     index = [*_blocks(n), *_address(n, dict.fromkeys([full, *(op.varies for op in arrays)]))]
     return _module(funcname, plan, n, [*index, *_loads(arrays), *lines, *(f'    tl.store(out + {_at(full, k)}, {e}, mask=_m_{_tag(full)})' for k, e in enumerate(outs))],
@@ -1693,15 +1732,14 @@ def _source(funcname, plan, n, lines, outs, grad_lines, grads, dtype):
                    f'data, extents, _ = _layout(({", ".join(f"{op.name}.shape[{op.lead}:]" for op in arrays)},))', max(len(outs), *(op.slots for op in arrays)), dtype)
 
 
-def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_printer, span, dtype, budget=math.inf, connected=None):
+def _fused_source(funcname, plan, tiles, program, printer, grad_printer, span, dtype, budget=math.inf, connected=None):
     """
     :func:`_source` for a kernel over blocks of rows, which holds every coefficient as a tile of all its features, see :func:`_fused_layout`.
-    The forward and the backward are those of :func:`_fused_gradients`, every value and load of either emitted where :func:`_emit` needs it.
-    Every value of the forward the backward loads, see :func:`_fused_gradients`, it loads from where the forward stores it.
+    The forward and the backward print the Program of :func:`_fused_program`, every value and load of either emitted where :func:`_emit` needs it.
+    Every value of the forward the backward loads it loads from where the forward stores it.
     """
-    import torch
-
-    outputs, forward, saved, roots, defs = gradients
+    outputs, values, roots, forward, saved, defs, _, _, out_tile = program
+    forward = set(forward)
     arrays = [(op, tile) for op, tile in zip(plan, tiles) if op.array]
     where = {sympy.Symbol(var): (op, i, tile) for op, tile in arrays for i, var in op.live}
     slots = {}
@@ -1831,7 +1869,7 @@ def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_prin
         """The Loop node `value`, named `y`: its blades given places in saved, which it alone writes, the entries it reads stored before it, if they are not an operand's, and its loop."""
         k = int(value.args[0])
         gather = printer.loops[k]
-        outs = sorted((s for s, v in forward.items() if isinstance(v, Blade) and v.args[0] == y), key=lambda s: int(forward[s].args[1]))
+        outs = sorted((s for s, v in defs.items() if isinstance(v, Blade) and v.args[0] == y), key=lambda s: int(defs[s].args[1]))
         tile = grad_printer.shapes[outs[0]]
         offset, size = place(outs, tile, slots)
         fixed.update(outs)
@@ -1862,82 +1900,10 @@ def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_prin
         operands = [(lambda i: at(f'scratch + {g_offset} + {i} * {g_size}', 0, cotangent, '_BSTRIDE', '_s0', '_sr0'), cotangent), *((reads[k][o][0], reads[k][o][2]) for o in others)]
         return looped(grad_printer, rows, operands, f'{",".join([right, *(terms[o] for o in others)])}->{term}', lambda i: at(f'scratch + {offset} + {i} * {size}', 0, tile, '_BSTRIDE', '_s0', '_sr0'), tile)
 
-    for y, value in forward.items():
+    for y, value in defs.items():
         if isinstance(value, Loop):
             forward_loop(y, value)
     loops = {node: backward_loop(node) for _, node in roots if isinstance(node, LoopGrad)}
-
-    # Move large shared matrix contractions out of the row-local
-    # VJP. Its row adjoints are checkpointed once; framework GEMMs reduce the
-    # batch without holding matrix accumulators in every persistent CTA.
-    external, checkpointed, weight_slots, external_symbols = {}, {}, {}, {}
-
-    def outer_terms(value):
-        while isinstance(value, sympy.Symbol) and value in defs:
-            value = defs[value]
-        if value == 0:
-            return []
-        if isinstance(value, Blade) and isinstance(value.args[0], Einsum):
-            return outer_terms(grad_printer._blade(value.args[0], int(value.args[1])))
-        if not isinstance(value, Einsum) or len(value.args) != 3:
-            return None
-        counts = [grad_printer.count(op) for op in value.args[1:]]
-        blade, kept, terms, right = _unbladed(value, counts)
-        if blade is not None:
-            if kept:
-                return None
-            result = []
-            for k in range(next(filter(None, counts))):
-                taken = outer_terms(grad_printer._blade(value, k))
-                if taken is None:
-                    return None
-                result.extend(taken)
-            return result
-        if any(op == 0 for op in value.args[1:]):
-            return []
-        if len(right) != 2 or terms != [f'...{right[0]}', f'...{right[1]}']:
-            return None
-        if not all(isinstance(op, sympy.Symbol) and grad_printer.shape(op)[0]
-                   and len(grad_printer.shape(op)[1]) == 1 for op in value.args[1:]):
-            return None
-        return [tuple(value.args[1:])]
-
-    def checkpoint(value):
-        if value in checkpointed:
-            return checkpointed[value]
-        tile = grad_printer.shape(value)
-        if value in where:
-            op, slot, _ = where[value]
-            expression = f'{op.name}.reshape({op.slots}, extents[0], {tile[1][0]})[{slot}]'
-        elif value in forward:
-            saved.add(value)
-            keep(value)
-            offset = slots[value][0]
-            expression = f'saved.as_strided((extents[0], {tile[1][0]}), (_KEPT.value, 1), {offset})'
-        else:
-            target = sympy.Symbol(f'_wm{len(checkpointed)}')
-            grad_printer.shapes[target] = tile
-            offset = sum(width for _, width in weight_slots.values())
-            weight_slots[target] = (offset, tile[1][0])
-            expression = f'scratch.narrow(0, _STAGED.value * capacity + {offset} * extents[0], extents[0] * {tile[1][0]}).view(extents[0], {tile[1][0]})'
-            pending_checkpoints.append((value, target))
-        checkpointed[value] = expression
-        return expression
-
-    pending_checkpoints, rewritten = [], []
-    for value, target in roots:
-        entry = where.get(target)
-        terms = outer_terms(value) if (dtype == torch.float32 and entry
-            and not entry[2][0] and len(entry[2][1]) == 2
-            and math.prod(entry[2][1]) >= 256) else None
-        if terms is None:
-            rewritten.append((value, target))
-            continue
-        external.setdefault(target, []).extend((checkpoint(a), checkpoint(b)) for a, b in terms)
-        external_symbols.setdefault(target, []).extend(terms)
-        rewritten.extend(pending_checkpoints)
-        pending_checkpoints.clear()
-    roots = rewritten
 
     def sink(s):
         """Where a root goes, given what it is for: a leaf's gradient to the operand's, a Loop node's cotangent to its place in scratch, and a LoopGrad's loop there itself."""
@@ -1945,9 +1911,6 @@ def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_prin
             return lambda _: []
         if isinstance(s, LoopGrad):
             return lambda _: loops[s]
-        if s in weight_slots:
-            offset, _ = weight_slots[s]
-            return store(*at(f'scratch + _STAGED * SROWS + {offset} * e0', 0, grad_printer.shapes[s]))
         return gradient(s) if s in where else store(*hold(s))
 
     # Large shared parameter tiles compete with activation adjoints for registers.
@@ -1955,7 +1918,7 @@ def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_prin
     # selects their elapsed time along with the warp layout and gradient mask.
     budgets = [budget / divisor for divisor in (1, 2, 4)] if (
         any(not tile[0] and math.prod(tile[1]) >= 256 for _, tile in arrays)
-        or not any(value.has(ArrayBase) for value in forward.values())) else [budget]
+        or not any(isinstance(v, ArrayBase) for s, v in defs.items() if s in forward)) else [budget]
     bodies = []
     fixed_slots, scratch = dict(held), filled(held)
     for limit in budgets:
@@ -1964,10 +1927,9 @@ def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_prin
         held.clear()
         held.update(fixed_slots)
         held_sums.clear()
-        body = _emit([(g, sink(s)) for g, s in roots], {s: v for s, v in defs.items() if s not in saved and s not in fixed}, grad_printer, load, [sympy.Symbol(f'go{k}') for k in range(len(outputs))], hold, limit, spare=spare)
+        body = _emit([(g, sink(s)) for g, s in roots], {s: v for s, v in values.items() if s not in saved and s not in fixed}, grad_printer, load, [sympy.Symbol(f'go{k}') for k in range(len(outputs))], hold, limit, spare=spare)
         holding = [(k, op, pointers, mask, tile) for k, (s, (op, pointers, mask, tile)) in enumerate(sums.items()) if s in held_sums]
         bodies.append(['    if WIDE:', '        e0 = e0.to(tl.int64)',
-                       '        SROWS = SROWS.to(tl.int64)',
                        '    _pid = tl.program_id(0)', '    _sr0 = _pid * T0',
                        '    if WIDE:', '        _sr0 = _sr0.to(tl.int64)',
                        '    _s0 = _sr0 + tl.arange(0, T0)', f'    _BSTRIDE = {filled(held)}', *(f'    _w{k} = tl.zeros({_padded(tile)}, {acc})' for k, *_, tile in holding),
@@ -1981,52 +1943,22 @@ def _fused_source(funcname, plan, tiles, gradients, out_tile, printer, grad_prin
         for line in [f'    {"if" if k == 0 else "elif"} SCHEDULE == {k}:', *('    ' + line for line in body)]]
     def output_store(k, expression):
         write = store(*at('out', k, out_tile))
-        # AD retains the shapes of original cut symbols, including aliases
-        # eliminated by the forward emitter's second CSE pass.
         tile = grad_printer.shape(expression)
         # A blade can be row-invariant (e.g. a scalar bias alongside vectors).
         # Older Triton requires its rank to match the output pointer tile.
         return lambda value: write(_broadcast(value, tile, out_tile) if tile != out_tile else value)
 
-    fwd = _emit([*before, *((s, store(*keep(s))) for s in forward if s in slots and s not in fixed), *((e, output_store(k, e)) for k, e in enumerate(outputs))],
-                {s: v for s, v in forward.items() if s not in written and not isinstance(v, Loop)}, printer, load, stage=functools.partial(keep, shapes=printer.shapes), budget=budget, pinned=set(slots))
+    fwd = _emit([*before, *((s, store(*keep(s))) for s in values if s in forward and s in slots and s not in fixed), *((e, output_store(k, e)) for k, e in enumerate(outputs))],
+                {s: v for s, v in values.items() if s in forward and s not in written and not isinstance(v, Loop)}, printer, load, stage=functools.partial(keep, shapes=printer.shapes), budget=budget, pinned=set(slots))
     batch = ', '.join(f'{op.name}.shape[{op.lead}:{op.name}.ndim - {len(tile[1])}]' for op, tile in arrays)
     kept = filled(slots)
-    gemms = []
-    for target, terms in external.items():
-        if not terms:
-            continue
-        op, slot, (_, features) = where[target]
-        destination = f'd{op.name}.reshape({op.slots}, {features[0]}, {features[1]})[{slot}]'
-        gemms.append(f'        if G{op.name}:')
-        # Consecutive blade planes are already a single contiguous reduction
-        # dimension. Coalesce their GEMMs without a packing kernel or copy.
-        symbols = external_symbols[target]
-        left_slots = [next((weight_slots[sink] for value, sink in roots
-                            if value == left and sink in weight_slots), None)
-                      for left, _ in symbols]
-        right_slots = [where.get(right) for _, right in symbols]
-        if (len(terms) > 1 and all(left_slots) and all(right_slots)
-                and len({(entry[0].name, entry[2]) for entry in right_slots}) == 1
-                and [entry[1] for entry in right_slots] == list(range(right_slots[0][1], right_slots[0][1] + len(terms)))
-                and [offset for offset, _ in left_slots] == list(range(left_slots[0][0], left_slots[0][0] + len(terms) * features[0], features[0]))):
-            rows = f'{len(terms)} * extents[0]'
-            left = f'scratch.narrow(0, _STAGED.value * capacity + {left_slots[0][0]} * extents[0], {rows} * {features[0]}).view({rows}, {features[0]})'
-            right_op, right_slot, _ = right_slots[0]
-            right = f'{right_op.name}.reshape({right_op.slots} * extents[0], {features[1]}).narrow(0, {right_slot} * extents[0], {rows})'
-            terms = [(left, right)]
-        for left, right in terms:
-            gemms.append(f'            torch.addmm({destination}, {left}.T, {right}, beta=1, out={destination})')
-    wstaged = sum(width for _, width in weight_slots.values())
     return _module(funcname, plan, 1, [*index, *fwd], bwd, len(outputs),
                    f'batch = torch.broadcast_shapes({batch}); data, extents = (*batch, *{out_tile[1]}), (math.prod(batch),)',
-                   max(span, kept, scratch + wstaged), dtype, kept, scratch,
-                   _ROWS, tables, len(budgets), connected if connected is not None else
-                   {where[s][0].name for _, s in roots if s in where} | {where[s][0].name for s in external},
-                   wstaged=wstaged, epilogue=gemms)
+                   max(span, kept, scratch), dtype, kept, scratch,
+                   _ROWS, tables, len(budgets), connected if connected is not None else {where[s][0].name for _, s in roots if s in where})
 
 
-def _module(funcname, plan, n, fwd, bwd, n_out, layout, span, dtype, kept=0, staged=0, rows=None, tables=(), schedules=1, gradient_names=None, wstaged=0, epilogue=()):
+def _module(funcname, plan, n, fwd, bwd, n_out, layout, span, dtype, kept=0, staged=0, rows=None, tables=(), schedules=1, gradient_names=None):
     """
     The forward and backward kernels, from the bodies `fwd` and `bwd`, and the autograd function that launches them:
     `layout` sets the output's `data` shape and the grid's `extents`, the forward stores `kept` coefficients a row in `saved`, for the backward and for its own later segments,
@@ -2034,12 +1966,9 @@ def _module(funcname, plan, n, fwd, bwd, n_out, layout, span, dtype, kept=0, sta
     and their backward goes over those blocks with as many programs as the card runs at once, _RESIDENT, so that a sum a program holds over them it adds into a gradient once.
     """
     arrays = [op for op in plan if op.array]
-    saved, scratch = ', saved' if kept else '', ', scratch' if staged or wstaged else ''
+    saved, scratch = ', saved' if kept else '', ', scratch' if staged else ''
     names = [op.name for op in arrays]
     flags = [f'G{name}' for name in names]
-    # An operand shared along the outermost axis -- a weight, shared over the batch -- sums its gradient into one of several copies, picked by block and added up by the
-    # launcher, so that the blocks along that axis do not all contend for the same one. Blocks of rows add a tile's sum over its rows, not each element, and so contend too little to pay for copies.
-    shared = not rows and any(not op.varies[0] for op in arrays)
     sizes = ", ".join(f"e{k}" for k in range(n))
     # Every constexpr follows every runtime argument: inductor launches a user kernel without its constexprs, yet finds the gradients to zero between timed configs by
     # their position in the whole signature. WIDE precedes the tile so that :func:`_widest_clean` can pass it positionally.
@@ -2048,25 +1977,22 @@ def _module(funcname, plan, n, fwd, bwd, n_out, layout, span, dtype, kept=0, sta
 
     params = ", ".join([*_params(plan), *['TAB'] * bool(tables)])
     fwd_args = f'{params}, out{saved}'
-    bwd_args = lambda sizes, capacity='SROWS': f'{params}, {sizes}, {", ".join("d" + name for name in names)}, gout{saved}{scratch}{", " + capacity if rows else ""}'
+    bwd_args = lambda sizes: f'{params}, {sizes}, {", ".join("d" + name for name in names)}, gout{saved}{scratch}'
     kernels = ['@triton.jit', f'def {funcname}_fwd({fwd_args}, {sizes}, {constexprs}):', *fwd, '', '',
-               # The stripe count follows the batch, and only picks a copy, so it is not worth a compilation per value triton would specialise it to.
-               f'@triton.jit(do_not_specialize={(["STRIPES", "SROWS"] if rows else ["STRIPES"])!r})', f'def {funcname}_bwd({bwd_args(sizes)}, STRIPES, {constexprs}, {", ".join(f"{f}: tl.constexpr" for f in flags)}{", RESIDENT: tl.constexpr = 1, SCHEDULE: tl.constexpr = 0" if rows else ""}):', *bwd, '', '']
+               '@triton.jit', f'def {funcname}_bwd({bwd_args(sizes)}, {constexprs}, {", ".join(f"{f}: tl.constexpr" for f in flags)}{", RESIDENT: tl.constexpr = 1, SCHEDULE: tl.constexpr = 0" if rows else ""}):', *bwd, '', '']
 
     buffers = []
     for op, flag in zip(arrays, flags):
         # A gradient gathered from several blocks starts at zero and accumulates in at least single precision.
         make = (f'torch.empty_like({op.name})' if all(op.varies) else
-                f'torch.zeros(({"" if op.varies[0] or rows else "stripes, "}*{op.name}.shape,), device={op.name}.device, dtype=torch.promote_types({op.name}.dtype, torch.float32))')
+                f'torch.zeros_like({op.name}, dtype=torch.promote_types({op.name}.dtype, torch.float32))')
         buffers.append(f'd{op.name} = {make} if {flag} else {op.name}.new_empty(0)')
     scalars = [var for op in plan if not op.array for var in op.vars]
-    returns = ', '.join('None' if not op.array else f'(d{op.name}{"" if op.varies[0] or rows else ".sum(0)"}.to({op.name}.dtype) if G{op.name} else None)' for op in plan)
+    returns = ', '.join('None' if not op.array else f'(d{op.name}.to({op.name}.dtype) if G{op.name} else None)' for op in plan)
 
     launcher = f"""
 _KEPT, _STAGED = tl.constexpr({kept}), tl.constexpr({staged})
-_WSTAGED = {wstaged}
 _CAPACITY = 1
-_WGEMMS = {sum('torch.addmm(' in line for line in epilogue)}
 _SCHEDULES = {schedules}
 _GRADIENTS = {tuple(name for name in names if gradient_names is None or name in gradient_names)}
 _TABLES = {tuple(tables)}
@@ -2101,13 +2027,11 @@ class _Fn(torch.autograd.Function):
         ({", ".join(scalars)}{"," if scalars else ""}) = ctx.scalars
         {", ".join(flags)}, = {", ".join(f"ctx.needs_input_grad[{i}]" if gradient_names is None or op.name in gradient_names else "False" for i, op in enumerate(plan) if op.array)},
         gout, extents = gout.contiguous(), ctx.extents
-        stripes = {"_stripes(extents, _BACKWARD, gout.device)" if shared else "1"}
         {"; ".join(buffers)}
         capacity = min(extents[0], _CAPACITY) if {bool(rows)} else extents[0]
-        {f"scratch = gout.new_empty(capacity * {staged} + extents[0] * {wstaged})" if staged or wstaged else "pass"}
+        {f"scratch = gout.new_empty(capacity * {staged})" if staged else "pass"}
         {f"TAB = _tables(gout.device)" if tables else "pass"}
-        {funcname}_bwd[_grid_bwd]({bwd_args('*extents', 'capacity')}, stripes, WIDE=math.prod(extents) * {span} >= 2 ** 31{even}, {', '.join(f'{f}={f}' for f in flags)})
-{chr(10).join(epilogue)}
+        {funcname}_bwd[_grid_bwd]({bwd_args('*extents')}, WIDE=math.prod(extents) * {span} >= 2 ** 31{even}, {', '.join(f'{f}={f}' for f in flags)})
         return {returns}
 
 

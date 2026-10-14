@@ -30,7 +30,7 @@ def _atom(text):
 
 def poly_format(poly_args):
     """Format a raw polynomial args list (or 0) to a Python code string."""
-    if poly_args == 0 or poly_args == []:
+    if not poly_args:
         return '0'
     terms = []
     for monomial in poly_args:
@@ -56,15 +56,15 @@ def poly_format(poly_args):
     return '+'.join(terms).replace('+-', '-')
 
 
-def _find_shared_sums(expr, iso_vars, prelude, start_count=0, sum_map=None):
-    """Phase 1: Find shared sums across components and extract them."""
+def _find_shared_sums(expr, iso_vars, prelude, names, sum_map=None):
+    """Phase 1: Find shared sums across components and extract them, named by `names`, and return how many."""
     array_count = sum(1 for e in expr if isinstance(e, list) and e)
     if not iso_vars or array_count < 2:
-        return start_count
+        return 0
 
     res_map = {}
     used = set()
-    sum_count = start_count
+    sum_count = 0
 
     for ci, e in enumerate(expr):
         if not isinstance(e, list):
@@ -95,12 +95,11 @@ def _find_shared_sums(expr, iso_vars, prelude, start_count=0, sum_map=None):
                     sub = [r_terms[i] for i in si]
                     sub_i = [r_idx[i] for i in si]
 
-                    g = abs(sub[0][0])
-                    for i in range(1, len(sub)):
-                        g = math.gcd(abs(int(g)), abs(int(sub[i][0])))
-
-                    norm = [[t[0] // g if isinstance(t[0], int) else t[0] / g, *t[1:]]
-                            for t in sub]
+                    # The gcd of rationals, which a float is too, so that each coefficient over it is an integer.
+                    fs = [Fraction(t[0]) for t in sub]
+                    g = Fraction(math.gcd(*(f.numerator for f in fs)), math.lcm(*(f.denominator for f in fs)))
+                    norm = [[int(f / g), *t[1:]] for f, t in zip(fs, sub)]
+                    g = int(g) if g.denominator == 1 else float(g) if any(isinstance(t[0], float) for t in sub) else g
                     norm.sort(key=lambda t: ','.join(str(x) for x in t[1:]))
                     sign = 1
                     if norm[0][0] < 0:
@@ -130,7 +129,7 @@ def _find_shared_sums(expr, iso_vars, prelude, start_count=0, sum_map=None):
         if len(vc) < 2:
             continue
 
-        sn = 't' + str(sum_count)
+        sn = next(names)
         sum_count += 1
         norm = cand['occs'][0]['norm']
         prelude.append((sn, [list(t) for t in norm]))
@@ -279,8 +278,8 @@ def _walk_terms(expr):
             yield term
 
 
-def _find_shared_products(expr, prot, prelude):
-    """Phase 3: Find repeated factor pairs and extract them."""
+def _find_shared_products(expr, prot, prelude, names):
+    """Phase 3: Find repeated factor pairs and extract them, named by `names`."""
     prods = {}
     prot_set = set(prot or [])
 
@@ -306,6 +305,7 @@ def _find_shared_products(expr, prot, prelude):
                 count_pairs(term)
 
     prod_list = [k for k, v in prods.items() if v > 1]
+    named = {k: next(names) for k in prod_list}
 
     def substitute_pairs(term):
         i = 1
@@ -320,8 +320,7 @@ def _find_shared_products(expr, prot, prelude):
                     j += 1
                     continue
                 if prods.get((ti, tj), 0) > 1:
-                    combined = f'{ti}{tj}'
-                    term[i] = combined
+                    term[i] = named[ti, tj]
                     term.pop(j)
                 else:
                     j += 1
@@ -333,8 +332,7 @@ def _find_shared_products(expr, prot, prelude):
                 substitute_pairs(term)
 
     for k in prod_list:
-        combined = f'{k[0]}{k[1]}'
-        prelude.append((combined, [[1, k[0], k[1]]]))
+        prelude.append((named[k], [[1, k[0], k[1]]]))
 
 
 def _substitute_extracted(expr, sum_map):
@@ -442,7 +440,7 @@ def _detect_linear_deps(expr):
     return {'heaviest': heaviest, 'deps': deps}
 
 
-def poly_cse(expr, prot=None, iso=None):
+def poly_cse(expr, prot=None, iso=None, names=None):
     """
     Common Subexpression Elimination for raw polynomial args lists.
 
@@ -452,8 +450,10 @@ def poly_cse(expr, prot=None, iso=None):
                  Modified in-place.
     :param prot: protected variable names (won't be combined in products).
     :param iso: variable names to use for sum detection and isolation.
-    :return: (prelude, expr) where prelude is a list of assignment strings.
+    :param names: iterator of the names to give what is extracted, none of them a variable's. By default t0, t1, ...
+    :return: (prelude, expr) where prelude is a list of (name, raw polynomial args) assignments.
     """
+    names = names or (f't{k}' for k in itertools.count())
     if not isinstance(expr, list):
         return [], expr
 
@@ -468,16 +468,14 @@ def poly_cse(expr, prot=None, iso=None):
 
     # Phase 1: Find shared sums
     sum_map = {}
-    has_mixed = _find_shared_sums(expr, iso_vars, prelude, 0, sum_map)
+    has_mixed = _find_shared_sums(expr, iso_vars, prelude, names, sum_map)
 
     # Phase 2: Substitute extracted sums and find more shared structure
     if has_mixed and sum_map:
         _substitute_extracted(expr, sum_map)
         t_vars = list(set(v['tn'] for v in sum_map.values()))
         sum_map2 = {}
-        r2 = _find_shared_sums(expr, t_vars, prelude, has_mixed, sum_map2)
-        if r2 > has_mixed:
-            has_mixed = r2
+        has_mixed += _find_shared_sums(expr, t_vars, prelude, names, sum_map2)
         if sum_map2:
             _substitute_extracted(expr, sum_map2)
 
@@ -491,15 +489,15 @@ def poly_cse(expr, prot=None, iso=None):
 
     # Apply linear dependencies (after isolation)
     if dep:
+        named = {d['comp']: next(names) for d in dep['deps']}
         for d in dep['deps']:
-            rn = 'u' + str(d['comp'])
-            prelude.append((rn, list(expr[d['comp']])))
-            expr[d['comp']] = [[1, rn]]
-        expr[dep['heaviest']] = [[-d['sign'], d['cv'], 'u' + str(d['comp'])]
+            prelude.append((named[d['comp']], list(expr[d['comp']])))
+            expr[d['comp']] = [[1, named[d['comp']]]]
+        expr[dep['heaviest']] = [[-d['sign'], d['cv'], named[d['comp']]]
                                   for d in dep['deps']]
 
     # Phase 5: Find shared products
-    _find_shared_products(expr, prot, prelude)
+    _find_shared_products(expr, prot, prelude, names)
 
     return prelude, expr
 
@@ -892,25 +890,25 @@ def rp_var_name(v):
     return '_'
 
 
-def rational_cse(exprs: list[RationalPolynomial], common_denom: Polynomial | None = None):
+def rational_cse(exprs: list, prefix: str = 't'):
     """
-    Run CSE on a list of :class:`RationalPolynomial` expressions.
+    CSE of :class:`RationalPolynomial` expressions, or numbers, as :func:`sympy.cse` does it for sympy's: bindings (name, :class:`Polynomial`), each over those before it,
+    and the expressions over them, in their order. Every root is a binding, and every distinct denominator that is more than one symbol, which goes through :func:`poly_cse` with the numerators.
 
-    :param exprs: list of :class:`RationalPolynomial` expressions.
-    :param common_denom: optional :class:`Polynomial` common denominator.
-    :return: (cse_pairs, numer_simplified, denom_simplified) where:
-        - cse_pairs: list of (name, poly_args) tuples for each extracted subexpression.
-        - numer_simplified: list of poly_args lists for simplified numerators.
-        - denom_simplified: poly_args list for the simplified denominator, or None.
+    :param prefix: what the names of the bindings start with, before a number. Those of the symbols of `exprs` are skipped.
     """
-    poly_args_list = [e.numer.args for e in exprs]
-    if common_denom is not None:
-        poly_args_list.append(common_denom.args)
-
-    all_vars = {f for pl in poly_args_list for m in pl for f in m[1:] if isinstance(f, str)}
-    cse_pairs, simplified = poly_cse(poly_args_list, prot=None, iso=[2] + sorted(all_vars))
-
-    numer_simplified = simplified[:-1] if common_denom is not None else simplified
-    denom_simplified = simplified[-1] if common_denom is not None else None
-
-    return cse_pairs, numer_simplified, denom_simplified
+    exprs = [e if isinstance(e, RationalPolynomial) else RationalPolynomial(Polynomial(e)) for e in exprs]
+    roots = sorted(set().union(*(e.roots for e in exprs)), key=lambda r: (len(r), r))  # An inner root is part of the text of its outer one.
+    symbols = {f for e in [*exprs, *(r.base for r in roots)] for p in (e.numer, e.denom) for m in p.args for f in m[1:]} - set(roots)
+    names = (name for k in itertools.count() if (name := f'{prefix}{k}') not in symbols)
+    named = {r: next(names) for r in roots}
+    renamed = lambda p: Polynomial([[m[0], *sorted(named.get(f, f) for f in m[1:])] for m in p.args])
+    exprs = [RationalPolynomial(renamed(e.numer), renamed(e.denom)) for e in exprs]
+    lone = {d: d.args[0][1] for e in exprs if len((d := e.denom).args) == 1 and len(d.args[0]) == 2 and d.args[0][0] == 1}
+    denoms = list(dict.fromkeys(e.denom for e in exprs if e.denom != 1 and e.denom not in lone))
+    polys = [e.numer.args for e in exprs] + [d.args for d in denoms]
+    pairs, simplified = poly_cse(polys, iso=[2] + sorted(symbols.union(named.values())), names=names)
+    over = {**{d: next(names) for d in denoms}, **lone}
+    bindings = [(name, Polynomial([[1, Root(RationalPolynomial(renamed(r.base.numer), renamed(r.base.denom)))]])) for r, name in named.items()]
+    bindings += [(name, Polynomial(p)) for name, p in [*pairs, *zip([over[d] for d in denoms], simplified[len(exprs):])]]
+    return bindings, [RationalPolynomial(Polynomial(p), Polynomial.fromname(over[e.denom]) if e.denom != 1 else None) for e, p in zip(exprs, simplified)]

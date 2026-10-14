@@ -238,7 +238,7 @@ class Algebra:
             if self.backend == 'triton' and not chosen_lambdifier:
                 from kingdon.triton_codegen import triton_lambdify
                 self.lambdifier = triton_lambdify
-            if not chosen_lambdifier:
+            elif not chosen_lambdifier:
                 self.lambdifier = partial(self.lambdifier, printer=torch_backend.TorchPrinter())
             # Expanding would multiply out the gated products of an operator over sympy symbols. The identity, rather than None, still drops the zeros.
             if self.simp_func is _expand_and_simplify:
@@ -481,7 +481,7 @@ class Algebra:
         # Called as @add_operator
         return wrap(expr, name=name, symbolic=symbolic)
 
-    def compile(self, expr=None, /, *mvs, symbolic=True, lambdifier=None, wrapper=None, values_asarray=None, **lambdifier_kwargs) -> CompiledExpression:
+    def compile(self, expr=None, /, *mvs, symbolic=True, lambdifier=None, wrapper=None, values_asarray=None, codegen_symbolcls=None, **lambdifier_kwargs) -> CompiledExpression:
         """
         Compile a GA :code:`expr` with specific symbolic multivectors.
         For typical use cases you'll probably want to use :code:`Algebra.add_operator` instead, since that does not require you
@@ -524,6 +524,8 @@ class Algebra:
             By default the wrapper from Algebra is used.
         :param values_asarray: (optional) The values_asarray function used to cast the values to the correct array type.
             By default values_asarray from Algebra is used.
+        :param codegen_symbolcls: (optional) The symbol class of `mvs`, which picks the CSE provider, see :func:`~kingdon.codegen.prepare`.
+            By default the codegen_symbolcls from Algebra is used.
         :param lambdifier_kwargs: Any remaining keyword arguments are passed on to the `lambdifier`.
             For the default :func:`~kingdon.codegen.lambdify` these are :code:`printer` and
             :code:`func_printer`, the sympy style printers used to print the expressions.
@@ -533,7 +535,8 @@ class Algebra:
         lambdifier = lambdifier or self.lambdifier
         values_asarray = values_asarray or self.values_asarray
         if symbolic:
-            compiled_expr = do_compile_symbolic(expr, *mvs, lambdifier=lambdifier, wrapper=wrapper, values_asarray=values_asarray, lambdifier_kwargs=lambdifier_kwargs)
+            compiled_expr = do_compile_symbolic(expr, *mvs, lambdifier=lambdifier, wrapper=wrapper, values_asarray=values_asarray, lambdifier_kwargs=lambdifier_kwargs,
+                                                codegen_symbolcls=codegen_symbolcls or self.codegen_symbolcls)
         else:
             compiled_expr = do_compile(expr, *mvs, wrapper=wrapper, values_asarray=values_asarray)
         return compiled_expr
