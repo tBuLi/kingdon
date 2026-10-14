@@ -967,7 +967,7 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, shapes=
     def program(tiles):
         """The Program of a layout, the `tiles` of the operands: every device's kernels print it."""
         leaves = {sympy.Symbol(var): tile or (False, ()) for base, tile in zip(bases, tiles) for _, var in base.live}
-        arrays = {sympy.Symbol(var) for base, tile in zip(bases, tiles) if tile is not None for _, var in base.live}
+        arrays = dict.fromkeys(sympy.Symbol(var) for base, tile in zip(bases, tiles) if tile is not None for _, var in base.live)
         return _fused_program(leaves, arrays, exprs, loops, cse, codegen_symbolcls)
 
     def fused_build(values, datashapes, dtype):
