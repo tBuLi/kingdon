@@ -1111,6 +1111,43 @@ def test_power():
     assert x ** -0.5 == xinv.sqrt()
     assert x ** -3 == xinv * xinv * xinv
 
+def test_power_interval():
+    # Integer powers should be simplified symbolically before evaluation, see #152.
+    class Interval:
+        def __init__(self, lo, hi):
+            self.lo, self.hi = lo, hi
+
+        def __add__(self, other):
+            if not isinstance(other, Interval):
+                other = Interval(other, other)
+            return Interval(self.lo + other.lo, self.hi + other.hi)
+        __radd__ = __add__
+
+        def __neg__(self):
+            return Interval(-self.hi, -self.lo)
+
+        def __sub__(self, other):
+            return self + (-other)
+
+        def __rsub__(self, other):
+            return -self + other
+
+        def __mul__(self, other):
+            if not isinstance(other, Interval):
+                other = Interval(other, other)
+            prods = [a * b for a in (self.lo, self.hi) for b in (other.lo, other.hi)]
+            return Interval(min(prods), max(prods))
+        __rmul__ = __mul__
+
+    alg = Algebra(2, 0, 1, extra_types=[Point, UPoint, Translation])
+    A = alg.upoint(e1=Interval(-2.0, 2.0), e2=Interval(-2.0, 2.0)).dual()
+    Asq = A ** 2
+    assert Asq.keys() == (0,)
+    assert Asq.e == -1
+    Acube = A ** 3
+    assert Acube.e12 == -1
+    assert (Acube.e01.lo, Acube.e01.hi) == (-2.0, 2.0)
+
 def test_nested_algebra_print():
     dalg = Algebra(0, 0, 1)
     dalg2 = Algebra(0, 0, 1, pretty_blade='𝒇')

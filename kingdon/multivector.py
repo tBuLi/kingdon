@@ -696,21 +696,20 @@ class MultiVector(metaclass=MultiVectorType):
         return self.algebra.rp(other, self)
 
     def __pow__(self, power, modulo=None):
-        # TODO: this should also be taken care of via codegen, but for now this workaround is ok.
         if power == 0:
             return self.algebra.scalar((1,))
         elif power < 0:
-            res = x = self.inv()
+            x = self.inv()
             power *= -1
         else:
-            res = x = self
+            x = self
 
         if power == 0.5:
-            return res.sqrt()
+            return x.sqrt()
+        elif power == 1:
+            return x
 
-        for i in range(1, power):
-            res = res.gp(x)
-        return res
+        return self.algebra.power(x, power)
 
     def outerexp(self):
         return self.algebra.outerexp(self)

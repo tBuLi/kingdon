@@ -354,6 +354,14 @@ def normsq(x: "MultiVector") -> "MultiVector":
     return gp(x, reverse(x))
 
 
+def power(x: "MultiVector", n: int) -> "MultiVector":
+    """
+    Generate code for :math:`x^n`, with :math:`n` a positive integer.
+    """
+    *_, res = power_supply(x, n, operation=gp)
+    return res
+
+
 def outerexp(x: "MultiVector", asterms: bool = False) -> "MultiVector":
     alg = x.algebra
     if len(x.grades) != 1:
