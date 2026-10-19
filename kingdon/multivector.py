@@ -487,9 +487,10 @@ class MultiVector(metaclass=MultiVectorType):
             return_values = values.__class__(value[item] for value in values)
         else:
             raise IndexError("Cannot index a multivector with a non-iterable value.")
-        # A known shape rather than a symbolic one, since a stacked multivector holds tuples of symbols and so does not count as symbolic.
-        # Indexing an array that takes no memory works it out.
-        shape = np.broadcast_to(0, self.shape)[item].shape if 'shape' in self.__dict__ else None
+        # Symbols, and the tuples of symbols a stacked multivector holds, cannot tell the shape they stand for, so indexing an array that takes no memory works it out.
+        # Arrays tell it themselves, and their index may live on a device numpy cannot read.
+        told = hasattr(return_values, 'shape') or all(hasattr(value, 'shape') for value in return_values)
+        shape = np.broadcast_to(0, self.shape)[item].shape if 'shape' in self.__dict__ and not told else None
         return self.__class__.fromkeysvalues(self.algebra, keys=self.keys(), values=return_values, raw=self.issymbolic, shape=shape)
 
     def __setitem__(self, indices, values: 'MultiVector'):

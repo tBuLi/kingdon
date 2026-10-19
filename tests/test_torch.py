@@ -137,6 +137,24 @@ def test_gradients_flow_through_a_module(alg):
     assert all(p.grad is not None and (p.grad != 0).any() for p in m.parameters())
 
 
+@pytest.mark.parametrize('storage', [lambda v: v, lambda v: list(v.unbind(0))], ids=['tensor', 'list'])
+def test_indexing_indexes_the_coefficients(storage):
+    """
+    x[i] holds the coefficients indexed by i, before and after x.shape has been read, also for an index on a device numpy cannot read, as meta tensors are.
+    Indexing with repeated rows gathers them, and their gradients add up.
+    """
+    meta = Algebra(1, 3).vector(storage(torch.zeros(4, 10, 3, device='meta')))
+    index = torch.tensor([0, 2, 2], device='meta')
+    assert meta[index].shape == (3, 3) and meta.shape == (10, 3) and meta[index].shape == (3, 3)
+    values = torch.randn(4, 10, 3, requires_grad=True)
+    x = Algebra(1, 3).vector(storage(values))
+    assert x.shape == (10, 3) and x[1:4, ..., 0].shape == (3,) and x[torch.arange(10) % 2 == 0].shape == (5, 3)
+    taken = x[torch.tensor([0, 2, 2])]
+    assert torch.equal(torch.stack(list(taken.values())), values[:, [0, 2, 2]])
+    sum(v.sum() for v in taken.values()).backward()
+    assert values.grad[0, :3, 0].tolist() == [1, 0, 2]
+
+
 def test_tensor_methods_and_the_names_that_come_first(x):
     """ Methods go the same way as the free functions, and kingdon's own names still win. """
     assert x.detach().to(torch.float64).dtype is torch.float64
