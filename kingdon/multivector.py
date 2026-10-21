@@ -364,6 +364,10 @@ class MultiVector(metaclass=MultiVectorType):
     def sqrt(self):
         return self.algebra.sqrt(self)
 
+    def square(self):
+        """Return the geometric square using one symbolic operand."""
+        return self.algebra.square(self)
+
     def normsq(self):
         return self.algebra.normsq(self)
 
@@ -707,6 +711,9 @@ class MultiVector(metaclass=MultiVectorType):
 
         if power == 0.5:
             return res.sqrt()
+
+        if power == 2:
+            return res.algebra.square(res)
 
         for i in range(1, power):
             res = res.gp(x)

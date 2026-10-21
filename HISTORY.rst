@@ -2,6 +2,11 @@
 History
 =======
 
+Next release
+------------
+* Fixed integer powers of multivectors with interval-valued or otherwise non-scalar
+  coefficients by preserving repeated symbolic operands in geometric squares.
+
 0.1.0 (2023-08-12)
 ------------------
 

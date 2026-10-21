@@ -384,6 +384,56 @@ def test_outer(sta):
     assert BwB.grades == (4,)
     assert BwB.e1234 == 2*(B.e12*B.e34 - B.e13*B.e24 + B.e14*B.e23)
 
+
+class _Interval:
+    def __init__(self, lower, upper=None):
+        self.lower = lower
+        self.upper = lower if upper is None else upper
+
+    def __add__(self, other):
+        other = _as_interval(other)
+        return _Interval(self.lower + other.lower, self.upper + other.upper)
+
+    __radd__ = __add__
+
+    def __neg__(self):
+        return _Interval(-self.upper, -self.lower)
+
+    def __sub__(self, other):
+        return self + (-_as_interval(other))
+
+    def __rsub__(self, other):
+        return _as_interval(other) - self
+
+    def __mul__(self, other):
+        other = _as_interval(other)
+        values = [
+            self.lower * other.lower,
+            self.lower * other.upper,
+            self.upper * other.lower,
+            self.upper * other.upper,
+        ]
+        return _Interval(min(values), max(values))
+
+    __rmul__ = __mul__
+
+    def __bool__(self):
+        return self.lower != 0 or self.upper != 0
+
+
+def _as_interval(value):
+    return value if isinstance(value, _Interval) else _Interval(value)
+
+
+def test_integer_power_simplifies_repeated_interval_operands():
+    alg = Algebra(2, 0, 1, extra_types=[Point, UPoint, Translation])
+    point = alg.upoint(e1=_Interval(-2, 2), e2=_Interval(-2, 2)).dual()
+
+    squared = point ** 2
+
+    assert squared.keys() == (0,)
+    assert squared.e == -1
+
 def test_alg_full_layout(vga2d):
     vga2d_full = replace(vga2d, full_layout=True)
     assert vga2d != vga2d_full
