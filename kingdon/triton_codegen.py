@@ -454,15 +454,8 @@ def _compiled(kernel, tile, *args, **kwargs):
     if 'EVEN' in kernel.arg_names:
         kwargs.setdefault('EVEN', dict(zip(kernel.arg_names, args))['e0'] % shape[0] == 0)
     device = next(a.device for a in args if torch.is_tensor(a))
-    if 'RESIDENT' in kernel.arg_names and 'RESIDENT' not in kwargs:
-        # This constexpr only sizes the launch grid. Preflight with the likely
-        # runtime value so the expensive compilation is reusable by autotuning.
-        # _resident still reads actual registers/shared memory and corrects it.
-        card = torch.cuda.get_device_properties(device)
-        threads = card.warp_size * warps
-        blocks = min(card.max_threads_per_multi_processor // threads,
-                     card.regs_per_multiprocessor // (_registers(device, warps) * threads))
-        kwargs['RESIDENT'] = card.multi_processor_count * max(1, blocks)
+    if 'WARPS' in kernel.arg_names:
+        kwargs.setdefault('WARPS', warps)
     try:
         compiled = kernel.warmup(*args, **kwargs, **_sizes(shape), num_warps=warps, num_stages=stages, maxnreg=_registers(device, warps), grid=(1,))
         compiled._init_handles()
@@ -789,6 +782,9 @@ def _choose_tiles(namespace, funcname, plan, values, n_out, extents, span=None, 
     clean = _affordable(namespace[f'{funcname}_fwd'], clean, reference.device,
                         *call, out, *saved, *extents, wide, **even)
     namespace[f'{funcname}_fwd'] = autotune(namespace[f'{funcname}_fwd'], clean, sizes)
+    # Autograd differentiates no call made outside grad mode, or without an operand that requires grad: its backward would never run.
+    if not (torch.is_grad_enabled() and any(torch.is_tensor(v) and v.requires_grad for v in values)):
+        return
 
     elements = list(dict.fromkeys((math.prod(shape), w, s) for shape, w, s in clean))
     candidates = tiles or _tiles(widths, elements, [1 << k for k in range(max(e for e, _, _ in elements).bit_length())])
@@ -812,14 +808,15 @@ def _choose_tiles(namespace, funcname, plan, values, n_out, extents, span=None, 
         for tile in affordable:
             constants = dict(options)
             if tiles:
-                constants['RESIDENT'] = _resident(kernel, tile, *bwd, WIDE=wide,
-                                                  **even, **flags, **options)
+                # The programs the grid launches are measured on the compiled kernel, so as its constexpr they would compile it again: WARPS names the config to the grid instead.
+                constants['WARPS'] = tile[1]
+                namespace['_RESIDENT'][tile[0][0], tile[1], schedule] = _resident(kernel, tile, *bwd, WIDE=wide, **even, **flags, **options)
             variants.append((tile, constants))
     if not variants:
         raise Unsupported('no backward schedule is admitted') from ExceptionGroup('why each schedule is not', rejected)
     # A CTA owns one staging tile, reused at every persistent iteration.
     # The maximum over admitted Triton configs keeps autotuning safe.
-    namespace['_CAPACITY'] = max(tile[0][0] * options['RESIDENT'] for tile, options in variants) if tiles else extents[0]
+    namespace['_CAPACITY'] = max(rows * programs for (rows, _, _), programs in namespace['_RESIDENT'].items()) if tiles else extents[0]
     namespace['_BACKWARD'] = list(dict.fromkeys(tile for tile, _ in variants))
     namespace[f'{funcname}_bwd'] = autotune(kernel, namespace['_BACKWARD'], sizes + list(flags),
                                           variants=variants,
@@ -1009,8 +1006,9 @@ def triton_lambdify(args, exprs, funcname, cse=True, output_mv_idx=None, shapes=
             raise _noted(error, f'dispatching {funcname}')
         # Source selection depends on this device's contraction capabilities
         # and on torch's float32 precision policy, not just tensor layout.
+        # A build outside grad mode has no backward, see _choose_tiles.
         key = (next(v.device for v in values if torch.is_tensor(v)), matmul_precision(), key,
-               tuple(v.requires_grad if torch.is_tensor(v) else False for v in values))
+               torch.is_grad_enabled() and tuple(v.requires_grad if torch.is_tensor(v) else False for v in values))
         if key not in built:
             try:
                 # Eagerly, also when a compiled model meets a new key, an evaluation without gradients say: traced, Dynamo intercepts Triton's warmup launches and fails on their symbolic sizes.
@@ -1979,7 +1977,7 @@ def _module(funcname, plan, n, fwd, bwd, n_out, layout, span, dtype, kept=0, sta
     fwd_args = f'{params}, out{saved}'
     bwd_args = lambda sizes: f'{params}, {sizes}, {", ".join("d" + name for name in names)}, gout{saved}{scratch}'
     kernels = ['@triton.jit', f'def {funcname}_fwd({fwd_args}, {sizes}, {constexprs}):', *fwd, '', '',
-               '@triton.jit', f'def {funcname}_bwd({bwd_args(sizes)}, {constexprs}, {", ".join(f"{f}: tl.constexpr" for f in flags)}{", RESIDENT: tl.constexpr = 1, SCHEDULE: tl.constexpr = 0" if rows else ""}):', *bwd, '', '']
+               '@triton.jit', f'def {funcname}_bwd({bwd_args(sizes)}, {constexprs}, {", ".join(f"{f}: tl.constexpr" for f in flags)}{", WARPS: tl.constexpr = 1, SCHEDULE: tl.constexpr = 0" if rows else ""}):', *bwd, '', '']
 
     buffers = []
     for op, flag in zip(arrays, flags):
@@ -1993,6 +1991,7 @@ def _module(funcname, plan, n, fwd, bwd, n_out, layout, span, dtype, kept=0, sta
     launcher = f"""
 _KEPT, _STAGED = tl.constexpr({kept}), tl.constexpr({staged})
 _CAPACITY = 1
+_RESIDENT = {{}}
 _SCHEDULES = {schedules}
 _GRADIENTS = {tuple(name for name in names if gradient_names is None or name in gradient_names)}
 _TABLES = {tuple(tables)}
@@ -2004,7 +2003,7 @@ def _grid(meta):
 
 
 def _grid_bwd(meta):
-    return {"(min(_grid(meta)[0], meta['RESIDENT']),)" if rows else "_grid(meta)"}
+    return {"(min(_grid(meta)[0], _RESIDENT[meta['T0'], meta['WARPS'], meta['SCHEDULE']]),)" if rows else "_grid(meta)"}
 
 
 class _Fn(torch.autograd.Function):
