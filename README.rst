@@ -57,6 +57,7 @@ In bullet points:
 - `ganja.js <https://github.com/enkimute/ganja.js>`__ enabled graphics in jupyter notebooks.
 - Agnostic to the input types: work with GA's over `numpy <https://numpy.org/>`__ arrays, `torch <https://pytorch.org/>`__ tensors, `sympy <https://www.sympy.org/>`__ expressions, etc. Any object that overloads addition, subtraction and multiplication makes for valid multivector coefficients in :code:`kingdon`.
 - Automatic broadcasting, such that transformations can be applied to e.g. point-clouds.
+- Integer powers preserve shared symbolic operands, including for interval-valued coefficients.
 - Compatible with `einops <https://einops.rocks/>`__ if you :code:`import kingdon.einops_backend` before you do your einops magic.
 - Compatible with `numba <https://numba.pydata.org/>`__ and other JIT compilers to speed-up numerical computations.
 
