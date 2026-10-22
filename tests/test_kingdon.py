@@ -414,6 +414,17 @@ def test_pga_full_layout(alg):
     R = compose(p, q)  # No news is good news.
     assert all(k in R.keys() if v == ... else k not in R.keys() for k, v in alg._type_layouts[type(R)].items())
 
+
+@pytest.mark.parametrize("alg", [Algebra(2, 0, 1, full_layout=True), Algebra.fromname('2DPGA', full_layout=True)])
+def test_sw_full_layout(alg):
+    """ Sandwiching with odd and even versors should agree with the same algebra without full_layout. """
+    def sandwiches(A):
+        l, m, p = A.vector([1, 2, 3]), A.vector([3, -1, 2]), A.vector([2, 1, 1]).dual()
+        return l >> p, (l * m) >> p
+    for res, expected in zip(sandwiches(alg), sandwiches(replace(alg, full_layout=False))):
+        assert np.allclose(res.asfullmv().values(), expected.asfullmv().values())
+
+
 def test_alg_graded_deprecated():
     with pytest.warns(FutureWarning):
         alg = Algebra(2, graded=True)

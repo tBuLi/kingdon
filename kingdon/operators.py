@@ -107,7 +107,7 @@ def sw(x: "MultiVector", y: "MultiVector") -> "MultiVector":
         raise TypeError("x must be a versor (k-reflection) and thus either even or odd.")
     xr = reverse(x)
     condition = sub(scalar(xr.algebra, 1), grade(gp(x, xr), 0))  # The scalar part of x * ~x is assumed to be 1.
-    empty_mv = type(x)(x.algebra)
+    empty_mv = type(x).fromkeysvalues(x.algebra, (), [], raw=True)  # Raw, since full_layout rejects an empty mv.
     if max(x.grades) % 2 == 1:
         return sum((grade((add(gp(x, gp((yg_involute := involute(grade(y, g))), xr)), gp(yg_involute, condition))), g) for g in y.grades), start=empty_mv)
     return sum((grade((add(gp(x, gp(grade(y, g), xr)), gp(grade(y, g), condition))), g) for g in y.grades), start=empty_mv)
