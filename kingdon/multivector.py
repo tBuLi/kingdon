@@ -360,8 +360,18 @@ class MultiVector(metaclass=MultiVectorType):
     def conjugate(self):
         """ Clifford conjugation: involution and reversion combined. """
         return self.algebra.conjugate(self)
+    
+    def is_360_translation(self):
+        b = self.grade(2)
+        return isinstance(self.e, float) and self.e < 0 and b and not (b*b)
 
     def sqrt(self):
+
+        # Addition by Hamish Todd: handle the case of 360 translations, a necessity for PGA/CGA/STAP/STAC, see https://hamishtodd1.substack.com/p/360-translations-the-strangest-objects
+        if self.is_360_translation():
+            print("Error: 360 translation. Normalize first")
+            return self.algebra.sqrt(-self)
+        
         return self.algebra.sqrt(self)
 
     def normsq(self):
@@ -383,7 +393,12 @@ class MultiVector(metaclass=MultiVectorType):
 
     def normalized(self):
         """ Normalized version of this multivector. """
-        return self / self.norm()
+
+        res = self / self.norm()
+        if res.is_360_translation():
+            res = -res
+
+        return res
 
     def inv(self):
         """ Inverse of this multivector. """
