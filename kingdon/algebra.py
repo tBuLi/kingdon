@@ -362,6 +362,25 @@ class Algebra:
                 cayley[eI, eJ] = f'0'
         return cayley
 
+    def power(self, x, n: int):
+        """
+        Raise :code:`x` to the positive integer power :code:`n`.
+        Each :code:`n` gets its own operator, such that the repeated operand :code:`x` is symbolically
+        simplified before evaluating the coefficients. This matters e.g. for interval arithmetic.
+        """
+        name = f'pow{n}'
+        if name not in self.registry:
+            def codegen(x):
+                return ops.power(x, n)
+            codegen.__name__ = name
+
+            if self.large:
+                self.registry[name] = resolve_and_expand(partial(do_operation, codegen=self.wrapper(codegen), algebra=self)
+                                                         if self.wrapper else partial(do_operation, codegen=codegen, algebra=self))
+            else:
+                self.registry[name] = UnaryOperatorDict(name=name, codegen=codegen, algebra=self)
+        return self.registry[name](x)
+
     def register(self, expr=None, /, *, name=None, symbolic=False):
         """
         Register a function with the algebra to optimize its execution times. Deprecated in favor of :meth:`~kingdon.algebra.Algebra.add_operator`.
