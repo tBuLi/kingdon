@@ -28,7 +28,7 @@ from sympy.printing.codeprinter import PrintMethodNotImplementedError
 from sympy.printing.precedence import PRECEDENCE
 from sympy.printing.pycode import PythonCodePrinter
 
-from kingdon.codegen import ArrayBase, Blade, Cat, Einsum, FloatConstants, Reduce, Reshape, Stack, Take, _bottom_up, prepare
+from kingdon.codegen import ArrayBase, Blade, Cat, Einsum, FloatConstants, Reduce, Reshape, Stack, Take, Unsupported, _bottom_up, prepare
 from kingdon.polynomial import RationalPolynomial, Root, poly_format, rp_var_name
 
 #: Tiles to consider, as (elements, warps, stages). How many registers a tile needs does not follow from the coefficients it holds,
@@ -36,10 +36,6 @@ from kingdon.polynomial import RationalPolynomial, Root, poly_format, rp_var_nam
 CONFIGS = [(64, 8, 1), (64, 4, 1), (128, 4, 1), (512, 16, 1), (1024, 16, 2)]
 
 _BUILDS = itertools.count()
-
-
-class Unsupported(Exception):
-    """Raised when the triton backend has no kernel for an operator, its operands or their device."""
 
 
 def _noted(error, stage):

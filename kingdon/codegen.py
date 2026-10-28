@@ -21,6 +21,7 @@ from sympy.printing.lambdarepr import LambdaPrinter
 from sympy.simplify.cse_main import numbered_symbols
 import sympy
 from sympy import Basic, Symbol, Tuple, sympify
+from sympy.core.symbol import Str
 from sympy.core.parameters import distribute
 
 from kingdon.polynomial import rational_cse, rp_var_name, RationalPolynomial
@@ -37,6 +38,7 @@ class CompiledExpression:
     :param func: callable that takes (several) sequence(s) of values
         returns a tuple of :code:`len(keys_out)`.
     :param wrapped_func: decorated func if a wrapper was provided, else identical to func.
+        A backend may instead wrap the numerical specializations within its dispatcher.
     :param mvtype: type of the output multivector, or a tuple of types alongside `keys_out`. Defaults to :code:`MultiVector`.
     """
     algebra: "Algebra"
@@ -186,6 +188,8 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
         extra['keys'] = {arg_name: mv.keys() for arg_name, mv in zip(string.ascii_uppercase, mvs)}
     if 'codegen_symbolcls' in accepted:
         extra['codegen_symbolcls'] = codegen_symbolcls or algebra.codegen_symbolcls
+    if 'wrapper' in accepted:
+        extra['wrapper'], wrapper = wrapper, None
     with distribute(False):  # Rebuilding an expression, as cse does, would otherwise distribute the number after all.
         func = lambdifier(args, exprs, funcname=funcname, cse=algebra.cse, output_mv_idx=output_mv_idx, **extra)
     return CompiledExpression(
@@ -289,6 +293,19 @@ class Einsum(ArrayBase): """ Einsum(pattern, *operands): an einsum whose pattern
 class Reduce(ArrayBase): """ Reduce(array, operation, axes): a reduction over axes counted from the end. """
 class Reshape(ArrayBase): """ Reshape(array, k, sizes): the last k axes unflattened into `sizes`, a -1 among them absorbing the rest. """
 class Take(ArrayBase): """ Take(array, index): the entries along the first axis that a nested tuple of integers holds, in its shape. """
+
+
+class Unsupported(Exception):
+    """ Raised when a triton backend has no kernel for an operator, its operands or their device. """
+
+
+def einsum_adjoints(einsum, g):
+    """ Each operand of an Einsum node, with its gradient by the cotangent `g` of the node: the einsum of `g` and the other operands into that operand's term. """
+    lefts, right = einsum.args[0].name.split('->')
+    terms, operands = lefts.split(','), einsum.args[1:]
+    for m, op in enumerate(operands):
+        others = [k for k in range(len(operands)) if k != m]
+        yield op, Einsum(Str(f'{",".join([right, *(terms[k] for k in others)])}->{terms[m]}'), g, *(operands[k] for k in others))
 
 
 class FloatConstants:

@@ -83,8 +83,8 @@ def do_operation(*mvs, codegen, algebra, MVType=None) -> MultiVector:
            for mv in mvs]
     if any((mvs[0].algebra != mv.algebra) for mv in mvs[1:]):
         raise AlgebraError("Cannot multiply elements of different algebra's.")
-    if algebra.backend == 'triton' and not any(mv.issymbolic for mv in mvs):
-        from kingdon.triton_codegen import Unsupported
+    if algebra.backend in ('triton', 'triton2') and not any(mv.issymbolic for mv in mvs):
+        from kingdon.codegen import Unsupported
         raise Unsupported(f"{codegen.__name__} of a large algebra evaluates its definition on the coefficients, which backend='triton' does not do: "
                           f"Algebra(..., backend='torch') does, and Algebra(..., large=False) compiles it to kernels.")
 
@@ -153,11 +153,19 @@ class OperatorDict(Mapping):
         types_in = tuple((type(mv), mv.keys()) for mv in mvs)
         shapes_in = tuple(mv.shape for mv in mvs)
         if types_in not in self.operator_dict:
-            # Make symbolic multivectors for each set of keys and generate the code.
-            symbolic_mvs = self.make_symbolic_mvs(types_in, shapes_in)
-            compiled = self.operator_dict[types_in] = self.algebra.compile(self.codegen, *symbolic_mvs, lambdifier=self.lambdifier, wrapper=self.wrapper, values_asarray=self.values_asarray, codegen_symbolcls=self.codegen_symbolcls, **self.lambdifier_kwargs)
-            self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
+            self._compile(types_in, types_in, shapes_in)
         return self.operator_dict[types_in]
+
+    def _compile(self, key, types_in, shapes_in):
+        """
+        Generate the code for symbolic multivectors of `types_in` and `shapes_in`, kept under `key`.
+        A lambdifier with a `before_symbolic` attribute calls it first, so that it can refuse the call before any symbolic multivector exists.
+        """
+        if before := getattr(self.lambdifier, 'before_symbolic', None):
+            before()
+        symbolic_mvs = self.make_symbolic_mvs(types_in, shapes_in)
+        compiled = self.operator_dict[key] = self.algebra.compile(self.codegen, *symbolic_mvs, lambdifier=self.lambdifier, wrapper=self.wrapper, values_asarray=self.values_asarray, codegen_symbolcls=self.codegen_symbolcls, **self.lambdifier_kwargs)
+        self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
 
     def __contains__(self, mvs: tuple[MultiVector]):
         types_in = tuple((type(mv), mv.keys()) for mv in mvs)
@@ -241,9 +249,7 @@ class UnaryOperatorDict(OperatorDict):
     def __getitem__(self, mv: MultiVector):
         type_in = (type(mv), mv.keys())
         if type_in not in self.operator_dict:
-            symbolic_mv = self.make_symbolic_mvs((type_in,), (mv.shape,))[0]
-            compiled = self.operator_dict[type_in] = self.algebra.compile(self.codegen, symbolic_mv, lambdifier=self.lambdifier, wrapper=self.wrapper, values_asarray=self.values_asarray, codegen_symbolcls=self.codegen_symbolcls, **self.lambdifier_kwargs)
-            self.algebra.numspace[compiled.func.__name__] = compiled.wrapped_func
+            self._compile(type_in, (type_in,), (mv.shape,))
         return self.operator_dict[type_in]
 
     @resolve_and_expand

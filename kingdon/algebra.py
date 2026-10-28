@@ -229,14 +229,17 @@ class Algebra:
         # Opt in to a backend, before anything that captures values_asarray is built.
         if self.backend == 'einops':
             import kingdon.einops_backend  # noqa: F401  Registers multivectors with einops.
-        elif self.backend in ('torch', 'triton'):
+        elif self.backend in ('torch', 'triton', 'triton2'):
             # This registers the einops backend too, and brings a values_asarray that keeps the
             # coefficients of a multivector in one tensor. `list` is the default, i.e. not chosen.
             import kingdon.torch_backend as torch_backend
             if self.values_asarray is list:
                 self.values_asarray = torch_backend.values_asarray
-            if self.backend == 'triton' and not chosen_lambdifier:
-                from kingdon.triton_codegen import triton_lambdify
+            if self.backend in ('triton', 'triton2') and not chosen_lambdifier:
+                if self.backend == 'triton2':
+                    from kingdon.triton_printer2 import triton_lambdify
+                else:
+                    from kingdon.triton_codegen import triton_lambdify
                 self.lambdifier = triton_lambdify
             elif not chosen_lambdifier:
                 self.lambdifier = partial(self.lambdifier, printer=torch_backend.TorchPrinter())
@@ -244,7 +247,7 @@ class Algebra:
             if self.simp_func is _expand_and_simplify:
                 self.simp_func = lambda v: v
         elif self.backend:
-            raise ValueError(f"Unknown backend {self.backend!r}; kingdon has 'torch', 'triton' and 'einops'.")
+            raise ValueError(f"Unknown backend {self.backend!r}; kingdon has 'torch', 'triton', 'triton2' and 'einops'.")
 
         self.signs = DefaultKeyDict(self._compute_sign)
 
@@ -283,7 +286,7 @@ class Algebra:
             self._type_layouts = {cls: layout for cls in self.types
                                   if (layout := self._bind_layout(cls, name='x'))}  # an empty layout matches an empty result at zero cost in resolve_layout, and would beat every other type.
 
-            if self.backend in ('torch', 'triton'):
+            if self.backend in ('torch', 'triton', 'triton2'):
                 torch_backend.register_pytree_nodes([self.mvtype, *self._type_layouts])
 
             # Add mv constructors to the algebra
