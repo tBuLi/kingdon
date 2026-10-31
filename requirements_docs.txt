@@ -1,8 +1,0 @@
--r requirements.txt
-sphinx
-nbsphinx
-ipykernel
-symfit
-matplotlib
-clifford
-einops

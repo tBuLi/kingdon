@@ -2,9 +2,9 @@
 
 __author__ = """Martin Roelfs"""
 __email__ = 'martinroelfs@yahoo.com'
-__version__ = '3.0.0'
 
 import sys
+import importlib.metadata
 
 from sympy import symbols
 
@@ -17,6 +17,8 @@ from kingdon.multivector import (
     stack
 )
 from kingdon.matrixreps import expr_as_matrix
+
+__version__ = importlib.metadata.version('kingdon')
 
 
 def load_ipython_extension(ipython):

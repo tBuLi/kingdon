@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kingdon"
+version = "3.0.0"
+description = "Pythonic Geometric Algebra Package"
+readme = "README.rst"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "Martin Roelfs", email = "martinroelfs@yahoo.com"}]
+keywords = ["kingdon", "geometric algebra"]
+# types.EllipsisType is new in 3.10.
+requires-python = ">=3.10"
+dependencies = ["numpy", "sympy", "anywidget"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+[project.urls]
+Homepage = "https://github.com/tbuli/kingdon"
+Changelog = "https://github.com/tbuli/kingdon/blob/master/HISTORY.rst"
+
+[dependency-groups]
+test = ["pytest>=3", "einops", "array-api-compat"]
+# The array tests are parametrized over the array libraries that einops and array-api-compat both support, and skip those that are not installed.
+# cupy is not listed because it needs a GPU; install it by hand with `pip install "cupy-cuda12x[ctk]"`, matching 12x/13x to your driver's CUDA version.
+# The [ctk] extra installs the CUDA libraries as wheels, which cuda-pathfinder prefers over a system-wide CUDA toolkit; a version mismatch with the latter is an access violation rather than an error.
+arrays = ["torch", "jax"]
+docs = ["sphinx", "einops", "nbsphinx", "ipykernel", "symfit", "matplotlib", "clifford"]
+
+# The CPU-only index keeps torch to a ~200 MB wheel, instead of the several GB of CUDA wheels that the tests have no use for.
+[tool.uv.sources]
+torch = {index = "pytorch-cpu"}
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

@@ -6,6 +6,8 @@ Next release
 ------------
 * Fixed integer powers of multivectors with interval-valued or otherwise non-scalar
   coefficients by preserving repeated symbolic operands in geometric squares.
+* Python 3.10 and 3.14 are now supported.
+* Packaging moved from setup.py to pyproject.toml, and development to uv (thanks @arsenovic).
 
 0.1.0 (2023-08-12)
 ------------------

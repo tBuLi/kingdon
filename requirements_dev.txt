@@ -1,9 +1,0 @@
-pip
-bump2version
-wheel
-flake8
-coverage
-Sphinx
-twine
-
-pytest

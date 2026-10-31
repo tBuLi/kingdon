@@ -5,25 +5,19 @@ jobs:
   build-n-publish:
     name: Build and publish Python 🐍 distributions 📦 to TestPyPI
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
-    - name: Fetch all history for all tags and branches
-      run: git fetch --prune --unshallow
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v4
-      with:
-        python-version: 3.11
+      uses: actions/checkout@v5
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v7
     - name: Build
       run: |
-        pip install wheel
-        VERSION=$(python -c "import re; print(re.search(r\"__version__ = '(.+)'\", open('kingdon/__init__.py').read()).group(1))")
-        DEV_VERSION="${VERSION}.dev${{ github.run_number }}"
-        sed -i "s/version='${VERSION}'/version='${DEV_VERSION}'/" setup.py
-        python setup.py sdist bdist_wheel
+        uv version --frozen "$(uv version --short).dev${{ github.run_number }}"
+        uv build
     - name: Publish distribution 📦 to Test PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
-        password: ${{ secrets.TEST_PYPI_API_TOKEN }}
         repository-url: https://test.pypi.org/legacy/

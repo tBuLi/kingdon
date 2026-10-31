@@ -7,24 +7,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python 3.13
-      uses: actions/setup-python@v5
+    - uses: actions/checkout@v5
+    - name: Set up uv and Python 3.14
+      uses: astral-sh/setup-uv@v7
       with:
-        python-version: '3.13'
-        cache: pip
-        cache-dependency-path: setup.py
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install coveralls pytest-cov
-        pip install -e ".[test]"
+        python-version: '3.14'
+        enable-cache: true
     - name: Test with coverage
-      run: |
-        pytest --cov=kingdon
+      run: uv run --locked --group test --with pytest-cov pytest --cov=kingdon
     - name: Upload to Coveralls
       env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-          pip install --upgrade coveralls
-          coveralls --service=github
+      run: uv run --no-sync --with coveralls coveralls --service=github
