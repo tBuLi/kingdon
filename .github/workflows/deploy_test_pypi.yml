@@ -18,7 +18,9 @@ jobs:
     - name: Build
       run: |
         pip install wheel
-        pip install pbr
+        VERSION=$(python -c "import re; print(re.search(r\"__version__ = '(.+)'\", open('kingdon/__init__.py').read()).group(1))")
+        DEV_VERSION="${VERSION}.dev${{ github.run_number }}"
+        sed -i "s/version='${VERSION}'/version='${DEV_VERSION}'/" setup.py
         python setup.py sdist bdist_wheel
     - name: Publish distribution 📦 to Test PyPI
       uses: pypa/gh-action-pypi-publish@release/v1

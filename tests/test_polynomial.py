@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 from kingdon.polynomial import Polynomial, RationalPolynomial, compare
 
@@ -105,3 +106,65 @@ def test_inverse_mul(a, res):
 ])
 def test_pow(a, n, res):
     assert a ** n == res
+
+
+@pytest.mark.parametrize("poly, var, expected", [
+    (Polynomial([[1, 'x']]), 'x', Polynomial([[1]])),  # d/dx(x) = 1
+    (Polynomial([[1, 'x']]), Polynomial.fromname('x'), Polynomial([[1]])),  # d/dx(x) = 1
+    (Polynomial([[2, 'x']]), 'x', Polynomial([[2]])),  # d/dx(2x) = 2
+    (Polynomial([[1, 'x', 'x']]), 'x', Polynomial([[2, 'x']])),  # d/dx(x^2) = 2x
+    (Polynomial([[1, 'x', 'x', 'x']]), 'x', Polynomial([[3, 'x', 'x']])),  # d/dx(x^3) = 3x^2
+    (Polynomial([[1, 'x', 'x']]), Polynomial.fromname('x'), Polynomial([[2, 'x']])),  # d/dx(x^2) = 2x
+    (Polynomial([[1, 'x', 'y']]), 'x', Polynomial([[1, 'y']])),  # d/dx(xy) = y
+    (Polynomial([[1, 'x', 'y']]), 'y', Polynomial([[1, 'x']])),  # d/dy(xy) = x
+    (Polynomial([[1, 'x', 'x', 'y']]), 'x', Polynomial([[2, 'x', 'y']])),  # d/dx(x^2*y) = 2xy
+    (Polynomial([[1, 'x', 'x', 'y']]), 'y', Polynomial([[1, 'x', 'x']])),  # d/dy(x^2*y) = x^2
+    (Polynomial([[1, 'x', 'y', 'z']]), 'x', Polynomial([[1, 'y', 'z']])),  # d/dx(xyz) = yz
+    (Polynomial([[5]]), 'x', Polynomial([])),  # d/dx(5) = 0
+    (Polynomial([]), 'x', Polynomial([])),  # d/dx(0) = 0
+    (Polynomial([[1, 'x'], [1, 'y']]), 'x', Polynomial([[1]])),  # d/dx(x+y) = 1
+    (Polynomial([[1, 'x'], [1, 'y'], [1, 'z']]), 'x', Polynomial([[1]])),  # d/dx(x+y+z) = 1
+    (Polynomial([[1], [2, 'x'], [3, 'x', 'x']]), 'x', Polynomial([[2], [6, 'x']])),  # d/dx(3x^2+2x+1) = 6x+2
+    (Polynomial([[1], [2, 'x'], [3, 'x', 'x']]), 'y', Polynomial([])),  # d/dy(3x^2+2x+1) = 0
+    (Polynomial([[1, 'x', 'x', 'y'], [1, 'x', 'z']]), 'x', Polynomial([[2, 'x', 'y'], [1, 'z']])),  # d/dx(x^2*y+xz) = 2xy+z
+    (Polynomial([[1, 'x', 'x'], [1, 'y', 'y']]), 'x', Polynomial([[2, 'x']])),  # d/dx(x^2+y^2) = 2x
+    (Polynomial([[-3, 'x', 'x']]), 'x', Polynomial([[-6, 'x']])),  # d/dx(-3x^2) = -6x
+    (Polynomial([[1, 'y', 'y']]), 'x', Polynomial([])),  # d/dx(y^2) = 0
+])
+def test_diff_polynomial(poly, var, expected):
+    assert poly.diff(var) == expected
+
+
+@pytest.mark.parametrize("rp, var, expected", [
+    (RationalPolynomial([[1, 'x']], [[1, 'y']]), 'x',
+     RationalPolynomial([[1, 'y']], [[1, 'y', 'y']])),  # d/dx(x/y) = 1/y
+    (RationalPolynomial([[1, 'x']], [[1, 'y']]), 'y',
+     RationalPolynomial([[-1, 'x']], [[1, 'y', 'y']])),  # d/dy(x/y) = -x/y^2
+    (RationalPolynomial([[1]], [[1, 'x']]), 'x',
+     RationalPolynomial([[-1]], [[1, 'x', 'x']])),  # d/dx(1/x) = -1/x^2
+    (RationalPolynomial([[1, 'x', 'x']], [[1, 'y']]), 'x',
+     RationalPolynomial([[2, 'x', 'y']], [[1, 'y', 'y']])),  # d/dx(x^2/y) = 2xy/y^2
+    (RationalPolynomial([[1, 'x', 'x']], [[1, 'y']]), Polynomial.fromname('x'),
+     RationalPolynomial([[2, 'x', 'y']], [[1, 'y', 'y']])),  # d/dx(x^2/y) = 2xy/y^2
+    (RationalPolynomial([[1, 'x', 'x']]), 'x',
+     RationalPolynomial([[2, 'x']], [[1]])),  # d/dx(x^2) = 2x
+    (RationalPolynomial([[3]]), 'x',
+     RationalPolynomial([])),  # d/dx(3) = 0
+    (RationalPolynomial([[1, 'x']], [[1, 'y']]), 'z',
+     RationalPolynomial([])),  # d/dz(x/y) = 0
+    (RationalPolynomial([[1, 'x'], [1, 'y']], [[1, 'z']]), 'x',
+     RationalPolynomial([[1, 'z']], [[1, 'z', 'z']])),  # d/dx((x+y)/z) = 1/z
+    (RationalPolynomial([[1]], [[1, 'x', 'x']]), 'x',
+     RationalPolynomial([[-2, 'x']], [[1, 'x', 'x', 'x', 'x']])),  # d/dx(1/x^2) = -2/x^3
+])
+def test_diff_rational_polynomial(rp, var, expected):
+    assert rp.diff(var) == expected
+
+
+@pytest.mark.parametrize("cls", [Polynomial, RationalPolynomial])
+def test_no_arrays(cls):
+    with pytest.raises(TypeError, match='ndarray'):
+        cls(np.asarray(0.5))
+
+    # Numbers are still fine, including the numpy scalars that are float subclasses.
+    assert cls(0.5) == cls(np.float64(0.5))

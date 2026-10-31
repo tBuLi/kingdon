@@ -45,14 +45,15 @@ A small selection of our items:
           :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_fivebar.ipynb
 
        Fivebar mechanism
+   * - .. image:: ../_static/csga2d_opns.jpg
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=OPNS%2F2DCSGA.ipynb
 
+       2DCSGA!
+     - .. image:: ../_static/mga3d_points_and_lines.jpg
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=OPNS%2FMotherAlgebra.ipynb
 
-Other
------
+       Mother Algebra
+     - .. image:: ../_static/ccga3d_points_quadrics.jpg
+          :target: https://tbuli.github.io/teahouse/lab/index.html?path=OPNS%2F3DCCGA.ipynb
 
-.. toctree::
-    :maxdepth: 1
-
-    ex_symbolic.ipynb
-    ex_high_performance.ipynb
-
+       3DCCGA
