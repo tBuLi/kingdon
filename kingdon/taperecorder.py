@@ -143,10 +143,14 @@ class TapeRecorder:
         if power == 0:
             return self.__class__(self.algebra, expr='(1,)', keys=(0,))
 
-        res = self
-        for i in range(1, power):
-            res = res.gp(self)
-        return res
+        if power < 0:
+            return self.inv() ** -power
+        if power == 1:
+            return self
+
+        half, odd = divmod(power, 2)
+        res = (self ** half).square()
+        return res * self if odd else res
 
     # Unary operators
     inv = partialmethod(unary_operator, operator='inv')
@@ -154,6 +158,7 @@ class TapeRecorder:
     reverse = __invert__ = partialmethod(unary_operator, operator='reverse')
     involute = partialmethod(unary_operator, operator='involute')
     conjugate = partialmethod(unary_operator, operator='conjugate')
+    square = partialmethod(unary_operator, operator='square')
     sqrt = partialmethod(unary_operator, operator='sqrt')
     polarity = partialmethod(unary_operator, operator='polarity')
     unpolarity = partialmethod(unary_operator, operator='unpolarity')

@@ -85,6 +85,11 @@ def gp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     return product(x, y)
 
 
+def square(x: "MultiVector") -> "MultiVector":
+    """Generate the geometric square of ``x`` using one symbolic operand."""
+    return gp(x, x)
+
+
 def sw(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     r"""
     Generate the conjugation of :code:`y` by the versor (k-reflection) :code:`x`,

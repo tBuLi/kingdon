@@ -364,6 +364,10 @@ class MultiVector(metaclass=MultiVectorType):
     def sqrt(self):
         return self.algebra.sqrt(self)
 
+    def square(self):
+        """Return the square of the multivector."""
+        return self.algebra.square(self)
+
     def normsq(self):
         return self.algebra.normsq(self)
 
@@ -708,9 +712,13 @@ class MultiVector(metaclass=MultiVectorType):
         if power == 0.5:
             return res.sqrt()
 
-        for i in range(1, power):
-            res = res.gp(x)
-        return res
+        if power == 1:
+            return x
+
+        # Exponentiation by squaring treats both factors as one symbol, which lets codegen simplify x*x.
+        half, odd = divmod(power, 2)
+        res = (x ** half).square()
+        return res * x if odd else res
 
     def outerexp(self):
         return self.algebra.outerexp(self)
