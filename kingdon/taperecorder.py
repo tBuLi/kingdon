@@ -143,13 +143,14 @@ class TapeRecorder:
         if power == 0:
             return self.__class__(self.algebra, expr='(1,)', keys=(0,))
 
-        if power == 2:
-            return self.square()
+        if power < 0:
+            return self.inv() ** -power
+        if power == 1:
+            return self
 
-        res = self
-        for i in range(1, power):
-            res = res.gp(self)
-        return res
+        half, odd = divmod(power, 2)
+        res = (self ** half).square()
+        return res * self if odd else res
 
     # Unary operators
     inv = partialmethod(unary_operator, operator='inv')
