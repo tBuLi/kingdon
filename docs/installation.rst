@@ -14,12 +14,19 @@ To install Kingdon, run this command in your terminal:
 
     $ pip install kingdon
 
+or, to add it to a `uv`_ project:
+
+.. code-block:: console
+
+    $ uv add kingdon
+
 This is the preferred method to install Kingdon, as it will always install the most recent stable release.
 
 If you don't have `pip`_ installed, this `Python installation guide`_ can guide
 you through the process.
 
 .. _pip: https://pip.pypa.io
+.. _uv: https://docs.astral.sh/uv/
 .. _Python installation guide: http://docs.python-guide.org/en/latest/starting/installation/
 
 
@@ -44,7 +51,7 @@ Once you have a copy of the source, you can install it with:
 
 .. code-block:: console
 
-    $ python setup.py install
+    $ pip install .
 
 
 .. _Github repo: https://github.com/tbuli/kingdon

@@ -1,82 +1,48 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "kingdon"
-version = "1.4.0"
+version = "3.0.0"
 description = "Pythonic Geometric Algebra Package"
 readme = "README.rst"
-requires-python = ">=3.8"
-license = {text = "MIT license"}
-authors = [
-    {name = "Martin Roelfs", email = "martinroelfs@yahoo.com"}
-]
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "Martin Roelfs", email = "martinroelfs@yahoo.com"}]
 keywords = ["kingdon", "geometric algebra"]
+# types.EllipsisType is new in 3.10.
+requires-python = ">=3.10"
+dependencies = ["numpy", "sympy", "anywidget"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-]
-
-dependencies = [
-    "numpy",
-    "sympy",
-    "anywidget",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pip>=21.1",
-    "bump2version==0.5.11",
-    "wheel==0.38.1",
-    "flake8==3.7.8",
-    "tox==3.14.0",
-    "coverage==4.5.4",
-    "Sphinx==1.8.5",
-    "twine==1.14.0",
-    "pytest==6.2.4",
-]
-
-docs = [
-    "sphinx",
-    "nbsphinx",
-    "ipykernel",
-    "symfit",
-    "matplotlib",
-    "clifford",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 
 [project.urls]
 Homepage = "https://github.com/tbuli/kingdon"
-Repository = "https://github.com/tbuli/kingdon"
+Changelog = "https://github.com/tbuli/kingdon/blob/master/HISTORY.rst"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["kingdon*"]
+[dependency-groups]
+test = ["pytest>=3", "einops", "array-api-compat"]
+# The array tests are parametrized over the array libraries that einops and array-api-compat both support, and skip those that are not installed.
+# cupy is not listed because it needs a GPU; install it by hand with `pip install "cupy-cuda12x[ctk]"`, matching 12x/13x to your driver's CUDA version.
+# The [ctk] extra installs the CUDA libraries as wheels, which cuda-pathfinder prefers over a system-wide CUDA toolkit; a version mismatch with the latter is an access violation rather than an error.
+arrays = ["torch", "jax"]
+docs = ["sphinx", "einops", "nbsphinx", "ipykernel", "symfit", "matplotlib", "clifford"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-collect_ignore = ["setup.py"]
+# The CPU-only index keeps torch to a ~200 MB wheel, instead of the several GB of CUDA wheels that the tests have no use for.
+[tool.uv.sources]
+torch = {index = "pytorch-cpu"}
 
-[tool.bumpversion]
-current_version = "1.4.0"
-commit = true
-tag = false
-
-[[tool.bumpversion.files]]
-filename = "setup.py"
-search = "version='{current_version}'"
-replace = "version='{new_version}'"
-
-[[tool.bumpversion.files]]
-filename = "kingdon/__init__.py"
-search = "__version__ = '{current_version}'"
-replace = "__version__ = '{new_version}'"
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

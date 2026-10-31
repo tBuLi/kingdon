@@ -64,11 +64,10 @@ Ready to contribute? Here's how to set up `kingdon` for local development.
 
     $ git clone git@github.com:your_name_here/kingdon.git
 
-3. Install your local copy into a virtualenv. Assuming you have virtualenvwrapper installed, this is how you set up your fork for local development::
+3. Set up your fork for local development with `uv <https://docs.astral.sh/uv/>`_, which creates a virtualenv in ``.venv`` with kingdon and its test dependencies installed::
 
-    $ mkvirtualenv kingdon
     $ cd kingdon/
-    $ python setup.py develop
+    $ uv sync --group test
 
 4. Create a branch for local development::
 
@@ -76,13 +75,13 @@ Ready to contribute? Here's how to set up `kingdon` for local development.
 
    Now you can make your changes locally.
 
-5. When you're done making changes, check that your changes pass flake8 and the
-   tests::
+5. When you're done making changes, check that the tests pass::
 
-    $ flake8 kingdon tests
-    $ pytest
+    $ uv run pytest
 
-   To get flake8, just pip install it into your virtualenv.
+   To also run the array tests against torch and jax, add their group::
+
+    $ uv run --group arrays pytest
 
 6. Commit your changes and push your branch to GitHub::
 
@@ -101,7 +100,7 @@ Before you submit a pull request, check that it meets these guidelines:
 2. If the pull request adds functionality, the docs should be updated. Put
    your new functionality into a function with a docstring, and add the
    feature to the list in README.rst.
-3. The pull request should work for Python 3.11, 3.12, and 3.13, and for PyPy. Check
+3. The pull request should work for Python 3.10 up to 3.14. Check
    https://github.com/tBuLi/kingdon/actions
    and make sure that the tests pass for all supported Python versions.
 
@@ -110,7 +109,7 @@ Tips
 
 To run a subset of tests::
 
-$ pytest tests.test_kingdon
+$ uv run pytest tests/test_kingdon.py
 
 
 Deploying
@@ -120,7 +119,9 @@ A reminder for the maintainers on how to deploy.
 Make sure all your changes are committed (including an entry in HISTORY.rst).
 Then run::
 
-$ bump-my-version bump patch # possible: major / minor / patch, add --dry-run -vv for dry-run.
-$ git push origin <tag_name>
+$ uv version --bump patch  # possible: major / minor / patch, add --dry-run for a dry run.
+$ git commit -am "Bump version to $(uv version --short)"
+$ git tag v$(uv version --short)
+$ git push origin master v$(uv version --short)
 
-Travis will then deploy to PyPI if tests pass.
+Pushing the tag makes GitHub Actions build kingdon and publish it to PyPI.
