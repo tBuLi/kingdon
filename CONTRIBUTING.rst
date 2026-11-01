@@ -116,13 +116,26 @@ $ uv run pytest tests/test_kingdon.py
 Deploying
 ---------
 
-A reminder for the maintainers on how to deploy.
-Make sure all your changes are committed (including an entry in HISTORY.rst).
-Then run::
+A reminder for the maintainers on how to deploy. ``master`` is protected, so the version bump goes through a pull request, and the release is triggered by tagging the merged commit.
 
-$ uv version --bump patch  # possible: major / minor / patch, add --dry-run for a dry run.
-$ git commit -am "Bump version to $(uv version --short)"
-$ git tag v$(uv version --short)
-$ git push origin master v$(uv version --short)
+1. On a branch from ``master``, bump the version and add a section to HISTORY.rst::
 
-Pushing the tag makes GitHub Actions build kingdon and publish it to PyPI.
+    $ git worktree add ../release/X.Y.Z -b release/X.Y.Z master
+    $ cd ../release/X.Y.Z
+    $ uv version --bump minor  # possible: major / minor / patch, add --dry-run for a dry run.
+    $ git commit -am "Release $(uv version --short)"
+    $ git push -u origin release/X.Y.Z
+    $ gh pr create --base master --title "Release $(uv version --short)"
+
+2. Once CI passes, merge the pull request, then tag the merged ``master`` and push the tag::
+
+    $ cd ../../master
+    $ git pull
+    $ git tag v$(uv version --short)
+    $ git push origin v$(uv version --short)
+
+   Pushing the tag makes GitHub Actions build kingdon and publish it to PyPI. The workflow refuses to publish if the tag does not match the version in pyproject.toml.
+
+3. Once the release is on PyPI, create the GitHub release from the tag::
+
+    $ gh release create v$(uv version --short) --verify-tag --notes-file release_notes.md
