@@ -1421,3 +1421,11 @@ def test_115_116():
     with pytest.raises(TypeError): len(empty)
     assert bool(empty) == False
     with pytest.raises(TypeError): iter(empty)
+
+
+def test_numba_zero_product():
+    """ Products that vanish identically must compile under numba, which cannot type an empty list. """
+    numba = pytest.importorskip('numba')
+    alg = Algebra(3, 0, 1, wrapper=numba.njit)
+    assert (alg.blades.e0 * alg.blades.e0).keys() == ()
+    assert (alg.blades.e01 * alg.blades.e02).keys() == ()

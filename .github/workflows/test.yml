@@ -21,7 +21,7 @@ jobs:
     # array-api-compat both support, and skip those that are not installed. They are only
     # installed on the newest python, since their wheels are large. cupy is absent
     # altogether because it needs a GPU.
-    - name: Install torch and jax
+    - name: Install torch, jax and numba
       if: matrix.python-version == '3.14'
       run: uv sync --locked --group test --group arrays
     - name: Test with pytest

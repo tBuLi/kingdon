@@ -529,7 +529,7 @@ class KingdonPrinter:
                 funcbody.append(f'{names[output_mv_idx]}[{i}] = ({e_str})' if '\n' in e_str else f'{names[output_mv_idx]}[{i}] = {e_str}')
             funcbody.append('return ()')
         else:
-            str_expr = _recursive_to_string(self._exprrepr, expr)
+            str_expr = _recursive_to_string(self._exprrepr, expr) if expr else '()'  # numba cannot infer the type of an empty list
             if '\n' in str_expr:
                 str_expr = f'({str_expr})'
             funcbody.append(f'return {str_expr}')
