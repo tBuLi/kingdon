@@ -13,43 +13,6 @@ from kingdon import (Algebra, MultiVector, Scalar, Vector, Bivector, Trivector, 
 from kingdon.operator_dict import UnaryOperatorDict
 
 
-@pytest.fixture
-def ga101():
-    return Algebra(signature=[1, 0], start_index=1)
-
-
-@pytest.fixture
-def ga201():
-    return Algebra(signature=[1, 1, 0], start_index=1)
-
-
-@pytest.fixture
-def ga301():
-    return Algebra(signature=[1, 1, 1, 0], start_index=1)
-
-
-@pytest.fixture
-def vga2d():
-    return Algebra(2)
-
-
-@pytest.fixture
-def vga11():
-    return Algebra(1, 1)
-
-@pytest.fixture
-def R6():
-    return Algebra(6)
-
-@pytest.fixture
-def sta():
-    return Algebra(3, 1)
-
-@pytest.fixture
-def vga3d():
-    return Algebra(3)
-
-
 def test_MultiVector(ga101):
     with pytest.raises(TypeError):
         # If starting from a sequence, it must be of length len(algebra)
@@ -200,9 +163,8 @@ def test_cp_symbolic(R6):
     w = b.cp(v)
     assert w.grades == (1,)
 
-def test_norm_euler():
-    alg = Algebra(2)
-    e, e12 = alg.blades['e'], alg.blades.e12
+def test_norm_euler(vga2d):
+    e, e12 = vga2d.blades['e'], vga2d.blades.e12
     t = Symbol('t')
     R = cos(t) * e + sin(t) * e12
     Rnormsq = R.normsq()
@@ -649,24 +611,23 @@ def test_namedmv(R6):
     assert x.keys() == keys
 
 
-def test_fromkeysvalues():
-    alg = Algebra(2)
+def test_fromkeysvalues(vga2d):
     xvals = symbols('x x1 x2 x12')
     xkeys = tuple(range(4))
-    x = alg.multivector(keys=xkeys, values=xvals)
+    x = vga2d.multivector(keys=xkeys, values=xvals)
 
     assert x._values == list(xvals)
     assert x._keys is xkeys
 
     # We use sympify, so string that look like equations are also allowed
-    y = alg.multivector(['a*b+c', '-15*c'], grades=(1,))
+    y = vga2d.multivector(['a*b+c', '-15*c'], grades=(1,))
     assert y.e1 == Symbol('a')*Symbol('b') + Symbol('c')
     assert y.e2 == -15 * Symbol('c')
 
     yvals = symbols('y y1 y2 y12')
     with pytest.raises(TypeError):
-        y = alg.multivector(yvals, xkeys[:3])
-    y = alg.multivector(yvals)
+        y = vga2d.multivector(yvals, xkeys[:3])
+    y = vga2d.multivector(yvals)
     assert y._values == list(yvals)
     assert y._keys == xkeys
 
@@ -676,33 +637,30 @@ def test_fromkeysvalues():
     assert xy.e2 == sympify("(x*y2+x1*y12-x12*y1+x2*y)")
     assert xy.e12 == sympify("(x*y12+x1*y2+x12*y-x2*y1)")
 
-def test_commutator():
-    alg = Algebra(2, 1, 1)
-    x = alg.multivector(name='x')
-    y = alg.multivector(name='y')
+def test_commutator(alg211):
+    x = alg211.multivector(name='x')
+    y = alg211.multivector(name='y')
     xcpy = x.cp(y)
     xcpy_expected = ((x*y)-(y*x)) / 2
     diff = xcpy_expected - xcpy
     assert not diff
 
-def test_anticommutator():
-    alg = Algebra(2, 1, 1)
-    x = alg.multivector(name='x')
-    y = alg.multivector(name='y')
+def test_anticommutator(alg211):
+    x = alg211.multivector(name='x')
+    y = alg211.multivector(name='y')
     xacpy = x.acp(y)
     xacpy_expected = ((x*y)+(y*x)) / 2
     diff = xacpy_expected - xacpy
     assert not diff
 
 
-def test_conjugation():
-    alg = Algebra(2, 0, 1)
-    x = alg.multivector(name='x')  # multivector
-    y = alg.multivector(name='y')
+def test_conjugation(alg201):
+    x = alg201.multivector(name='x')  # multivector
+    y = alg201.multivector(name='y')
     with pytest.raises(TypeError):
         x >> y
 
-    x = alg.evenmv(name='x')
+    x = alg201.evenmv(name='x')
     # GAmphetamine sw formula for even versors: grade(x*y*~x + y*(1 - grade(x*~x, 0)), grade(y))
     # For normalized x (x*~x = 1 scalar), the correction term vanishes and this reduces to x*y*~x.
     axar_scalar = (x * ~x).grade(0)
@@ -711,7 +669,7 @@ def test_conjugation():
     diff = (xconjy_expected - xconjy)
     assert not diff
 
-    x = alg.oddmv(name='x')
+    x = alg201.oddmv(name='x')
     axar_scalar = (x * ~x).grade(0)
     xconjy_expected = ((x * y.grade(0) * ~x + y.grade(0) * (1 - axar_scalar))
                        - (x * y.grade(1) * ~x + y.grade(1) * (1 - axar_scalar))
@@ -722,21 +680,20 @@ def test_conjugation():
     assert not diff
 
 
-def test_projection():
-    alg = Algebra(2, 0, 1)
-    x = alg.multivector(name='x')  # multivector
-    y = alg.multivector(name='y')
+def test_projection(alg201):
+    x = alg201.multivector(name='x')  # multivector
+    y = alg201.multivector(name='y')
     with pytest.raises(TypeError):
         x @ y
 
-    y = alg.evenmv(name='y')
+    y = alg201.evenmv(name='y')
     ynormsq = (y * ~y).grade(0)
     xprojy_expected = (x | y) * ~y + x*(1 - ynormsq)
     xprojy = x @ y
     diff = (xprojy_expected - xprojy)
     assert not diff
 
-    y = alg.oddmv(name='y')
+    y = alg201.oddmv(name='y')
     ynormsq = (y * ~y).grade(0)
     xprojy_expected = (x | y) * ~y + x*(1 - ynormsq)
     xprojy = x @ y
@@ -760,8 +717,7 @@ def test_outerexp(R6):
     assert not diff
 
 def test_outertrig(R6):
-    alg = Algebra(6)
-    B = alg.bivector(name='B', keys=(0b110000, 0b1100, 0b11))
+    B = R6.bivector(name='B', keys=(0b110000, 0b1100, 0b11))
     sB = B.outersin()
     cB = B.outercos()
 
@@ -772,20 +728,19 @@ def test_outertrig(R6):
         assert not diff
 
 
-def test_multidimensional_indexing():
-    alg = Algebra(4)
+def test_multidimensional_indexing(R4):
     nrows = 3
     ncolumns = 4
-    shape = (len(tuple(alg.indices_for_grade(2))), nrows, ncolumns)
+    shape = (len(tuple(R4.indices_for_grade(2))), nrows, ncolumns)
     bvals = np.random.random(shape)
-    B = alg.bivector(bvals)
+    B = R4.bivector(bvals)
     np.testing.assert_allclose(B[2:4].e12, bvals[0, 2:4])
     np.testing.assert_allclose(B[2].e12, bvals[0, 2])
     np.testing.assert_allclose(B[:].e12, bvals[0, :])
     np.testing.assert_allclose(B[0].values(), bvals[:, 0])
     np.testing.assert_allclose(B[2:4, 0].e12, bvals[0, 2:4, 0])
     # Same tests but without using a numpy array, instead use a tuple of sub np.ndarray.
-    B = alg.bivector(tuple(bvals))
+    B = R4.bivector(tuple(bvals))
     np.testing.assert_allclose(B[2:4].e12, bvals[0, 2:4])
     np.testing.assert_allclose(B[2].e12, bvals[0, 2])
     np.testing.assert_allclose(B[:].e12, bvals[0, :])
@@ -794,21 +749,20 @@ def test_multidimensional_indexing():
     np.testing.assert_allclose(B[0, 0].values(), bvals[:, 0, 0])
 
 
-def test_sqrt():
-    alg = Algebra(3, 0, 1)
+def test_sqrt(alg301):
     uvals = np.random.random(4)
     vvals = np.random.random(4)
-    u = alg.vector(uvals).normalized()
-    v = alg.vector(vvals).normalized()
+    u = alg301.vector(uvals).normalized()
+    v = alg301.vector(vvals).normalized()
     R = u * v
 
     Rsqrt = R.sqrt()
     diff = Rsqrt*Rsqrt - R
-    np.testing.assert_almost_equal(diff.values(), np.zeros(len(alg) // 2))
+    np.testing.assert_almost_equal(diff.values(), np.zeros(len(alg301) // 2))
 
     Rsqrt_direct = (1 + R).normalized()
     diff = Rsqrt - Rsqrt_direct
-    np.testing.assert_almost_equal(diff.values(), np.zeros(len(alg) // 2))
+    np.testing.assert_almost_equal(diff.values(), np.zeros(len(alg301) // 2))
 
 
 def test_clifford_involutions():
@@ -855,12 +809,11 @@ def test_abs_algebra_01_vector_always_positive():
         assert result == pytest.approx(abs(coeff))
 
 
-def test_iteration():
-    alg = Algebra(4)
+def test_iteration(R4):
     nrows = 3
-    shape = (len(tuple(alg.indices_for_grade(2))), nrows)
+    shape = (len(tuple(R4.indices_for_grade(2))), nrows)
     bvals = np.random.random(shape)
-    B = alg.bivector(bvals)
+    B = R4.bivector(bvals)
     for i, b in enumerate(B):
         np.testing.assert_allclose(b.values(), bvals[:, i])
     assert i + 1 == nrows
@@ -883,31 +836,29 @@ def test_start_index():
         assert (fi**2).e == (ei**2).e
 
 
-def test_asfullmv():
-    alg = Algebra(2, 0, 1)
+def test_asfullmv(alg201):
     xvals = np.random.random(3)
-    x = alg.vector(xvals)
+    x = alg201.vector(xvals)
     # Manually make the expected dense x
-    x_densevals = np.zeros(len(alg))
+    x_densevals = np.zeros(len(alg201))
     x_densevals[np.array([1, 2, 4])] = xvals
-    x_dense = alg.multivector(x_densevals, keys=tuple(range(8)))
+    x_dense = alg201.multivector(x_densevals, keys=tuple(range(8)))
     # Compare to asfullmv method.
     y = x.asfullmv(canonical=False)
     assert y.keys() == x_dense.keys()
     np.testing.assert_equal(y.values(), x_dense.values())
 
     # Manually make the expected dense x in canonical ordering
-    x_densevals = np.zeros(len(alg))
+    x_densevals = np.zeros(len(alg201))
     x_densevals[np.array([1, 2, 3])] = xvals
     # Compare to asfullmv method.
     y = x.asfullmv()
     np.testing.assert_equal(y.values(), x_densevals)
 
 
-def test_type():
-    alg = Algebra(3)
+def test_type(vga3d):
     keys = (0b000, 0b100, 0b101, 0b111)
-    x = alg.multivector(name='x', keys=keys)
+    x = vga3d.multivector(name='x', keys=keys)
     assert x.type_number == 0b10101001
 
 
@@ -1007,14 +958,12 @@ def test_compile_basics(symbolic):
     assert grade_select(u) == u.grade(1, 2)
     assert not (coupled(u, v) - ((u + v) ** 2 + 2 * u))
 
-def test_25():
-    from kingdon import Algebra
-    alg = Algebra(3, 0, 1)
-    e0 = alg.blades['e0']
-    e1 = alg.blades['e1']
-    e2 = alg.blades['e2']
-    e02 = alg.blades['e02']
-    e12 = alg.blades['e12']
+def test_25(alg301):
+    e0 = alg301.blades['e0']
+    e1 = alg301.blades['e1']
+    e2 = alg301.blades['e2']
+    e02 = alg301.blades['e02']
+    e12 = alg301.blades['e12']
 
     x = e12
     y = (0 * e2 + e0).dual()
@@ -1022,14 +971,13 @@ def test_25():
     ans = ((x * y) | z)
     assert ans == e02
 
-def test_value_31():
-    alg = Algebra(2)
-    B = alg.bivector(name='B')
+def test_value_31(vga2d):
+    B = vga2d.bivector(name='B')
     res = 2 * (B ^ B)
     # res is not just zero, but an empty mv.
-    empty = alg.scalar()
+    empty = vga2d.scalar()
     assert res == empty
-    zero = alg.scalar(e=0)
+    zero = vga2d.scalar(e=0)
     assert res != zero
 
 
@@ -1041,15 +989,14 @@ def test_reciprocal_frame():
         else:
             assert (ei | Ej).e == 0
 
-def test_setitem():
-    alg = Algebra(2, 0, 1)
+def test_setitem(alg201):
     l = 6
     d = 3 / l
-    point_vals = np.zeros((alg.d, l + 1))
+    point_vals = np.zeros((alg201.d, l + 1))
     point_vals[0] = 1
     point_vals[1] = np.arange(l + 1) * d - 1.5
     # Test with the 2d array first
-    lines = alg.vector(point_vals)
+    lines = alg201.vector(point_vals)
     lines[-1] = lines[-2]
     assert lines[-1].keys() == lines[-2].keys()
     assert np.allclose(lines[-1].values(), lines[-2].values())
@@ -1057,26 +1004,24 @@ def test_setitem():
     assert np.allclose(lines[:3].values(), lines[4:].values())
 
     # Dualization turns the 2d array into a list of 1d arrays, so we need to test with that as well.
-    points = alg.vector(point_vals).dual()
+    points = alg201.vector(point_vals).dual()
     points[-1] = points[-2]
     assert points[-1].keys() == points[-2].keys()
     assert np.allclose(points[-1].values(), points[-2].values())
     points[:3] = points[4:]
     assert np.allclose(points[:3].values(), points[4:].values())
 
-def test_set_mv():
-    alg = Algebra(2, 0, 1)
-    x = alg.multivector(name='x')
-    y = alg.multivector(name='y')
+def test_set_mv(alg201):
+    x = alg201.multivector(name='x')
+    y = alg201.multivector(name='y')
     x.set(y)
     assert x == y
     assert x._values is not y._values
 
-def test_mv_times_func():
+def test_mv_times_func(alg201):
     """If a mv is binaried with a function, we simply call it until it returns a multivector. """
-    alg = Algebra(2, 0, 1)  # Smallest non-Abelian algebra, that property is important.
-    x = alg.evenmv(name='x')
-    y = alg.oddmv(name='x')
+    x = alg201.evenmv(name='x')
+    y = alg201.oddmv(name='x')
     yfunc = lambda: lambda: y
     # See if binary operators have been overloaded correctly!
     assert x + y == x + yfunc
@@ -1096,26 +1041,23 @@ def test_mv_times_func():
     assert x >> y == x >> yfunc
     assert y >> x == yfunc >> x
 
-def test_43():
-    alg = Algebra(2)
-    x = alg.vector(name='x')
+def test_43(vga2d):
+    x = vga2d.vector(name='x')
     assert x.inv() == 1 / x
 
-def test_blades_of_grade():
-    alg = Algebra(4)
-    grade_combinations = [comb for r in range(alg.d + 2) for comb in itertools.combinations(tuple(range(alg.d + 1)), r=r)]
+def test_blades_of_grade(R4):
+    grade_combinations = [comb for r in range(R4.d + 2) for comb in itertools.combinations(tuple(range(R4.d + 1)), r=r)]
     for comb in grade_combinations:
-        indices = tuple(alg.indices_for_grades(comb))
-        blades_of_grade = alg.blades.grade(*indices)
-        blades_of_grade_alt = alg.blades.grade(indices)
+        indices = tuple(R4.indices_for_grades(comb))
+        blades_of_grade = R4.blades.grade(*indices)
+        blades_of_grade_alt = R4.blades.grade(indices)
         assert blades_of_grade == blades_of_grade_alt
         assert isinstance(blades_of_grade, dict)
-        assert all(label in alg.canon2bin and blade.grades[0] in indices
+        assert all(label in R4.canon2bin and blade.grades[0] in indices
                    for label, blade in blades_of_grade.items())
 
-def test_map_filter():
-    alg = Algebra(4)
-    x = alg.vector([0, 1, 2, 0])
+def test_map_filter(R4):
+    x = R4.vector([0, 1, 2, 0])
     xnonzero = x.filter(lambda v: v)
     xoddidx = x.filter(lambda k, v: not k % 2)
     assert xnonzero.values() == [1, 2]
@@ -1171,9 +1113,8 @@ def test_dual_numbers():
     assert x.sqrt() == alg.multivector(e=x.e**0.5, e0=0.5 * x.e0 / x.e**0.5)
     assert x**3 == alg.multivector(e=x.e ** 3, e0=3 * x.e0 * x.e**2)
 
-def test_power():
-    alg = Algebra(2)
-    x = alg.multivector(name='x')
+def test_power(vga2d):
+    x = vga2d.multivector(name='x')
     xinv = x.inv()
     assert x ** 3 == x * x * x
     assert x ** 0.5 == x.sqrt()
@@ -1187,9 +1128,8 @@ def test_nested_algebra_print():
     x = dalg2.multivector(e=x, e0=1)
     assert str(x ** 2) == "((x**2) + (2*x) 𝐞₀) + ((2*x) + 2 𝐞₀) 𝒇₀"
 
-def test_free_symbols():
-    alg = Algebra(3)
-    X = alg.multivector()
+def test_free_symbols(vga3d):
+    X = vga3d.multivector()
     assert X.free_symbols == set()
 
 def test_swap_blades():
@@ -1282,15 +1222,15 @@ def test_custom_basis():
             assert all(getattr(xy, blade) == getattr(XY, blade) for blade in alg.canon2bin)
             assert all(getattr(xy, blade) == getattr(XY, blade) for blade in pga.canon2bin)
 
-def test_apply_to_list():
-    alg = Algebra(2, 0, 1)
-    line1 = alg.vector(e1=-1, e2=1)  # the line "y - x = 0"
-    line2 = alg.vector(e1=-1, e2=2)
+@pytest.mark.parametrize('wrapper', [None])
+def test_apply_to_list(alg201):
+    line1 = alg201.vector(e1=-1, e2=1)  # the line "y - x = 0"
+    line2 = alg201.vector(e1=-1, e2=2)
     R = (line1 * line2).normalized()
     triangle = [
-        alg.vector(e0=1, e1=1).dual(),
-        alg.vector(e0=1, e1=0.6, e2=0.5).dual(),
-        alg.vector(e0=1, e1=1.3, e2=0.8).dual()
+        alg201.vector(e0=1, e1=1).dual(),
+        alg201.vector(e0=1, e1=0.6, e2=0.5).dual(),
+        alg201.vector(e0=1, e1=1.3, e2=0.8).dual()
     ]
     operators = [operator.mul, operator.xor, operator.and_, operator.rshift]
     for op in operators:
@@ -1394,13 +1334,12 @@ def test_87(ga201):
     assert all(diff1.map(lambda v: np.allclose(v, 0.0)).values())
     assert all(diff2.map(lambda v: np.allclose(v, 0.0)).values())
 
-def test_115_116():
-    alg = Algebra(3, 0, 1)
+def test_115_116(alg301):
     N = 500
     x = np.random.random_sample(N)
     y = np.random.random_sample(N)
     z = np.random.random_sample(N)
-    points = alg.vector(e0=np.ones(N), e1=x, e2=y, e3=z).dual()
+    points = alg301.vector(e0=np.ones(N), e1=x, e2=y, e3=z).dual()
 
     assert points.shape == (N,)
     assert len(points) == N
@@ -1416,8 +1355,21 @@ def test_115_116():
     assert bool(point) == True
     with pytest.raises(TypeError): iter(point)
 
-    empty = alg.multivector()
+    empty = alg301.multivector()
     assert empty.shape == ()
     with pytest.raises(TypeError): len(empty)
     assert bool(empty) == False
     with pytest.raises(TypeError): iter(empty)
+
+
+def test_numba_empty_multivectors():
+    """ Empty multivectors, as output or input, must compile under numba, which cannot type an empty list. """
+    numba = pytest.importorskip('numba')
+    alg = Algebra(3, 0, 1, wrapper=numba.njit)
+    empty = alg.scalar()
+    assert alg.blades.e0 * alg.blades.e0 == empty
+    assert alg.blades.e01 * alg.blades.e02 == empty
+    v = alg.vector([1., 2., 3., 4.])
+    assert alg.multivector() + v == v
+    assert v * alg.multivector() == empty
+    assert 2 * alg.multivector() == empty

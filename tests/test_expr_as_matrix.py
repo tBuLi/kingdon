@@ -37,14 +37,13 @@ def test_expr_as_matrix():
     assert A == Matrix([[2*B12*B23], [-2*B12*B13], [1 - 2*B13**2 - 2*B23**2]])
     assert [alg.bin2canon[k] for k in y.keys()] == ['e1', 'e2', 'e3']
 
-def test_expr_as_matrix_numerical():
-    alg = Algebra(3, 0, 1)
-    Bvals = np.random.random(len(alg.blades.grade(2)))
-    x = alg.vector(name='x')
-    B = alg.bivector(Bvals)
+def test_expr_as_matrix_numerical(alg301):
+    Bvals = np.random.random(len(alg301.blades.grade(2)))
+    x = alg301.vector(name='x')
+    B = alg301.bivector(Bvals)
 
     # Test for the matrix rep of the commutator. (Grade preserving)
-    A, y = expr_as_matrix(alg.cp, B, x)
+    A, y = expr_as_matrix(alg301.cp, B, x)
     assert type(A) == np.ndarray
     assert type(y) == Vector
     assert A.shape == (4, 4)
