@@ -2,13 +2,6 @@
 History
 =======
 
-Next release
-------------
-* Fixed integer powers of multivectors with interval-valued or otherwise non-scalar
-  coefficients by preserving repeated symbolic operands in geometric squares.
-* Python 3.10 and 3.14 are now supported.
-* Packaging moved from setup.py to pyproject.toml, and development to uv (thanks @arsenovic).
-
 0.1.0 (2023-08-12)
 ------------------
 
@@ -129,3 +122,29 @@ Bugfix: width and height should be direct options to Algebra.graph
 * ``RationalPolynomial`` now has a ``diff`` method similar to that of SymPy.
 * The ``set`` method of Multivectors can be used within compiled functions to update coefficients in-place instead of returning a multivector.
 * Large algebras (``large=True``) have no multivector types: every multivector is a plain ``MultiVector``. The k-vector constructors such as ``alg.vector`` and ``alg.pseudovector`` are still but they simply construct a ``MultiVector`` of that grade. ``Algebra.add_operator`` requires ``symbolic=True`` in a large algebra.
+
+3.1.0 (2026-11-01)
+------------------
+**Features**
+
+* ``abs(mv)`` now works on multivectors and returns ``abs(mv.norm().e)``, so masks like ``points[abs(lines) < 1]`` work. Closes #42 (thanks @HarshRajSinghania).
+* New ``%%graph`` cell magic for Jupyter: ``Algebra.graph`` arguments one subject per line, options as flags, e.g. ``%%graph -lineWidth 3 -grid``. It is registered automatically when kingdon is imported in IPython, or with ``%load_ext kingdon``. Closes #138.
+* ``import kingdon`` is faster: the graph dependencies (``anywidget``, ``IPython``) are only imported when a graph is made.
+* Integer powers ``x ** n`` now use exponentiation by squaring.
+* Python 3.10 and 3.14 are now supported.
+
+**Bugfixes**
+
+* Integer powers of multivectors with interval-valued or otherwise non-scalar coefficients were wrong, because squares duplicated their symbolic operand. Fixes #152 (thanks @Samuel-Hills).
+* Basis blades outside the algebra are ignored again when constructing a multivector, instead of raising an error. Fixes #144 (thanks @Concode0).
+* The sandwich product ``>>`` crashed in ``full_layout`` mode. Fixes #156.
+* Numba could not compile functions whose result, or one of whose inputs, is an empty multivector, e.g. ``e0 * e0`` in PGA. Fixes #137.
+* ``Algebra.add_operator`` crashed in ``full_layout`` mode.
+* In ``large`` mode, array-valued multivectors failed, and ``torch.compile`` took extremely long.
+* ``proj`` had no docstring.
+* The automatic ``dual`` and ``undual`` modes raise ``ValueError`` instead of a bare ``Exception`` when the algebra has no suitable dual.
+
+**Development**
+
+* Packaging moved from ``setup.py`` to ``pyproject.toml``, and development to uv (thanks @arsenovic). Releases are published with PyPI trusted publishing.
+* The code is now linted with ruff.
