@@ -75,8 +75,9 @@ Ready to contribute? Here's how to set up `kingdon` for local development.
 
    Now you can make your changes locally.
 
-5. When you're done making changes, check that the tests pass::
+5. When you're done making changes, check that the linter and the tests pass::
 
+    $ uv run --group dev ruff check
     $ uv run pytest
 
    To also run the array tests against torch and jax, add their group::

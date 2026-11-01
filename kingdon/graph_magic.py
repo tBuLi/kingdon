@@ -44,7 +44,7 @@ def _parse_options(line, ns):
         value = line[flag.end():next_flag.start() if next_flag else None].strip()
         try:
             options[flag['key']] = eval(value, ns) if value else True
-        except Exception:
+        except Exception:  # noqa: BLE001
             options[flag['key']] = value
     return algebra, options
 

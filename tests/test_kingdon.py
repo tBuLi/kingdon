@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """Tests for `kingdon` package."""
 import copy
 import itertools
@@ -14,7 +12,6 @@ from kingdon import (Algebra, MultiVector, Scalar, Vector, Bivector, Trivector, 
                      Bireflection, Direction, EVector, UPoint, Point, Translation, symbols)
 from kingdon.operator_dict import UnaryOperatorDict
 
-import timeit
 
 @pytest.fixture
 def ga101():
@@ -648,7 +645,7 @@ def test_namedmv(R6):
     x = R6.multivector(name='x', keys=keys)
     assert x.keys() == keys
     named_keys = ('e1', 'e12', 'e15')
-    y = R6.multivector(name='x', keys=named_keys)
+    R6.multivector(name='x', keys=named_keys)
     assert x.keys() == keys
 
 
@@ -925,7 +922,7 @@ def test_full_layout(alg):
 
     with pytest.raises(ValueError):
         # In full_layout mode, the keys have to be correct.
-        x = alg.multivector(name='x', keys=(1,))
+        alg.multivector(name='x', keys=(1,))
 
 
 def test_blade_dict():
@@ -1334,7 +1331,7 @@ def test_101():
     alg = Algebra(16)
     assert alg.large
     basisvectors = [alg.vector(keys=(2 ** i,), values=(1.0,)) for i in range(alg.d)]
-    e0, e1, e2, e3, *rest = basisvectors
+    e0, e1, e2, e3, *_rest = basisvectors
     e01, e02, e03 = e0 ^ e1, e0 ^ e2, e0 ^ e3
     assert e01 == e0 * e1
     spine = sum(basisvectors[2*i] * basisvectors[2*i+1] for i in range(alg.d // 2))

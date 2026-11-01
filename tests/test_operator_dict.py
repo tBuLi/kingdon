@@ -19,13 +19,13 @@ def test_operator_dict():
     assert len(gp) == 0
     with pytest.raises(TypeError):
         gp[x, y] = 2
-    xy = gp(x, y)
+    gp(x, y)
     assert len(gp) == 1  # size of gp has grown by one
     assert (x, y) in gp
 
     inv = UnaryOperatorDict('inv', codegen=ops.inv, algebra=alg)
     assert len(inv) == 0
-    xinv = inv(x)
+    inv(x)
     assert len(inv) == 1
     assert x in inv
 
@@ -189,7 +189,7 @@ def test_codegen_wgp_generic(codegen_symbolcls):
     weights = alg.scalar(e=ws)
     x0, x1, x2 = x.grade(0), x.grade(1), x.grade(2)
     y0, y1, y2 = y.grade(0), y.grade(1), y.grade(2)
-    compiled_expr = wgp[x, y, weights]
+    wgp[x, y, weights]
     wgp_output = wgp(x, y, weights)
     assert wgp_output == w0*x0*y0 + w3*(x1|y1) + w7*x2*y2 + w1*x0*y1 + w4*x1*y0 + w5*x1*y2 + w8*x2*y1 + w2*x0*y2 + w6*(x1^y1) + w9*x2*y0
 

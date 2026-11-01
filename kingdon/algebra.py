@@ -208,7 +208,7 @@ class Algebra:
         else:
             digits = list(self.pretty_digits)
             self.bin2canon = {
-                eJ: 'e' + ''.join(digits[ei + self.start_index] for ei in range(0, self.d) if eJ & 2**ei)
+                eJ: 'e' + ''.join(digits[ei + self.start_index] for ei in range(self.d) if eJ & 2**ei)
                 for eJ in range(2 ** self.d)
             }
             self.canon2bin = dict(sorted({c: b for b, c in self.bin2canon.items()}.items(), key=lambda x: (len(x[0]), x[0])))
@@ -328,7 +328,7 @@ class Algebra:
         The set of orthogonal basis vectors, :math:`\{ e_i \}`. Note that for a frame linear independence suffices,
         but we already have orthogonal basis vectors so why not use those?
         """
-        return [self.blades[self.bin2canon[2**j]] for j in range(0, self.d)]
+        return [self.blades[self.bin2canon[2**j]] for j in range(self.d)]
 
     @cached_property
     def reciprocal_frame(self) -> list:
@@ -343,7 +343,7 @@ class Algebra:
         I, J = bin_pair
         eI, eJ = self.bin2canon[I], self.bin2canon[J]
         # Compute the number of swaps of orthogonal vectors needed to order the basis vectors.
-        swaps, prod, eliminated = _swap_blades(eI[1:], eJ[1:], self.bin2canon[I ^ J][1:])
+        swaps, _prod, eliminated = _swap_blades(eI[1:], eJ[1:], self.bin2canon[I ^ J][1:])
 
         # Remove even powers of basis-vectors.
         sign = -1 if swaps % 2 else 1
@@ -360,7 +360,7 @@ class Algebra:
                 sign = '-' if sign == -1 else ''
                 cayley[eI, eJ] = f'{sign}{self.bin2canon[I ^ J]}'
             else:
-                cayley[eI, eJ] = f'0'
+                cayley[eI, eJ] = '0'
         return cayley
 
     def register(self, expr=None, /, *, name=None, symbolic=False):

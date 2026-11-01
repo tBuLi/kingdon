@@ -13,7 +13,7 @@ from einops.tests import FLOAT_REDUCTIONS
 from einops.tests.test_layers import rearrangement_patterns, reduction_patterns
 
 from kingdon import Algebra, MultiVector, stack
-import kingdon.einops_backend  # registers KingdonBackend with einops. Do not remove.
+import kingdon.einops_backend  # noqa: F401  # registers KingdonBackend with einops. Do not remove.
 
 # A small algebra used throughout these tests.
 alg = Algebra(2)  # 4 blades: e, e1, e2, e12

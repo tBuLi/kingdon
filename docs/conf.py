@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-#
 # kingdon documentation build configuration file, created by
 # sphinx-quickstart on Fri Jun  9 13:47:02 2017.
 #

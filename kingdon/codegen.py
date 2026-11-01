@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import string
 from itertools import chain
-from typing import NamedTuple
+from typing import NamedTuple, TYPE_CHECKING
 from collections.abc import Callable
 import linecache
 import inspect
@@ -14,11 +14,12 @@ from functools import partial
 
 from sympy.utilities.iterables import iterable, flatten
 from sympy.printing.lambdarepr import LambdaPrinter
-from sympy.simplify.cse_main import numbered_symbols
-from sympy import Symbol, sympify
+from sympy import sympify
 
 from kingdon.polynomial import poly_cse, poly_format, Polynomial, RationalPolynomial
 from kingdon.multivector import MultiVector, MultiVectorType
+if TYPE_CHECKING:
+    from kingdon.algebra import Algebra
 
 
 class CompiledExpression(NamedTuple):
@@ -31,7 +32,7 @@ class CompiledExpression(NamedTuple):
     :param wrapped_func: decorated func if a wrapper was provided, else identical to func.
     :param mvtype: type of the output multivector. Defaults to :code:`MultiVector`.
     """
-    algebra: "Algebra"
+    algebra: Algebra
     keys_out: tuple[int]
     func: Callable
     mvtype: MultiVectorType
@@ -49,7 +50,7 @@ class CompiledExpression(NamedTuple):
         )
 
 
-def resolve_layout(layouts: dict, res_layout: dict, MVType: type = None, default: type = MultiVector):
+def resolve_layout(layouts: dict, res_layout: dict, MVType: type | None = None, default: type = MultiVector):
     """
     Look up the best-matching MVType for a given result layout from a set of registered types.
 
@@ -233,7 +234,7 @@ def _build_and_cache_func(header, body_lines, funcname, namespace=None, count_op
     count_line = []
     if count_ops:
         count_line = ['    ' + _op_count_str('\n'.join([header, *body_lines]))]
-    all_lines = [header, f'    """', *count_line, f'    """'] + body_lines
+    all_lines = [header, '    """', *count_line, '    """'] + body_lines
     return _compile_and_cache('\n'.join(all_lines), funcname, namespace)
 
 
@@ -347,7 +348,7 @@ def lambdify(
         printer=None,
         func_printer=None,
         cse=False,
-        output_mv_idx: int = None,
+        output_mv_idx: int | None = None,
     ):
     """
     Function that turns symbolic expressions into Python functions. Heavily inspired by
@@ -428,7 +429,7 @@ def lambdify(
         cses, _exprs = cse(_exprs, list=False)
 
     if not any(_exprs):
-        _exprs = list('0' for expr in _exprs)
+        _exprs = ['0' for expr in _exprs]
 
     if printer is None:
         printer = LambdaPrinter(
@@ -518,9 +519,9 @@ class KingdonPrinter:
 
         for s, e in cses:
             if e is None:
-                funcbody.append('del {}'.format(s))
+                funcbody.append(f'del {s}')
             else:
-                funcbody.append('{} = {}'.format(s, self._exprrepr(e)))
+                funcbody.append(f'{s} = {self._exprrepr(e)}')
 
         if output_mv_idx is not None:
             for i, e in enumerate(expr):
@@ -530,8 +531,8 @@ class KingdonPrinter:
         else:
             str_expr = _recursive_to_string(self._exprrepr, expr)
             if '\n' in str_expr:
-                str_expr = '({})'.format(str_expr)
-            funcbody.append('return {}'.format(str_expr))
+                str_expr = f'({str_expr})'
+            funcbody.append(f'return {str_expr}')
 
         funclines = [funcsig]
         funclines.extend(['    ' + line for line in funcbody])
@@ -588,7 +589,7 @@ class KingdonPrinter:
             return '({},)'.format(', '.join(
                 unpack_lhs(val) if iterable(val) else val for val in lvalues))
 
-        return ['{} = {}'.format(unpack_lhs(unpackto), arg)]
+        return [f'{unpack_lhs(unpackto)} = {arg}']
 
 def _recursive_to_string(doprint, arg):
     if isinstance(arg, str):
@@ -601,7 +602,7 @@ def _recursive_to_string(doprint, arg):
         elif isinstance(arg, tuple):
             left, right = "(", ",)"
         else:
-            raise NotImplementedError("unhandled type: %s, %s" % (type(arg), arg))
+            raise NotImplementedError(f"unhandled type: {type(arg)}, {arg}")
         return ''.join((left, ', '.join(_recursive_to_string(doprint, e) for e in arg), right))
     else:
         return doprint(arg)

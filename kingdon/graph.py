@@ -221,11 +221,11 @@ class GraphWidget(anywidget.AnyWidget):
     def _valid_options(self, proposal):
         options = proposal['value']
         if camera := options.get('camera'):
-            options['camera'] = list(encode(camera, graded=self.graded))[0]
+            options['camera'] = next(iter(encode(camera, graded=self.graded)))
         if up := options.get('up'):
             sig = inspect.signature(up)
             up_glsl = up(*[sp.Symbol(param) for param in sig.parameters]).map(GLSLPrinter().doprint)
-            options['up'] = list(encode(up_glsl, graded=self.graded))[0]['mv']
+            options['up'] = next(iter(encode(up_glsl, graded=self.graded)))['mv']
         style = {**DEFAULT_STYLE, **options.get('style', {})}
         if 'width' in options:
             style['width'] = options['width']

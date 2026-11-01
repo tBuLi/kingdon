@@ -3,7 +3,7 @@ import math
 from collections import defaultdict
 from fractions import Fraction
 
-from sympy import Mul, Add, Symbol, RealNumber
+from sympy import Mul, Add, Symbol
 
 from kingdon.powers import power_supply
 
@@ -103,7 +103,7 @@ def _find_shared_sums(expr, iso_vars, prelude, start_count=0, sum_map=None):
 
     cands = []
     for key, occs in res_map.items():
-        cs = set(o['comp'] for o in occs)
+        cs = {o['comp'] for o in occs}
         if len(cs) >= 2:
             cands.append({'key': key, 'occs': occs, 'score': len(cs) * 10 + len(occs)})
     cands.sort(key=lambda c: -c['score'])
@@ -112,7 +112,7 @@ def _find_shared_sums(expr, iso_vars, prelude, start_count=0, sum_map=None):
     for cand in cands:
         valid = [o for o in cand['occs']
                  if not any((o['comp'], i) in used for i in o['idx'])]
-        vc = set(o['comp'] for o in valid)
+        vc = {o['comp'] for o in valid}
         if len(vc) < 2:
             continue
 
@@ -459,11 +459,10 @@ def poly_cse(expr, prot=None, iso=None):
     # Phase 2: Substitute extracted sums and find more shared structure
     if has_mixed and sum_map:
         _substitute_extracted(expr, sum_map)
-        t_vars = list(set(v['tn'] for v in sum_map.values()))
+        t_vars = list({v['tn'] for v in sum_map.values()})
         sum_map2 = {}
         r2 = _find_shared_sums(expr, t_vars, prelude, has_mixed, sum_map2)
-        if r2 > has_mixed:
-            has_mixed = r2
+        has_mixed = max(has_mixed, r2)
         if sum_map2:
             _substitute_extracted(expr, sum_map2)
 
@@ -579,7 +578,7 @@ class Polynomial:
         res = Polynomial([])
         al = len(self)
         bl = len(other)
-        for ai, bi in itertools.product(range(0, al), range(0, bl)):
+        for ai, bi in itertools.product(range(al), range(bl)):
             A = self[ai]
             B = other[bi]
             C = [A[0] * B[0]]

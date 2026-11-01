@@ -3,11 +3,9 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import reduce, cached_property, wraps
-from typing import ClassVar
+from typing import ClassVar, TYPE_CHECKING
 from types import EllipsisType
-from itertools import product
 import re
-import math
 
 
 from sympy import Expr, Symbol, sympify, sinc, cos
@@ -15,6 +13,9 @@ from sympy.utilities.iterables import iterable
 
 import kingdon.operators as ops
 from kingdon.polynomial import RationalPolynomial
+if TYPE_CHECKING:
+    from typing import Self
+    from kingdon.algebra import Algebra
 
 
 class MultiVectorType(type):
@@ -124,19 +125,18 @@ class MultiVector(metaclass=MultiVectorType):
             keys, values = zip(*((key, items[key]) for key in algebra.canon2bin.values() if key in items))
             values = list(values)
 
-        keys = keys if keys is not None else tuple() if values is None else None
-        values = values if values is not None else list()
+        keys = keys if keys is not None else () if values is None else None
+        values = values if values is not None else []
         if isinstance(values, tuple):  # Values are always a list, e.g. so they can be updated inplace.
             values = list(values)
         if any(isinstance(v, str) for v in values):
             converter = symbolcls or sympify
-            values = list(val if not isinstance(val, str) else converter(val)
-                          for val in values)
+            values = [val if not isinstance(val, str) else converter(val) for val in values]
         if grades and not all(0 <= grade <= algebra.d for grade in grades):
             raise ValueError(f'Each grade in `grades` needs to be a value between 0 and {algebra.d}.')
         keys = cls.sanitize_keys_grades(algebra, keys, grades)
         if len(keys) != len(values):
-            raise TypeError(f'Length of `keys` and `values` have to match.')
+            raise TypeError('Length of `keys` and `values` have to match.')
         inst = cls.fromkeysvalues(algebra, keys, values, raw=cls._issymbolic(algebra, values))
         return inst
 
@@ -229,7 +229,7 @@ class MultiVector(metaclass=MultiVectorType):
         if symbolcls is None:
             symbolcls = algebra.symbolcls or Symbol
         keys = cls.sanitize_keys_grades(algebra, keys, grades, full_layout)
-        values = list(symbolcls(f'{name}{algebra.bin2canon[k][1:]}') for k in keys)
+        values = [symbolcls(f'{name}{algebra.bin2canon[k][1:]}') for k in keys]
         instance = cls.fromkeysvalues(algebra, keys, values, raw=True)
         return instance
 
@@ -575,7 +575,7 @@ class MultiVector(metaclass=MultiVectorType):
             if map: keysvalues = tuple((k, fv) for k, v in self.items() if (fv := func(v)))
             else:   keysvalues = tuple((k, v) for k, v in self.items() if func(v))
         if not keysvalues:
-            return self.fromkeysvalues(self.algebra, keys=tuple(), values=list(), raw=self.issymbolic)
+            return self.fromkeysvalues(self.algebra, keys=(), values=[], raw=self.issymbolic)
         keys, values = zip(*keysvalues)
         return self.fromkeysvalues(self.algebra, keys=keys, values=list(values), raw=self.issymbolic)
 
@@ -609,7 +609,7 @@ class MultiVector(metaclass=MultiVectorType):
             layout = {k: layout[k] for k in self.algebra.canon2bin.values() if k in layout}
             keysvalues = tuple((k, v if v != ... else getattr(self, self.algebra.bin2canon[k]))
                                for k, v in layout.items() if k in self.keys() or v != ...)
-            keys, values = zip(*keysvalues) if keysvalues else (tuple(), list())
+            keys, values = zip(*keysvalues) if keysvalues else ((), [])
             values = list(values)  # Values are always a list, e.g. so they can be updated inplace.
         else:
             keys, values = self.keys(), self.values()
@@ -818,7 +818,7 @@ class MultiVector(metaclass=MultiVectorType):
         elif kind == 'hodge' or kind == 'auto' and self.algebra.r == 1:
             return self.hodge()
         elif kind == 'auto':
-            raise Exception('Cannot select a suitable dual in auto mode for this algebra.')
+            raise ValueError('Cannot select a suitable dual in auto mode for this algebra.')
         else:
             raise ValueError(f'No dual found for kind={kind}.')
 
@@ -831,7 +831,7 @@ class MultiVector(metaclass=MultiVectorType):
         elif kind == 'hodge' or kind == 'auto' and self.algebra.r == 1:
             return self.unhodge()
         elif kind == 'auto':
-            raise Exception('Cannot select a suitable undual in auto mode for this algebra.')
+            raise ValueError('Cannot select a suitable undual in auto mode for this algebra.')
         else:
             raise ValueError(f'No undual found for kind={kind}.')
 
@@ -1024,7 +1024,7 @@ def stack(mvs: list[MultiVector], stack_func=None) -> MultiVector[None]:
     """
     if not all(mv.shape == mvs[0].shape for mv in mvs[1:]):
         raise TypeError('All multivectors must have the same shape.')
-    if not len(set(type(mv) for mv in mvs)) == 1:
+    if not len({type(mv) for mv in mvs}) == 1:
         raise TypeError('All multivectors must have the same type.')
     if stack_func is None:
         stack_func = mvs[0].algebra.values_asarray

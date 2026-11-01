@@ -3,15 +3,18 @@ Built-in geometric operators, such as the geometric product, wedge product, sand
 
 These functions are assumed to operate on multivectors, and return a multivector.
 """
+from typing import TYPE_CHECKING
 import itertools
 from collections import namedtuple
 import warnings
 import operator
 from collections.abc import Callable
-from functools import reduce, wraps
+from functools import reduce
 from fractions import Fraction as PyFraction
 
 from kingdon.powers import power_supply
+if TYPE_CHECKING:
+    from kingdon.multivector import MultiVector
 
 
 def is_zero(v) -> bool:
@@ -108,7 +111,7 @@ def sw(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     :return: tuple of keys in binary representation and a lambda function.
     :raises TypeError: If :code:`x` is not a versor (k-reflection) and thus neither even nor odd.
     """
-    if len(set((g % 2 for g in x.grades))) != 1:
+    if len({g % 2 for g in x.grades}) != 1:
         raise TypeError("x must be a versor (k-reflection) and thus either even or odd.")
     xr = reverse(x)
     condition = sub(scalar(xr.algebra, 1), grade(gp(x, xr), 0))  # The scalar part of x * ~x is assumed to be 1.
@@ -181,7 +184,7 @@ def sp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
 
 
 def proj(x: "MultiVector", y: "MultiVector") -> "MultiVector":
-    fr"""
+    r"""
     Generate the projection of :code:`x` onto :code:`y`: :math:`(x \cdot y) \widetilde{y}`,
     where it is assumed that :code:`y` is a normalized versor (k-reflection) and hence :math:`y^{-1} = \widetilde{y}`.
 
@@ -190,7 +193,7 @@ def proj(x: "MultiVector", y: "MultiVector") -> "MultiVector":
     :return: tuple of keys in binary representation and a lambda function.
     :raises TypeError: If :code:`y` is not a versor (k-reflection).
     """
-    if len(set((g % 2 for g in y.grades))) != 1:
+    if len({g % 2 for g in y.grades}) != 1:
         raise TypeError("y must be a versor (k-reflection) and thus either even or odd.")
     condition = sub(scalar(y.algebra, 1), grade(normsq(y), 0))  # The scalar part of x * ~x is assumed to be 1.
     return grade(add(gp(ip(x, y), reverse(y)), gp(x, condition)), x.grades)
@@ -435,7 +438,7 @@ def involutions(x: "MultiVector", invert_grades: tuple[int, int] = (2, 3)) -> "M
 
     :param invert_grades: The grades that flip sign under this involution mod 4, e.g. (2, 3) for reversion.
     """
-    res = {k: -v if bin(k).count('1') % 4 in invert_grades else v
+    res = {k: -v if k.bit_count() % 4 in invert_grades else v
            for k, v in x.items()}
     return dict_to_multivector(res, x.algebra)
 
