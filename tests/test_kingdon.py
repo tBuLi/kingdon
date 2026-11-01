@@ -959,7 +959,6 @@ def test_compile_basics(symbolic):
     assert not (coupled(u, v) - ((u + v) ** 2 + 2 * u))
 
 def test_25(alg301):
-    from kingdon import Algebra
     e0 = alg301.blades['e0']
     e1 = alg301.blades['e1']
     e2 = alg301.blades['e2']
