@@ -16,16 +16,16 @@ from kingdon.polynomial import RationalPolynomial
 from kingdon.codegen import resolve_layout
 
 @pytest.fixture
-def vga2d():
-    return Algebra(2)
+def vga2d(wrapper):
+    return Algebra(2, wrapper=wrapper)
 
 @pytest.fixture
-def pga2d():
-    return Algebra.fromname('2DPGA')
+def pga2d(wrapper):
+    return Algebra.fromname('2DPGA', wrapper=wrapper)
 
 @pytest.fixture
-def pga3d():
-    return Algebra.fromname('3DPGA')
+def pga3d(wrapper):
+    return Algebra.fromname('3DPGA', wrapper=wrapper)
 
 def pos_grades(alg, grds):
     return tuple(g % (alg.d + 1) for g in grds if (-alg.d - 1) <= g <= alg.d)

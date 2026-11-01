@@ -42,7 +42,7 @@ class CompiledExpression(NamedTuple):
 
     def __call__(self, *mvs):
         issymbolic = any(mv.issymbolic for mv in mvs)
-        values_in = tuple(mv.values() for mv in mvs)
+        values_in = tuple(mv.values() if mv.keys() else () for mv in mvs)  # numba cannot infer the type of an empty list
         values_out = self.func(*values_in) if issymbolic else self.wrapped_func(*values_in)
         if self.output_mv_idx is not None: return None  # The function uses .set
         return self.mvtype.fromkeysvalues(

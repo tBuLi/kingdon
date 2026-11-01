@@ -14,40 +14,40 @@ from kingdon.operator_dict import UnaryOperatorDict
 
 
 @pytest.fixture
-def ga101():
-    return Algebra(signature=[1, 0], start_index=1)
+def ga101(wrapper):
+    return Algebra(signature=[1, 0], start_index=1, wrapper=wrapper)
 
 
 @pytest.fixture
-def ga201():
-    return Algebra(signature=[1, 1, 0], start_index=1)
+def ga201(wrapper):
+    return Algebra(signature=[1, 1, 0], start_index=1, wrapper=wrapper)
 
 
 @pytest.fixture
-def ga301():
-    return Algebra(signature=[1, 1, 1, 0], start_index=1)
+def ga301(wrapper):
+    return Algebra(signature=[1, 1, 1, 0], start_index=1, wrapper=wrapper)
 
 
 @pytest.fixture
-def vga2d():
-    return Algebra(2)
+def vga2d(wrapper):
+    return Algebra(2, wrapper=wrapper)
 
 
 @pytest.fixture
-def vga11():
-    return Algebra(1, 1)
+def vga11(wrapper):
+    return Algebra(1, 1, wrapper=wrapper)
 
 @pytest.fixture
-def R6():
-    return Algebra(6)
+def R6(wrapper):
+    return Algebra(6, wrapper=wrapper)
 
 @pytest.fixture
-def sta():
-    return Algebra(3, 1)
+def sta(wrapper):
+    return Algebra(3, 1, wrapper=wrapper)
 
 @pytest.fixture
-def vga3d():
-    return Algebra(3)
+def vga3d(wrapper):
+    return Algebra(3, wrapper=wrapper)
 
 
 def test_MultiVector(ga101):
@@ -1423,9 +1423,14 @@ def test_115_116():
     with pytest.raises(TypeError): iter(empty)
 
 
-def test_numba_zero_product():
-    """ Products that vanish identically must compile under numba, which cannot type an empty list. """
+def test_numba_empty_multivectors():
+    """ Empty multivectors, as output or input, must compile under numba, which cannot type an empty list. """
     numba = pytest.importorskip('numba')
     alg = Algebra(3, 0, 1, wrapper=numba.njit)
-    assert (alg.blades.e0 * alg.blades.e0).keys() == ()
-    assert (alg.blades.e01 * alg.blades.e02).keys() == ()
+    empty = alg.scalar()
+    assert alg.blades.e0 * alg.blades.e0 == empty
+    assert alg.blades.e01 * alg.blades.e02 == empty
+    v = alg.vector([1., 2., 3., 4.])
+    assert alg.multivector() + v == v
+    assert v * alg.multivector() == empty
+    assert 2 * alg.multivector() == empty
