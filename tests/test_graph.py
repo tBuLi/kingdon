@@ -69,7 +69,7 @@ def test_up_function():
 
     # infinity (i) and origin (o) : plus (p), minus (m), times (t).
     ip, im, it = [n1 - p1, n2 - p2, n3 - p3]
-    op, om, ot = alg.scalar(e=0.5) * [n1 + p1, n2 + p2, n3 + p3]
+    op, _om, _ot = alg.scalar(e=0.5) * [n1 + p1, n2 + p2, n3 + p3]
 
     # The 'up' (C) function that takes a Euclidean point and casts it into R5,3
     def up(x, y):
@@ -254,7 +254,7 @@ def test_magic_registered_on_import():
         "ip.run_cell('import kingdon');"
         "print(ip.find_cell_magic('graph') is not None)"
     )
-    out = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True,
+    out = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, check=False,
                          cwd=pathlib.Path(__file__).parent.parent)
     assert out.stdout.strip().endswith('True'), out.stderr
 

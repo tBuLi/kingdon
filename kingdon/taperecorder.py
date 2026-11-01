@@ -1,7 +1,10 @@
+from typing import TYPE_CHECKING
 from dataclasses import dataclass, field
-from functools import cached_property, partial, partialmethod
+from functools import cached_property, partialmethod
 import re
 from kingdon.multivector import Scalar, MultiVector, MultiVectorType
+if TYPE_CHECKING:
+    from kingdon.algebra import Algebra
 
 
 @dataclass(init=False)
@@ -47,7 +50,7 @@ class TapeRecorder:
         if basis_blade not in self.algebra.canon2bin:
             return self.__class__(
                 algebra=self.algebra,
-                expr=f"(0,)",
+                expr="(0,)",
                 mvtype=Scalar,
                 keys=(0,),
                 shape=self.shape,
@@ -57,7 +60,7 @@ class TapeRecorder:
         except ValueError:
             return self.__class__(
                 algebra=self.algebra,
-                expr=f"(0,)",
+                expr="(0,)",
                 mvtype=Scalar,
                 keys=(0,),
                 shape=self.shape,
@@ -89,7 +92,7 @@ class TapeRecorder:
 
         basis_blades = tuple(self.algebra.indices_for_grades(grades))
         indices_keys = [(idx, k) for idx, k in enumerate(self.keys()) if k in basis_blades]
-        indices, keys = zip(*indices_keys) if indices_keys else (tuple(), tuple())
+        indices, keys = zip(*indices_keys) if indices_keys else ((), ())
         expr = f"[{self.expr}[idx] for idx in {indices}]"
         kvectors = self.algebra._kvectors
         return self.__class__(
@@ -176,7 +179,7 @@ class TapeRecorder:
         elif kind == 'hodge' or kind == 'auto' and self.algebra.r == 1:
             return self.hodge()
         elif kind == 'auto':
-            raise Exception('Cannot select a suitable dual in auto mode for this algebra.')
+            raise ValueError('Cannot select a suitable dual in auto mode for this algebra.')
         else:
             raise ValueError(f'No dual found for kind={kind}.')
 
@@ -186,7 +189,7 @@ class TapeRecorder:
         elif kind == 'hodge' or kind == 'auto' and self.algebra.r == 1:
             return self.unhodge()
         elif kind == 'auto':
-            raise Exception('Cannot select a suitable undual in auto mode for this algebra.')
+            raise ValueError('Cannot select a suitable undual in auto mode for this algebra.')
         else:
             raise ValueError(f'No undual found for kind={kind}.')
 

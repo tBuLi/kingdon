@@ -37,6 +37,9 @@ test = ["pytest>=3", "einops", "array-api-compat"]
 # The [ctk] extra installs the CUDA libraries as wheels, which cuda-pathfinder prefers over a system-wide CUDA toolkit; a version mismatch with the latter is an access violation rather than an error.
 arrays = ["torch", "jax"]
 docs = ["sphinx", "einops", "nbsphinx", "ipykernel", "symfit", "matplotlib", "clifford"]
+dev = [
+    "ruff>=0.17.3",
+]
 
 # The CPU-only index keeps torch to a ~200 MB wheel, instead of the several GB of CUDA wheels that the tests have no use for.
 [tool.uv.sources]
@@ -46,3 +49,20 @@ torch = {index = "pytorch-cpu"}
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
+
+[tool.ruff.lint]
+ignore = [
+    "I001",    # import order is not worth one-name-per-line import blocks
+    "B023",    # closures over loop variables are called within the iteration
+    "SIM118",  # MultiVector.keys() is not dict.keys(); iterating a MultiVector does not yield its keys
+    "SIM102",  # nested ifs keep separate conditions on separate lines
+    "S102",    # kingdon compiles its generated code with exec
+    "RUF012",  # a class-level layout dict is how users define custom types
+    "RUF023",  # numer, denom is the natural order
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # re-exports of the public API
+"kingdon/algebra.py" = ["RUF009"]  # operation_field is partial(field, default_factory=dict)
+"tests/**" = ["B018"]  # bare attribute access inside pytest.raises
+"tests/test_graph.py" = ["PIE807"]  # lambda: [] as a graph function reads as "draw nothing"

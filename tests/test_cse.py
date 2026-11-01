@@ -6,11 +6,10 @@ generated code for common 3DPGA operations. The expected counts match
 GAmphetamine's polynomial CSE output, and serve as targets for porting
 the polynomial CSE algorithm from polynomial.js to polynomial.py.
 """
-import math
 import re
 import pytest
 from sympy import Symbol
-from kingdon import Algebra, MultiVector, Translation
+from kingdon import Algebra, Translation
 from kingdon.polynomial import RationalPolynomial
 from kingdon.codegen import do_compile_symbolic
 from kingdon.operators import sw

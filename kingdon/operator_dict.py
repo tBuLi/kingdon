@@ -1,19 +1,16 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from dataclasses import dataclass, field
 from collections.abc import Mapping, Callable
-from typing import NamedTuple
 from functools import wraps, cached_property
 import inspect
-import string
-from types import GenericAlias
 
-import sympy
 
-from kingdon.multivector import MultiVector, MultiVectorType, Scalar, stack
-from kingdon.codegen import do_compile_symbolic, do_compile
+from kingdon.multivector import MultiVector, Scalar, stack
 from kingdon.taperecorder import TapeRecorder
-from kingdon.polynomial import RationalPolynomial
+if TYPE_CHECKING:
+    from kingdon.algebra import Algebra
 
 
 class AlgebraError(Exception):
@@ -105,7 +102,7 @@ class OperatorDict(Mapping):
     """
     name: str
     codegen: Callable
-    algebra: "Algebra"
+    algebra: Algebra
     operator_dict: dict = field(default_factory=dict, init=False)
     codegen_symbolcls: Callable = field(default=None, repr=False)
     lambdifier: Callable = field(default=None, repr=False)

@@ -79,7 +79,7 @@ def test_pga_layouts(alg_name, MVType, layout, grades, bases):
     assert x.grades == pos_grades(alg, grades)
     assert x.shape == ()
     assert x.keys() == tuple(alg_layout)
-    assert all([isinstance(a, RationalPolynomial) for a in x.values()])
+    assert all(isinstance(a, RationalPolynomial) for a in x.values())
     assert all(float(str(a)) == b for a, b in zip(x.values(), layout.values()) if b != ...)
 
     # Fromname should be produced using the layout, and only feature free variables.

@@ -6,13 +6,14 @@ This follows the approach outlined in
 Graded Symmetry Groups: Plane and Simple, section 10.
 See the paper for more details.
 """
-import itertools
-import string
+from typing import TYPE_CHECKING
 from functools import reduce
 from itertools import combinations
 from collections.abc import Callable
 import numpy as np
 import sympy
+if TYPE_CHECKING:
+    from kingdon.multivector import MultiVector
 
 
 I2 = np.array([[1,0], [0,1]])

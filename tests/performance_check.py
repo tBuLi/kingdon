@@ -1,8 +1,7 @@
 from kingdon import Algebra
 import timeit
 import numpy as np
-from math import comb
-from itertools import product, chain
+from itertools import product
 import clifford as cf
 from collections import defaultdict
 import cProfile, pstats
