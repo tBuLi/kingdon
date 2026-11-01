@@ -83,14 +83,14 @@ def test_up_function():
     g = alg.graph(lambda: [], animate=0, up=up)
     assert g.options['up'] == up_glsl.values()
 
-def test_update_125():
-    alg = Algebra(2, 0, 1)
-    x = alg.vector([1, 1, 1]).dual()
-    y = lambda: alg.vector([1, 1, 1]).dual()
+@pytest.mark.parametrize('wrapper', [None])
+def test_update_125(alg201):
+    x = alg201.vector([1, 1, 1]).dual()
+    y = lambda: alg201.vector([1, 1, 1]).dual()
     Y = y()
     subjects = [0xD0FFE1, x, y]
     def graph_func(): return subjects
-    g = alg.graph(graph_func)
+    g = alg201.graph(graph_func)
     assert g.raw_subjects == [graph_func]
     assert g.pre_subjects == list(subjects)
     assert g.subjects == [
@@ -104,7 +104,7 @@ def test_update_125():
         [{'keys': x.keys(), 'mv': x.values(), 'type': 'bivector'}],
     ]
 
-    z = alg.vector([1, 0.3, 1.2]).dual()
+    z = alg201.vector([1, 0.3, 1.2]).dual()
     new_subjects = (x, 0x00AA88, y, z)
     def new_graph_func(): return new_subjects
     options = {**g.options, 'scale': 4}

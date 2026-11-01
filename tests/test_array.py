@@ -435,13 +435,12 @@ def test_asarray_raw(xp):
     assert len(alg.vector([1., 2.]).filter(lambda v: False).values()) == 0
 
 
-def test_136():
+def test_136(pga3d):
     """ Multivectors should be compatible with numpy.broadcast. """
-    pga = Algebra.fromname("3DPGA")
     nb_points = 10
     xyz = np.random.rand(3, nb_points)
-    point = (pga.evector(xyz) + pga.blades.e0).dual()
-    vector = pga.evector(e1=4.0, e2=8.0, e3=-1.2)
+    point = (pga3d.evector(xyz) + pga3d.blades.e0).dual()
+    vector = pga3d.evector(e1=4.0, e2=8.0, e3=-1.2)
     some_object = [None] * nb_points
 
     with pytest.raises(TypeError, match='0-dimensional'):

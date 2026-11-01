@@ -15,18 +15,6 @@ from kingdon.multivector import (
 from kingdon.polynomial import RationalPolynomial
 from kingdon.codegen import resolve_layout
 
-@pytest.fixture
-def vga2d(wrapper):
-    return Algebra(2, wrapper=wrapper)
-
-@pytest.fixture
-def pga2d(wrapper):
-    return Algebra.fromname('2DPGA', wrapper=wrapper)
-
-@pytest.fixture
-def pga3d(wrapper):
-    return Algebra.fromname('3DPGA', wrapper=wrapper)
-
 def pos_grades(alg, grds):
     return tuple(g % (alg.d + 1) for g in grds if (-alg.d - 1) <= g <= alg.d)
 
@@ -143,18 +131,17 @@ def test_layout(pga3d):
     (Vector, Trivector, Trivector, (1,), (3,)),
     (Trivector, Vector, Vector, (3,), (1,)),
 ])
-def test_pga_duality_relations(MVType, DType, UDType, grades, dgrades):
+def test_pga_duality_relations(MVType, DType, UDType, grades, dgrades, pga3d):
     """ Test if the dual and undual of various types are the expected type. """
-    alg = Algebra.fromname('3DPGA')
-    mv = MVType.fromname(alg, 'x')
-    assert mv.grades == pos_grades(alg, grades)
+    mv = MVType.fromname(pga3d, 'x')
+    assert mv.grades == pos_grades(pga3d, grades)
     assert isinstance(mv, MVType)
 
     dmv = mv.dual()
     assert isinstance(dmv, DType)
 
     udmv = mv.undual()
-    assert dmv.grades == pos_grades(alg, dgrades)
+    assert dmv.grades == pos_grades(pga3d, dgrades)
     assert isinstance(udmv, UDType)
 
 @pytest.mark.parametrize("alg_name", ['2DPGA', '3DPGA'])
