@@ -111,7 +111,11 @@ class GraphWidget(anywidget.AnyWidget):
         """If triggered, reevaluate the subjects. """
         if data["type"] == "update_mvs":
             # TODO: only update those that are callable for better performance?
-            self.subjects = self.get_subjects()
+            # traitlets does not fire change:subjects for equal values, so the frontend needs an explicit reply, also on errors or it runs out of request slots.
+            try:
+                self.subjects = self.get_subjects()
+            finally:
+                self.send({"type": "mvs_updated"})
 
     def _get_pre_subjects(self):
         if len(self.raw_subjects) == 1 and not isinstance((s := self.raw_subjects[0]), MultiVector) and isinstance(s, Callable):

@@ -275,3 +275,17 @@ def test_cell_magic_rerun_updates(ip):
     assert 'grid' not in first.options  # Dropping a flag takes effect on a rerun.
     assert other is not first  # Another cell gets its own widget,
     assert run_magic(ip, '%%graph\nA') is not first  # and so does a run without a cell id.
+
+
+@pytest.mark.parametrize('wrapper', [None])
+def test_update_mvs_replies(alg201):
+    g = alg201.graph(lambda: [alg201.vector([1, 1, 1]).dual()])
+    sent = []
+    g.send = lambda content, buffers=None: sent.append(content)
+    g._handle_custom_msg({"type": "update_mvs"}, [])
+    assert sent == [{"type": "mvs_updated"}]
+
+    g.get_subjects = lambda: 1 / 0
+    with pytest.raises(ZeroDivisionError):
+        g._handle_custom_msg({"type": "update_mvs"}, [])
+    assert len(sent) == 2

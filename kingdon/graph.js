@@ -129,14 +129,24 @@ function render({ model, el }) {
                 model._subjectsHandler = null;
             }
 
+            if (model._mvsUpdatedHandler) model.off("msg:custom", model._mvsUpdatedHandler);
+            model._mvsUpdatedHandler = null;
+
             if (options?.animate) {
+                // Bounded backpressure; the reply (not change:subjects, which skips equal values) frees a slot. More than 1 in flight hides the kernel round-trip latency.
+                var inflight = 0;
+                model._mvsUpdatedHandler = msg => { if (msg.type === "mvs_updated") inflight = Math.max(0, inflight - 1); };
+                model.on("msg:custom", model._mvsUpdatedHandler);
                 var graph_func = ()=>{
-                    if (canvas?.value && draggable_points_idxs?.length) {
-                        model.set('draggable_points', encode(draggable_points_idxs.map(i=>canvas.value[i])));
-                        model.save_changes();
+                    if (inflight < 3) {
+                        inflight++;
+                        if (canvas?.value && draggable_points_idxs?.length) {
+                            model.set('draggable_points', encode(draggable_points_idxs.map(i=>canvas.value[i])));
+                            model.save_changes();
+                        }
+                        // Send an update request. This drives the event loop.
+                        model.send({ type: "update_mvs" });
                     }
-                    // Send an update request. This drives the event loop.
-                    model.send({ type: "update_mvs" });
                     var subjects = decode(model.get('subjects'));
                     return [...subjects];
                 }
