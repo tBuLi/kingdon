@@ -148,3 +148,7 @@ Bugfix: width and height should be direct options to Algebra.graph
 
 * Packaging moved from ``setup.py`` to ``pyproject.toml``, and development to uv (thanks @arsenovic). Releases are published with PyPI trusted publishing.
 * The code is now linted with ruff.
+
+3.1.1 (2026-11-04)
+------------------
+* Added backpressure from python to javascript in the ``GraphWidget``, such that scenes that cannot keep up with the frame rate do not end up flooding the kernel, but rather cause the frame rate to drop.
