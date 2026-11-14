@@ -4,46 +4,36 @@ API Reference
 
 .. module:: kingdon
 
-Core
-----
-
 .. toctree::
+   :caption: Core
    :maxdepth: 1
 
    algebra
    multivector
 
-Operations
-----------
-
 .. toctree::
+   :caption: Operations
    :maxdepth: 1
 
    operators
    powers
    matrixreps
 
-Visualization
--------------
-
 .. toctree::
+   :caption: Visualization
    :maxdepth: 1
 
    graph
    graph_magic
 
-Arrays
-------
-
 .. toctree::
+   :caption: Arrays
    :maxdepth: 1
 
    einops_backend
 
-Internals
----------
-
 .. toctree::
+   :caption: Internals
    :maxdepth: 1
 
    codegen

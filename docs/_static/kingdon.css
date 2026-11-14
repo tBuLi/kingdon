@@ -169,8 +169,9 @@ body {
   color: var(--kd-link-hover);
 }
 
-/* The current page on the left, and the section in view on the right, are underlined. */
+/* The current page on the left (or the page it sits under), and the section in view on the right, are underlined. */
 .sy-lside .globaltoc a.current,
+.sy-lside .globaltoc li.current > a,
 .sy-rside .localtoc li.active > a {
   color: var(--kd-link);
   text-decoration: underline;
@@ -264,6 +265,51 @@ pre.literal-block {
 .yue .admonition.error {
   background-color: var(--kd-warn-bg);
   border-color: var(--kd-warn-border);
+}
+
+/* The API index lists its modules under small captions rather than section headings. */
+.yue .toctree-wrapper {
+  margin: 0;
+}
+
+.yue .toctree-wrapper p.caption {
+  margin: 0.9rem 0 0.1rem;
+  padding: 0;
+  border: 0;
+  font-family: var(--sy-f-heading);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--kd-link);
+}
+
+.yue .toctree-wrapper ul {
+  margin: 0;
+  padding-top: 0;
+  border: 0;
+}
+
+.yue .toctree-wrapper li {
+  margin: 0.15rem 0;
+}
+
+/* Videos keep a 16:9 frame at any width. */
+.yue .kd-video {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  margin: 1rem 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background-color: #000000;
+}
+
+.yue .kd-video iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
 }
 
 /* Landing page */

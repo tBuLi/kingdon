@@ -81,6 +81,7 @@ Cite as
    arrays
    types
    examples/index
+   videos
 
 .. toctree::
    :caption: Reference

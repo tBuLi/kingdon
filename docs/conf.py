@@ -76,7 +76,7 @@ _api_dir = os.path.join(os.path.dirname(__file__), 'api')
 _api_docs = []
 for _page in sorted(os.listdir(_api_dir)):
     _module = _page.removesuffix('.rst')
-    if _module == 'index':
+    if not _page.endswith('.rst') or _module == 'index':
         continue
     _api_docs.append(f'api/{_module}')
     with open(os.path.join(_api_dir, _page)) as _f:
@@ -152,12 +152,15 @@ html_theme_options = {
     'dark_logo': '_static/logo.png',
     'github_url': 'https://github.com/tBuLi/kingdon',
     'nav_links': [
+        {'title': 'Guides', 'url': 'index'},
         {'title': 'Examples', 'url': 'examples/index'},
         {'title': 'API', 'url': 'api/index'},
+        {'title': 'Video', 'url': 'videos'},
         {'title': 'Teahouse', 'url': 'https://tbuli.github.io/teahouse/', 'external': True},
         {'title': 'GitHub', 'url': 'https://github.com/tBuLi/kingdon', 'external': True},
     ],
-    'globaltoc_expand_depth': 1,
+    # Only the pages the landing page lists; the API reference's modules are listed on its own page.
+    'toctree_maxdepth': 1,
     'show_ai_links': False,
 }
 
