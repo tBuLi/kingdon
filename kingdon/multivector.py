@@ -336,7 +336,7 @@ class MultiVector(metaclass=MultiVectorType):
         res_layout.update({k: ... for k in items})
         if res_layout:
             from .codegen import resolve_layout
-            MVType, _ = resolve_layout(self.algebra._type_layouts, res_layout, default=self.algebra.mvtype, shape=self.shape)
+            MVType, _ = resolve_layout(self.algebra._type_layouts, res_layout, default=self.algebra.mvtype, shape=type(self).shape)
         else:
             MVType = self.algebra.mvtype
         return MVType.fromkeysvalues(self.algebra, tuple(items.keys()), list(items.values()), raw=self.issymbolic)
@@ -969,11 +969,11 @@ def _zeros_like(x):
 
 
 def _fit_type_shape(mv: MultiVector) -> MultiVector:
-    """ Cast `mv` to the type with the layout of :code:`type(mv)` whose shape fits the shape of `mv` best. """
+    """ If the shape of `mv` no longer fits :code:`type(mv)`, cast it to the type with the same layout whose shape does. Never to a type with a longer shape. """
     if not (siblings := mv.algebra._type_shape_siblings.get(type(mv))):
         return mv
     shape = mv.shape
-    cls = max((c for c in siblings if shape[:len(c.shape)] == c.shape),
+    cls = max((c for c in siblings if len(c.shape) <= len(type(mv).shape) and shape[:len(c.shape)] == c.shape),
               key=lambda c: (len(c.shape), c is type(mv)), default=type(mv))
     return mv if cls is type(mv) else cls.fromkeysvalues(mv.algebra, mv._keys, mv._values, raw=True)
 

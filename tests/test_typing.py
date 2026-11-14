@@ -628,7 +628,9 @@ def test_type_shape():
     check(seg[0], Point, ())
     assert [(type(p), p.shape) for p in seg] == [(Point, ())] * 2
     check(seg[0] & seg[1], Bivector, ())
-    check(stack([pnt, pnt]), LineSegment, (2,))
+    check(stack([pnt, pnt]), Point, (2,))
+    check(alg.point(np.random.rand(3, 2)).grade(3), Point, (2,))
+    check(alg.point(np.random.rand(3, 5, 2))[0], Point, (2,))
     check(stack([pnt, pnt, pnt]), Point, (3,))
 
     segs = alg.linesegment(np.random.rand(3, 2, 5))
@@ -637,7 +639,8 @@ def test_type_shape():
     check(segs[:, 0], LineSegment, (2,))
     check(segs[0], Point, (5,))
     check(einops.rearrange(segs, 'two n -> n two'), Point, (5, 2))
-    check(einops.pack([pnt, pnt], '*')[0], LineSegment, (2,))
+    check(einops.pack([pnt, pnt], '*')[0], Point, (2,))
+    check(einops.rearrange(alg.point(np.random.rand(3, 5, 2)), 'n two -> two n'), Point, (2, 5))
 
     layout = {'e023': ..., 'e013': ..., 'e012': ..., 'e123': 1}
     alg = Algebra(3, 0, 1, types=[{'name': 'Pnt', 'layout': layout}, {'name': 'Seg', 'layout': layout, 'shape': (2,)}])
