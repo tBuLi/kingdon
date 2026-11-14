@@ -15,6 +15,7 @@
 # relative to the documentation root, use os.path.abspath to make it
 # absolute, like shown here.
 #
+import logging
 import os
 import sys
 sys.path.insert(0, os.path.abspath('..'))
@@ -89,6 +90,15 @@ for _page in sorted(os.listdir(_api_dir)):
         _api_docs += [f'api/generated/kingdon.{_module}.{line.strip()}' for line in _f
                       if line.startswith('   ') and not line.strip().startswith(':') and line.strip()]
 suppress_warnings = [f'autosectionlabel.{doc}' for doc in _api_docs]
+
+
+class _SharedOperatorsLabel(logging.Filter):
+    """ The Operators page and Basic Usage's Operators section share a title, and so a label; nothing refers to it. """
+    def filter(self, record):
+        return 'duplicate label operators,' not in record.getMessage()
+
+
+logging.getLogger('sphinx.sphinx.ext.autosectionlabel').addFilter(_SharedOperatorsLabel())
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

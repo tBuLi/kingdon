@@ -305,10 +305,11 @@ pre.literal-block {
 }
 
 /* Landing page */
-.yue .kd-tagline {
-  font-family: var(--sy-f-heading);
-  font-size: 1.35em;
-  margin-top: 0;
+.yue h1 em {
+  font-size: 0.55em;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 /* The teahouse menu: the three-column list-table becomes a grid of cards. */

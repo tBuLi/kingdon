@@ -1,10 +1,6 @@
-=======
-Kingdon
-=======
-
-.. rst-class:: kd-tagline
-
-Pythonic Geometric Algebra Package
+=================================================
+Kingdon *— Pythonic Geometric Algebra Package*
+=================================================
 
 Features
 --------
@@ -71,6 +67,7 @@ Cite as
    :caption: Getting started
    :hidden:
 
+   Introduction <self>
    installation
    usage
    operators
