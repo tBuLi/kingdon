@@ -1,3 +1,4 @@
+""" An :code:`einops` backend for multivectors. Import this module to use :code:`einops` on multivectors. """
 from __future__ import annotations
 
 import string
@@ -51,6 +52,7 @@ def _zeros_like(x):
 
 
 class KingdonBackend(AbstractBackend):
+    """ The :code:`einops` backend for :class:`~kingdon.multivector.MultiVector`; it acts on the batch dimensions only. """
     framework_name = "kingdon"
 
     def is_appropriate_type(self, x: object) -> bool:

@@ -1,3 +1,4 @@
+""" The :class:`Algebra`, which holds the signature, basis and blades of a geometric algebra, and the operators acting on its multivectors. """
 import operator
 import re
 from itertools import product
@@ -548,7 +549,7 @@ class Algebra:
 
         Will create
 
-        .. image :: ../docs/_static/graph_triangle.png
+        .. image :: /_static/graph_triangle.png
             :scale: 50%
             :align: center
 

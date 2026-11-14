@@ -1,3 +1,4 @@
+""" Visualization of multivectors in jupyter notebooks, using :code:`ganja.js`. """
 import math
 from collections import defaultdict
 from collections.abc import Callable
@@ -25,6 +26,7 @@ DEFAULT_STYLE = {
 
 
 def walker(encoded_generator, tree_types=TREE_TYPES):
+    """ Evaluate the nested generators made by :func:`encode` into nested lists. """
     result = []
     for item in encoded_generator:
         if isinstance(item, GeneratorType):
@@ -57,6 +59,7 @@ def encode_ndarray(arr: np.ndarray) -> dict:
     }
 
 def encode(o, tree_types=TREE_TYPES, root=False, graded=False):
+    """ Encode `o`, which may be nested, into what :code:`ganja.js` understands. """
     if root and isinstance(o, tree_types):
         yield from (encode(value, tree_types, graded=graded) for value in o)
     elif isinstance(o, tree_types):
@@ -81,6 +84,7 @@ def encode(o, tree_types=TREE_TYPES, root=False, graded=False):
 
 
 class GraphWidget(anywidget.AnyWidget):
+    """ Widget that draws multivectors with :code:`ganja.js`. Made by :meth:`Algebra.graph <kingdon.algebra.Algebra.graph>`. """
     _esm = pathlib.Path(__file__).parent / "graph.js"
 
     # Required arguments.

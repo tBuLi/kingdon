@@ -1,3 +1,4 @@
+""" The :class:`MultiVector` and its predefined types, such as the k-vectors and the PGA types. """
 import operator
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
@@ -234,12 +235,15 @@ class MultiVector(metaclass=MultiVectorType):
         return instance
 
     def keys(self) -> tuple:
+        """ Binary keys of the basis blades present in this multivector. """
         return self._keys
 
     def values(self) -> list:
+        """ Coefficients of the basis blades, in the order of :meth:`keys`. """
         return self._values
 
     def items(self):
+        """ Pairs of :meth:`keys` and :meth:`values`. """
         return zip(self._keys, self._values)
 
     def __len__(self):
@@ -263,6 +267,7 @@ class MultiVector(metaclass=MultiVectorType):
 
     @cached_property
     def type_number(self) -> int:
+        """ Integer whose bits mark which basis blades are present, in canonical order. """
         return int(''.join('1' if i in self.keys() else '0' for i in reversed(self.algebra.canon2bin.values())), 2)
 
     @cached_property
@@ -341,6 +346,7 @@ class MultiVector(metaclass=MultiVectorType):
         return self._issymbolic(self.algebra, self.values())
 
     def neg(self):
+        """ Negation: :code:`-x`. """
         return self.algebra.neg(self)
 
     __neg__ = neg
@@ -362,6 +368,7 @@ class MultiVector(metaclass=MultiVectorType):
         return self.algebra.conjugate(self)
 
     def sqrt(self):
+        """ Square root. """
         return self.algebra.sqrt(self)
 
     def square(self):
@@ -369,9 +376,11 @@ class MultiVector(metaclass=MultiVectorType):
         return self.algebra.square(self)
 
     def normsq(self):
+        r""" Squared norm: :math:`x \widetilde{x}`. """
         return self.algebra.normsq(self)
 
     def norm(self):
+        r""" Norm: :math:`\sqrt{x \widetilde{x}}`. """
         normsq = self.normsq()
         return normsq.sqrt()
 
@@ -394,11 +403,13 @@ class MultiVector(metaclass=MultiVectorType):
         return self.algebra.inv(self)
 
     def add(self, other):
+        """ Sum: :code:`x + y`. """
         return self.algebra.add(self, other)
 
     __radd__ = __add__ = add
 
     def sub(self, other):
+        """ Difference: :code:`x - y`. """
         return self.algebra.sub(self, other)
 
     __sub__ = sub
@@ -407,6 +418,7 @@ class MultiVector(metaclass=MultiVectorType):
         return self.algebra.sub(other, self)
 
     def div(self, other):
+        """ Division: :code:`x / y`, i.e. :code:`x` times the inverse of :code:`y`. """
         return self.algebra.div(self, other)
 
     __truediv__ = div
@@ -542,6 +554,7 @@ class MultiVector(metaclass=MultiVectorType):
 
     @cached_property
     def free_symbols(self) -> set:
+        """ Union of the free symbols in the coefficients. """
         return reduce(operator.or_, (v.free_symbols for v in self.values() if hasattr(v, "free_symbols")), set())
 
     def map(self, func) -> "MultiVector":
@@ -618,6 +631,7 @@ class MultiVector(metaclass=MultiVectorType):
         return MVType(self.algebra, keys=keys, values=values)
 
     def gp(self, other):
+        """ Geometric product: :code:`x * y`. """
         return self.algebra.gp(self, other)
 
     __mul__ = gp
@@ -669,6 +683,7 @@ class MultiVector(metaclass=MultiVectorType):
         return self.algebra.acp(self, other)
 
     def ip(self, other):
+        """ Inner product: :code:`x | y`. """
         return self.algebra.ip(self, other)
 
     __or__ = ip
@@ -677,14 +692,17 @@ class MultiVector(metaclass=MultiVectorType):
         return self.algebra.ip(other, self)
 
     def op(self, other):
+        """ Outer (exterior) product: :code:`x ^ y`. """
         return self.algebra.op(self, other)
 
     __xor__ = __rxor__ = op
 
     def lc(self, other):
+        r""" Left-contraction: :math:`x \rfloor y`. """
         return self.algebra.lc(self, other)
 
     def rc(self, other):
+        r""" Right-contraction: :math:`x \lfloor y`. """
         return self.algebra.rc(self, other)
 
     def sp(self, other):
@@ -692,6 +710,7 @@ class MultiVector(metaclass=MultiVectorType):
         return self.algebra.sp(self, other)
 
     def rp(self, other):
+        """ Regressive product: :code:`x & y`. """
         return self.algebra.rp(self, other)
 
     __and__ = rp
@@ -721,15 +740,19 @@ class MultiVector(metaclass=MultiVectorType):
         return res * x if odd else res
 
     def outerexp(self):
+        """ Outer exponential, see :func:`~kingdon.operators.outerexp`. """
         return self.algebra.outerexp(self)
 
     def outersin(self):
+        """ Outer sine, see :func:`~kingdon.operators.outersin`. """
         return self.algebra.outersin(self)
 
     def outercos(self):
+        """ Outer cosine, see :func:`~kingdon.operators.outercos`. """
         return self.algebra.outercos(self)
 
     def outertan(self):
+        """ Outer tangent, see :func:`~kingdon.operators.outertan`. """
         return self.algebra.outertan(self)
 
     # TODO: perhaps exp should a function not a method?
@@ -787,15 +810,19 @@ class MultiVector(metaclass=MultiVectorType):
         return self * sinhc(l) + cosh(l)
 
     def polarity(self):
+        """ Polarity dual, see :meth:`dual`. """
         return self.algebra.polarity(self)
 
     def unpolarity(self):
+        """ Inverse of :meth:`polarity`. """
         return self.algebra.unpolarity(self)
 
     def hodge(self):
+        """ Hodge dual, see :meth:`dual`. """
         return self.algebra.hodge(self)
 
     def unhodge(self):
+        """ Inverse of :meth:`hodge`. """
         return self.algebra.unhodge(self)
 
     def dual(self, kind='auto'):
@@ -849,15 +876,52 @@ class KVector(MultiVector):
     def layout(cls, algebra, name):
         return algebra.mvtype.fromname(algebra, name, grades=cls.layout_grades,
                                        symbolcls=algebra.codegen_symbolcls or RationalPolynomial.fromname)
-class Scalar(KVector): layout_grades = (0,)
-class Vector(KVector): layout_grades = (1,)
-class Bivector(KVector): layout_grades = (2,)
-class Trivector(KVector): layout_grades = (3,)
-class Quadvector(KVector): layout_grades = (4,)
-class Pentavector(KVector): layout_grades = (5,)
-class Hexavector(KVector): layout_grades = (6,)
-class Heptavector(KVector): layout_grades = (7,)
-class Octovector(KVector): layout_grades = (8,)
+
+
+class Scalar(KVector):
+    """ Type of scalars (grade 0). """
+    layout_grades = (0,)
+
+
+class Vector(KVector):
+    """ Type of vectors (grade 1). """
+    layout_grades = (1,)
+
+
+class Bivector(KVector):
+    """ Type of bivectors (grade 2). """
+    layout_grades = (2,)
+
+
+class Trivector(KVector):
+    """ Type of trivectors (grade 3). """
+    layout_grades = (3,)
+
+
+class Quadvector(KVector):
+    """ Type of quadvectors (grade 4). """
+    layout_grades = (4,)
+
+
+class Pentavector(KVector):
+    """ Type of pentavectors (grade 5). """
+    layout_grades = (5,)
+
+
+class Hexavector(KVector):
+    """ Type of hexavectors (grade 6). """
+    layout_grades = (6,)
+
+
+class Heptavector(KVector):
+    """ Type of heptavectors (grade 7). """
+    layout_grades = (7,)
+
+
+class Octovector(KVector):
+    """ Type of octovectors (grade 8). """
+    layout_grades = (8,)
+
 
 # k-reflections
 class Bireflection(MultiVector):

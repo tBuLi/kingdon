@@ -1,3 +1,7 @@
+"""
+The codegen module turns the symbolic result of an operation into a python
+function, applying Common Subexpression Elimination along the way.
+"""
 from __future__ import annotations
 
 import re
@@ -274,6 +278,7 @@ def _rp_var_name(v):
 
 
 def unflatten(template, flat):
+    """ Nest the values of `flat` into the same structure of lists and tuples as `template`. """
     it = iter(flat)
     def walk(t):
         return type(t)(walk(x) for x in t) if isinstance(t, (list, tuple)) else next(it)
@@ -453,6 +458,7 @@ def lambdify(
 
 
 class KingdonPrinter:
+    """ Writes the source code of the functions that :func:`lambdify` generates. """
     def __init__(self, printer=None, dummify=False):
         self._dummify = dummify
 
