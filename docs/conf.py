@@ -101,8 +101,11 @@ language = 'en'
 exclude_patterns = ['_build', 'build_docs', 'Thumbs.db', '.DS_Store', '**.ipynb_checkpoints']
 
 # The name of the Pygments (syntax highlighting) style to use.
-# Shibuya uses it in light mode, and its own dark style in dark mode.
+# alabaster's default, which Shibuya would otherwise swap for github-dark in dark mode.
+# Shibuya has no option for its dark style, so this sets it on its highlighter class.
 pygments_style = 'sphinx'
+from shibuya._pygments import ShibuyaPygmentsBridge
+ShibuyaPygmentsBridge.dark_style_name = pygments_style
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = False
@@ -138,6 +141,8 @@ html_theme_options = {
 html_static_path = ['_static']  # '_static'
 # Frames each page like a sheet of paper, in the colors of the alabaster theme these docs used before.
 html_css_files = ['kingdon.css']
+# Opens links that leave the site in a new tab.
+html_js_files = ['kingdon.js']
 
 
 # -- Options for HTMLHelp output ---------------------------------------
