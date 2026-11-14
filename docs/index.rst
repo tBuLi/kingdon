@@ -6,24 +6,6 @@ Kingdon
 
 Pythonic Geometric Algebra Package
 
-.. rst-class:: kd-links
-
-:doc:`Get started <usage>` `✨ Try kingdon in your browser ✨ <https://tbuli.github.io/teahouse/>`_ `GitHub <https://github.com/tbuli/kingdon>`_
-
-.. rst-class:: kd-badges
-
-|pypi| |rtd| |coveralls|
-
-.. |pypi| image:: https://img.shields.io/pypi/v/kingdon.svg
-   :target: https://pypi.python.org/pypi/kingdon
-
-.. |rtd| image:: https://readthedocs.org/projects/kingdon/badge/?version=latest
-   :target: https://kingdon.readthedocs.io/en/latest/?version=latest
-   :alt: Documentation Status
-
-.. |coveralls| image:: https://coveralls.io/repos/github/tBuLi/kingdon/badge.svg?branch=master
-   :target: https://coveralls.io/github/tBuLi/kingdon?branch=master
-
 Features
 --------
 
@@ -104,7 +86,7 @@ Cite as
    :caption: Reference
    :hidden:
 
-   module_docs
+   api/index
    history
 
 .. toctree::

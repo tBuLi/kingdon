@@ -9,9 +9,8 @@ html:root {
 }
 
 :root {
-  /* Code blocks take the pygments style's own background (alabaster's pale green)
-     instead of Shibuya's accent tint. */
-  --code-block-background: var(--syntax-light-background);
+  /* Code blocks are cream rather than Shibuya's accent tint, in both modes. */
+  --code-block-background: #faf3e8;
 
   /* The desk, and the page on it. */
   --kd-desk: #e8e8e8;
@@ -58,8 +57,6 @@ html:root {
 /* The dark version of the same palette: a dim desk, a slate page, and alabaster's
    teal and brown lightened to keep their hue. */
 html.dark {
-  /* conf.py renders dark-mode code in the same sphinx style, so it keeps the green too. */
-  --code-block-background: var(--syntax-dark-background);
   --kd-desk: #16181b;
   --kd-page: #212429;
   --kd-page-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
@@ -152,6 +149,15 @@ body {
   }
 }
 
+/* The logo, as a round badge that keeps the engraving legible on the dark navbar. */
+.sy-head-brand img {
+  height: 36px;
+  width: 36px;
+  border-radius: 50%;
+  background-color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+
 /* Sidebars sit on the desk, in alabaster's sidebar greys. */
 .sy-lside .globaltoc a,
 .sy-rside a {
@@ -161,6 +167,15 @@ body {
 .sy-lside .globaltoc a:hover,
 .sy-rside a:hover {
   color: var(--kd-link-hover);
+}
+
+/* The current page on the left, and the section in view on the right, are underlined. */
+.sy-lside .globaltoc a.current,
+.sy-rside .localtoc li.active > a {
+  color: var(--kd-link);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
 }
 
 .sy-lside .globaltoc .caption {
@@ -184,7 +199,16 @@ pre.literal-block {
   border-radius: 0;
 }
 
-/* Text pygments leaves untagged takes alabaster's text color in both modes, so it stays dark on the green. */
+/* A code block's caption is a plain label above it, as in alabaster. */
+.yue .code-block-caption {
+  background: none;
+  padding: 0 0 0.3rem;
+  font-family: var(--sy-f-heading);
+  font-weight: 400;
+  color: var(--kd-text);
+}
+
+/* Text pygments leaves untagged takes alabaster's text color in both modes, so it stays dark on the cream. */
 .highlight {
   --syntax-text: #3e4349;
 }
@@ -247,45 +271,6 @@ pre.literal-block {
   font-family: var(--sy-f-heading);
   font-size: 1.35em;
   margin-top: 0;
-}
-
-.yue .kd-links p {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-}
-
-.yue .kd-links a {
-  display: inline-block;
-  padding: 0.4rem 1rem;
-  border: 1px solid var(--kd-link);
-  border-radius: 6px;
-  text-decoration: none;
-  font-weight: 700;
-}
-
-.yue .kd-links a:first-child {
-  background-color: var(--kd-link);
-  color: var(--kd-page);
-}
-
-.yue .kd-links a:hover {
-  border-color: var(--kd-link-hover);
-}
-
-.yue .kd-links a:first-child:hover {
-  background-color: var(--kd-link-hover);
-  color: var(--kd-page);
-}
-
-.yue .kd-badges p {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.yue .kd-badges img {
-  margin: 0;
 }
 
 /* The teahouse menu: the three-column list-table becomes a grid of cards. */

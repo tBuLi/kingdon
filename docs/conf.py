@@ -35,6 +35,7 @@ extensions = [
     'sphinx.ext.viewcode',
     'sphinx.ext.intersphinx',
     'sphinx.ext.autosectionlabel',
+    'sphinx.ext.autosummary',
     'nbsphinx',
 ]
 
@@ -58,9 +59,31 @@ nitpick_ignore = [
     ('py:class', 'kingdon.multivector.MultiVector.set'),
     # traitlets annotates with `import typing as t`, so the members GraphWidget inherits carry `t.Any` in their signatures, which resolves to nothing.
     ('py:class', 't.Any'),
+    # show-inheritance names these third-party bases, whose packages publish no intersphinx inventory.
+    ('py:class', 'anywidget.widget.AnyWidget'),
+    ('py:class', 'einops._backends.AbstractBackend'),
 ]
 
 autodoc_mock_imports = ["sympy"]
+
+# The API reference lists each module's members in autosummary tables, with a page per member in api/generated/.
+autosummary_generate = True
+# On a class page, list its members in the page's table of contents without repeating the class name.
+toc_object_entries_show_parents = 'hide'
+# API pages share section names such as "Helpers", and their member pages short titles such as "scalar";
+# label clashes elsewhere should still fail the build.
+_api_dir = os.path.join(os.path.dirname(__file__), 'api')
+_api_docs = []
+for _page in sorted(os.listdir(_api_dir)):
+    _module = _page.removesuffix('.rst')
+    if _module == 'index':
+        continue
+    _api_docs.append(f'api/{_module}')
+    with open(os.path.join(_api_dir, _page)) as _f:
+        # The names listed under each autosummary directive, which become api/generated/ pages.
+        _api_docs += [f'api/generated/kingdon.{_module}.{line.strip()}' for line in _f
+                      if line.startswith('   ') and not line.strip().startswith(':') and line.strip()]
+suppress_warnings = [f'autosectionlabel.{doc}' for doc in _api_docs]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -125,11 +148,14 @@ html_title = 'Kingdon'
 #
 html_theme_options = {
     'accent_color': 'cyan',
+    'light_logo': '_static/logo.png',
+    'dark_logo': '_static/logo.png',
     'github_url': 'https://github.com/tBuLi/kingdon',
     'nav_links': [
         {'title': 'Examples', 'url': 'examples/index'},
-        {'title': 'API', 'url': 'module_docs'},
+        {'title': 'API', 'url': 'api/index'},
         {'title': 'Teahouse', 'url': 'https://tbuli.github.io/teahouse/', 'external': True},
+        {'title': 'GitHub', 'url': 'https://github.com/tBuLi/kingdon', 'external': True},
     ],
     'globaltoc_expand_depth': 1,
     'show_ai_links': False,

@@ -142,7 +142,7 @@ plain arrays mix freely:
  
 
 
-**And it's** *fast*\ **.** New GAmphetamine-style CSE, on by default for built-in operators and optional for custom operators using `@alg.add_operator(symbolic=True) <https://kingdon.readthedocs.io/en/stable/module_docs.html#kingdon.algebra.Algebra.add_operator>`_. 
+**And it's** *fast*\ **.** New GAmphetamine-style CSE, on by default for built-in operators and optional for custom operators using `@alg.add_operator(symbolic=True) <https://kingdon.readthedocs.io/en/stable/api/generated/kingdon.algebra.Algebra.html#kingdon.algebra.Algebra.add_operator>`_. 
 3DPGA, counted in muls/adds — naive → CSE:
 ``R >> p`` 72/30 → **21/18** · ``p @ P`` 21/15 → **6/6** · ``P >> p`` 33/13 →
 **9/7**. That's hand-optimized level, automatically generated.
