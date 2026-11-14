@@ -31,6 +31,7 @@ class CompiledExpression(NamedTuple):
         returns a tuple of :code:`len(keys_out)`.
     :param wrapped_func: decorated func if a wrapper was provided, else identical to func.
     :param mvtype: type of the output multivector. Defaults to :code:`MultiVector`.
+    :param res_layout: layout of the output, from which `mvtype` was resolved. It can hold more than the layout of `mvtype`, which only has to cover it.
     """
     algebra: Algebra
     keys_out: tuple[int]
@@ -39,6 +40,7 @@ class CompiledExpression(NamedTuple):
     output_mv_idx: int | None = None
     wrapped_func: Callable | None = None
     values_asarray: Callable | None = None
+    res_layout: dict | None = None
 
     def __call__(self, *mvs):
         issymbolic = any(mv.issymbolic for mv in mvs)
@@ -89,7 +91,7 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type | None = None, 
     for cls, L in layouts.items():
         if MVType is not None and not issubclass(cls, MVType):
             continue
-        type_shape = getattr(cls, 'shape', ())
+        type_shape = getattr(cls, '_type_shape', ())
         if shape[:len(type_shape)] != type_shape:
             continue
         free = {k for k, v in L.items() if v is Ellipsis}
@@ -130,6 +132,7 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
 
     MVType = algebra.mvtype
     output_mv_idx = None  # If codegen modified one of the mvs using set, this will be the index of the modified mv.
+    res_layout = None
     if res is None:
         output_mv_idx = next(i for i, mv in enumerate(mvs) if mv != mvs_orig[i])
         res = mvs[output_mv_idx]
@@ -143,7 +146,7 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
         res_layout = {k: v for k, v in res_layout.items() if v != 0.0}
         # The generated code is elementwise, so its output has the shape of the types of its inputs, unless the inputs were unrolled along their shape.
         unrolled = any(isinstance(mv, list) or mv.shape for mv in mvs)
-        shape = res.shape if unrolled else max((type(mv).shape for mv in mvs), key=len)
+        shape = res.shape if unrolled else max((type(mv)._type_shape for mv in mvs), key=len)
         MVType, layout = resolve_layout(algebra._type_layouts, res_layout, default=algebra.mvtype, shape=tuple(shape))
 
         if layout:
@@ -163,7 +166,7 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
         args, exprs, funcname=funcname, cse=algebra.cse, output_mv_idx=output_mv_idx
     )
     return CompiledExpression(
-        algebra, keys, func, MVType or algebra.mvtype, output_mv_idx, wrapper(func) if wrapper else func, values_asarray=values_asarray
+        algebra, keys, func, MVType or algebra.mvtype, output_mv_idx, wrapper(func) if wrapper else func, values_asarray=values_asarray, res_layout=res_layout
     )
 
 def do_compile(codegen, *tapes, wrapper=None, values_asarray=None) -> CompiledExpression:

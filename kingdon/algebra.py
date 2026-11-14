@@ -251,7 +251,7 @@ class Algebra:
             self._type_layouts = {cls: layout for cls in self.types
                                   if (layout := self._bind_layout(cls, name='x'))}  # an empty layout matches an empty result at zero cost in resolve_layout, and would beat every other type.
             siblings = {cls: [c for c, L in self._type_layouts.items() if L == layout] for cls, layout in self._type_layouts.items()}
-            self._type_shape_siblings = {cls: sibs for cls, sibs in siblings.items() if any(c.shape for c in sibs)}
+            self._type_shape_siblings = {cls: sibs for cls, sibs in siblings.items() if any(c._type_shape for c in sibs)}
 
             # Add mv constructors to the algebra
             for cls in self._type_layouts: setattr(self, cls.__name__.lower(), partial(cls, self))

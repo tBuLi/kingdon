@@ -600,49 +600,91 @@ def test_no_types_above_octovector():
 
 
 def test_type_shape():
-    """ A type can fix the leading dimensions of its shape, which then discriminates it from types with the same layout. """
+    """
+    A type can be made of several multivectors, which discriminates it from types with the same layout.
+    Those dimensions of its values are not part of the shape of an instance.
+    """
     np = pytest.importorskip('numpy')
     einops = pytest.importorskip('einops')
     import kingdon.einops_backend
 
     class LineSegment(Point, shape=(2,)): pass
-    class SubSegment(LineSegment): pass
-    assert (MultiVector.shape, Point.shape, LineSegment.shape, SubSegment.shape) == ((), (), (2,), (2,))
 
     alg = Algebra(3, 0, 1, extra_types=[Point, LineSegment])
     seg = alg.linesegment(np.random.rand(3, 2))
+    segs = alg.linesegment(np.random.rand(3, 2, 5))
     pnt = alg.point(np.random.rand(3))
     motor = alg.evenmv(np.random.rand(8))
+    motors = alg.evenmv(np.random.rand(8, 5))
     with pytest.raises(ValueError):
         alg.linesegment(np.random.rand(3))
 
-    def check(mv, mvtype, shape):
+    def check(mv, mvtype, shape, values_shape=None):
         assert type(mv) is mvtype
         assert mv.shape == shape
+        if values_shape is not None:
+            assert np.shape(mv.values()) == values_shape
 
-    check(seg, LineSegment, (2,))
-    check(motor >> seg, LineSegment, (2,))
+    check(seg, LineSegment, (), (3, 2))
+    check(segs, LineSegment, (5,), (3, 2, 5))
+    assert (seg.ndim, segs.ndim, len(segs)) == (0, 1, 5)
+    with pytest.raises(TypeError):
+        len(seg)
+    with pytest.raises(IndexError):
+        seg[0]
+
+    # Generated code keeps the type.
+    check(motor >> seg, LineSegment, (), (3, 2))
+    check(motor >> segs, LineSegment, (5,), (3, 2, 5))
+    check(motors >> segs, LineSegment, (5,), (3, 2, 5))
     check(motor >> pnt, Point, ())
-    check(seg - seg, Trivector, (2,))
-    check(seg.grade(3), LineSegment, (2,))
-    check(seg[0], Point, ())
-    assert [(type(p), p.shape) for p in seg] == [(Point, ())] * 2
-    check(seg[0] & seg[1], Bivector, ())
-    check(stack([pnt, pnt]), Point, (2,))
-    check(alg.point(np.random.rand(3, 2)).grade(3), Point, (2,))
-    check(alg.point(np.random.rand(3, 5, 2))[0], Point, (2,))
-    check(stack([pnt, pnt, pnt]), Point, (3,))
+    check(segs - segs, Trivector, (2, 5))
+    check(segs.grade(3), LineSegment, (5,))
 
-    segs = alg.linesegment(np.random.rand(3, 2, 5))
-    check(segs, LineSegment, (2, 5))
-    check(motor >> segs, LineSegment, (2, 5))
-    check(segs[:, 0], LineSegment, (2,))
-    check(segs[0], Point, (5,))
-    check(einops.rearrange(segs, 'two n -> n two'), Point, (5, 2))
+    # The points of a segment are reached by casting.
+    check(seg.asmvtype(Point), Point, (2,), (3, 2))
+    start, end = seg.asmvtype(Point)
+    check(start & end, Bivector, ())
+    assert np.all(start.values() == seg.values()[:, 0])
+
+    # Indexing and stacking act on the shape of the instance, so they never change the type.
+    check(segs[0], LineSegment, (), (3, 2))
+    check(segs[1:3], LineSegment, (2,), (3, 2, 2))
+    assert np.all(segs[1].values() == segs.values()[:, :, 1])
+    assert [(type(s), s.shape) for s in segs] == [(LineSegment, ())] * 5
+    check(stack([seg, seg, seg]), LineSegment, (3,), (3, 2, 3))
+    check(stack([segs, segs, segs], stack_func=np.stack), LineSegment, (3, 5), (3, 2, 3, 5))
+    check(stack([pnt, pnt]), Point, (2,))
+    segs2 = alg.linesegment(np.zeros((3, 2, 5)))
+    segs2[1] = seg
+    segs2[3:] = segs[3:]
+    assert np.all(segs2[1].values() == seg.values()) and np.all(segs2[4].values() == segs[4].values()) and not np.any(segs2[0].values())
+
+    # Types that differ only in shape share their generated code.
+    assert alg.sw[motor, seg].func is alg.sw[motor, pnt].func
+    assert (alg.sw[motor, seg].mvtype, alg.sw[motor, pnt].mvtype) == (LineSegment, Point)
+    check(seg.conjugate(), LineSegment, ())
+    assert alg.conjugate[seg].func is alg.conjugate[pnt].func
+
+    # A shaped output type is also found when the unshaped type with its layout is not registered.
+    class USegment(UPoint, shape=(2,)): pass
+    alg2 = Algebra(3, 0, 1, extra_types=[Point, LineSegment, USegment])
+    alg2.point(np.random.rand(3)).undual()
+    check(alg2.linesegment(np.random.rand(3, 2)).undual(), USegment, ())
+
+    # einops only sees the shape of the instance.
+    grid = alg.linesegment(np.random.rand(3, 2, 5, 4))
+    check(einops.rearrange(grid, 'n m -> m n'), LineSegment, (4, 5), (3, 2, 4, 5))
+    assert np.all(einops.rearrange(grid, 'n m -> m n').values() == grid.values().transpose(0, 1, 3, 2))
+    check(einops.rearrange(grid, 'n m -> (n m)'), LineSegment, (20,), (3, 2, 20))
+    check(einops.reduce(grid, 'n m -> n', 'sum'), LineSegment, (5,), (3, 2, 5))
+    check(einops.repeat(seg, '-> n', n=4), LineSegment, (4,), (3, 2, 4))
+    check(einops.pack([seg, segs], '*')[0], LineSegment, (6,), (3, 2, 6))
     check(einops.pack([pnt, pnt], '*')[0], Point, (2,))
-    check(einops.rearrange(alg.point(np.random.rand(3, 5, 2)), 'n two -> two n'), Point, (2, 5))
+    check(einops.einsum(grid, np.ones(4), 'n m, m -> n'), LineSegment, (5,), (3, 2, 5))
+    assert np.allclose(einops.einsum(grid, np.ones(4), 'n m, m -> n').values(), grid.values().sum(axis=-1))
 
     layout = {'e023': ..., 'e013': ..., 'e012': ..., 'e123': 1}
     alg = Algebra(3, 0, 1, types=[{'name': 'Pnt', 'layout': layout}, {'name': 'Seg', 'layout': layout, 'shape': (2,)}])
-    check(alg.evenmv(np.random.rand(8)) >> alg.seg(np.random.rand(3, 2)), alg.seg.func, (2,))
-    check(alg.seg(np.random.rand(3, 2))[0], alg.pnt.func, ())
+    check(alg.evenmv(np.random.rand(8)) >> alg.seg(np.random.rand(3, 2)), alg.seg.func, ())
+    check(alg.seg(np.random.rand(3, 2)).asmvtype(alg.pnt.func), alg.pnt.func, (2,))
