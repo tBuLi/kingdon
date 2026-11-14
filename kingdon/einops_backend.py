@@ -5,7 +5,7 @@ from functools import lru_cache
 
 from einops._backends import AbstractBackend, get_backend
 
-from kingdon.multivector import MultiVector, _coefficients, _union_keys
+from kingdon.multivector import MultiVector, _coefficients, _fit_type_shape, _union_keys
 
 
 @lru_cache(256)
@@ -66,7 +66,7 @@ class KingdonBackend(AbstractBackend):
             values = [backend.reshape(v, shape) for v in values]
         else:
             values = get_backend(values).reshape(values, (len(x._keys), *shape))
-        return x.fromkeysvalues(x.algebra, x._keys, values)
+        return _fit_type_shape(x.fromkeysvalues(x.algebra, x._keys, values))
 
     def transpose(self, x: MultiVector, axes: tuple[int, ...]) -> MultiVector:
         values = x._values
@@ -75,7 +75,7 @@ class KingdonBackend(AbstractBackend):
             values = [backend.transpose(v, axes) for v in values]
         else:
             values = get_backend(values).transpose(values, (0, *(i + 1 for i in axes)))
-        return x.fromkeysvalues(x.algebra, x._keys, values)
+        return _fit_type_shape(x.fromkeysvalues(x.algebra, x._keys, values))
 
     def reduce(self, x: MultiVector, operation: str, axes: tuple[int, ...]) -> MultiVector:
         values = x._values
@@ -85,7 +85,7 @@ class KingdonBackend(AbstractBackend):
         else:
             # The axes have to be a tuple; numpy interprets a list as a single axis.
             values = get_backend(values).reduce(values, operation, tuple(i + 1 for i in axes))
-        return x.fromkeysvalues(x.algebra, x._keys, values)
+        return _fit_type_shape(x.fromkeysvalues(x.algebra, x._keys, values))
 
     def add_axis(self, x: MultiVector, new_position: int) -> MultiVector:
         """ Insert an axis of length one at `new_position`, used by :func:`einops.repeat`. """
@@ -95,7 +95,7 @@ class KingdonBackend(AbstractBackend):
             values = [backend.add_axis(v, new_position) for v in values]
         else:
             values = get_backend(values).add_axis(values, new_position + 1)
-        return x.fromkeysvalues(x.algebra, x._keys, values)
+        return _fit_type_shape(x.fromkeysvalues(x.algebra, x._keys, values))
 
     def tile(self, x: MultiVector, repeats: tuple[int, ...]) -> MultiVector:
         """ Repeat `x` `repeats` times along each of its axes, used by :func:`einops.repeat`. """
@@ -105,7 +105,7 @@ class KingdonBackend(AbstractBackend):
             values = [backend.tile(v, repeats) for v in values]
         else:
             values = get_backend(values).tile(values, (1, *repeats))
-        return x.fromkeysvalues(x.algebra, x._keys, values)
+        return _fit_type_shape(x.fromkeysvalues(x.algebra, x._keys, values))
 
     def to_numpy(self, x: MultiVector) -> MultiVector:
         """
@@ -147,7 +147,7 @@ class KingdonBackend(AbstractBackend):
             values = [backend.concat([c[i] for c in coefficients], axis) for i in range(len(keys))]
             if asarray:
                 values = backend.stack_on_zeroth_dimension(values)
-        return mvs[0].fromkeysvalues(mvs[0].algebra, keys, values)
+        return _fit_type_shape(mvs[0].fromkeysvalues(mvs[0].algebra, keys, values))
 
     def einsum(self, pattern, *operands):
         """
@@ -179,7 +179,7 @@ class KingdonBackend(AbstractBackend):
 
         backend = get_backend(next(v for v, mv in zip(values, is_mv) if mv))
         values = backend.einsum(_add_blade_axis(pattern, tuple(is_mv)), *values)
-        return base.fromkeysvalues(base.algebra, keys, values)
+        return _fit_type_shape(base.fromkeysvalues(base.algebra, keys, values))
 
     @staticmethod
     def _as_tensor(mv: MultiVector):

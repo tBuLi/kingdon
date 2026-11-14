@@ -24,7 +24,19 @@ class MultiVectorType(type):
     For example, :code:`MultiVector[3]` is interpreted as a MultiVectors of shape (N, 3) by :code:`Algebra.compile`,
     where N is the number of blades in the multivector.
     An empty subscript adds no dimensions, so :code:`MultiVector[()] is MultiVector`.
+
+    A type can fix the leading dimensions of the shape of its instances with the :code:`shape` class keyword,
+    e.g. :code:`class LineSegment(Point, shape=(2,))` for a line segment made of two points.
+    This is then available as :code:`LineSegment.shape`, and is inherited by subclasses.
     """
+    def __new__(mcs, name, bases, namespace, shape=None, **kwargs):
+        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
+        if shape is not None: cls._shape = tuple(shape)
+        return cls
+
+    @property
+    def shape(cls) -> tuple: return cls._shape
+
     def __getitem__(cls, item): return cls if item == () else (cls, item)
 
 
@@ -76,6 +88,8 @@ class MultiVector(metaclass=MultiVectorType):
     # Make MultiVector "primary" operand in operations involving ndarray.
     # (forces reflected (swapped) operands operations, like __radd__)
     __array_priority__: ClassVar[int] = 1
+
+    _shape: ClassVar[tuple] = ()
 
     def __copy__(self):
         return self.fromkeysvalues(self.algebra, self._keys, self._values, raw=True)
@@ -138,6 +152,8 @@ class MultiVector(metaclass=MultiVectorType):
         if len(keys) != len(values):
             raise TypeError('Length of `keys` and `values` have to match.')
         inst = cls.fromkeysvalues(algebra, keys, values, raw=cls._issymbolic(algebra, values))
+        if inst.shape[:len(cls.shape)] != cls.shape:
+            raise ValueError(f'The shape of a {cls.__name__} has to start with {cls.shape}, but got {tuple(inst.shape)}.')
         return inst
 
     @classmethod
@@ -320,7 +336,7 @@ class MultiVector(metaclass=MultiVectorType):
         res_layout.update({k: ... for k in items})
         if res_layout:
             from .codegen import resolve_layout
-            MVType, _ = resolve_layout(self.algebra._type_layouts, res_layout, default=self.algebra.mvtype)
+            MVType, _ = resolve_layout(self.algebra._type_layouts, res_layout, default=self.algebra.mvtype, shape=self.shape)
         else:
             MVType = self.algebra.mvtype
         return MVType.fromkeysvalues(self.algebra, tuple(items.keys()), list(items.values()), raw=self.issymbolic)
@@ -479,7 +495,7 @@ class MultiVector(metaclass=MultiVectorType):
             return_values = values.__class__(value[item] for value in values)
         else:
             raise IndexError("Cannot index a multivector with a non-iterable value.")
-        return self.__class__.fromkeysvalues(self.algebra, keys=self.keys(), values=return_values, raw=self.issymbolic)
+        return _fit_type_shape(self.__class__.fromkeysvalues(self.algebra, keys=self.keys(), values=return_values, raw=self.issymbolic))
 
     def __setitem__(self, indices, values: 'MultiVector'):
         if isinstance(values, MultiVector):
@@ -952,6 +968,16 @@ def _zeros_like(x):
     return x[None][:0].sum(axis=0)
 
 
+def _fit_type_shape(mv: MultiVector) -> MultiVector:
+    """ Cast `mv` to the type with the layout of :code:`type(mv)` whose shape fits the shape of `mv` best. """
+    if not (siblings := mv.algebra._type_shape_siblings.get(type(mv))):
+        return mv
+    shape = mv.shape
+    cls = max((c for c in siblings if shape[:len(c.shape)] == c.shape),
+              key=lambda c: (len(c.shape), c is type(mv)), default=type(mv))
+    return mv if cls is type(mv) else cls.fromkeysvalues(mv.algebra, mv._keys, mv._values, raw=True)
+
+
 def _union_keys(mvs: list[MultiVector]) -> tuple[int, ...]:
     """
     The keys of a multivector able to hold all of `mvs`: the union of their keys, ordered
@@ -1030,4 +1056,4 @@ def stack(mvs: list[MultiVector], stack_func=None) -> MultiVector[None]:
         stack_func = mvs[0].algebra.values_asarray
     keys = _union_keys(mvs)
     per_key = zip(*(_coefficients(mv, keys) for mv in mvs))
-    return type(mvs[0]).fromkeysvalues(mvs[0].algebra, keys, stack_func([stack_func(vals) for vals in per_key]))
+    return _fit_type_shape(type(mvs[0]).fromkeysvalues(mvs[0].algebra, keys, stack_func([stack_func(vals) for vals in per_key])))

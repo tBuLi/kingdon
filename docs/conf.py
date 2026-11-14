@@ -189,3 +189,12 @@ texinfo_documents = [
 
 # Always re-execute notebooks when building the docs
 nbsphinx_execute = 'auto'
+
+
+def setup(app):
+    import inspect
+    from sphinx.util.inspect import safe_getattr
+    from kingdon.multivector import MultiVectorType
+
+    # On a class, `shape` is the shape of the type, which hides the instance property of that name from autodoc.
+    app.add_autodoc_attrgetter(MultiVectorType, lambda obj, name, *default: inspect.getattr_static(obj, name) if name == 'shape' else safe_getattr(obj, name, *default))

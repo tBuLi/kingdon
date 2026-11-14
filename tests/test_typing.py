@@ -8,7 +8,7 @@ from kingdon import (
     Bireflection,
 )
 from kingdon.multivector import (
-    MultiVector, Direction, EVector,
+    MultiVector, Direction, EVector, stack,
     UPoint, Point, Translation,
     KVector,
 )
@@ -597,3 +597,49 @@ def test_no_types_above_octovector():
     alg = Algebra(9, large=False)
     assert type(alg.pss) is MultiVector and alg.pss.keys() == (len(alg) - 1,)
     assert alg.purevector([1], grade=9).grades == (9,)
+
+
+def test_type_shape():
+    """ A type can fix the leading dimensions of its shape, which then discriminates it from types with the same layout. """
+    np = pytest.importorskip('numpy')
+    einops = pytest.importorskip('einops')
+    import kingdon.einops_backend
+
+    class LineSegment(Point, shape=(2,)): pass
+    class SubSegment(LineSegment): pass
+    assert (MultiVector.shape, Point.shape, LineSegment.shape, SubSegment.shape) == ((), (), (2,), (2,))
+
+    alg = Algebra(3, 0, 1, extra_types=[Point, LineSegment])
+    seg = alg.linesegment(np.random.rand(3, 2))
+    pnt = alg.point(np.random.rand(3))
+    motor = alg.evenmv(np.random.rand(8))
+    with pytest.raises(ValueError):
+        alg.linesegment(np.random.rand(3))
+
+    def check(mv, mvtype, shape):
+        assert type(mv) is mvtype
+        assert mv.shape == shape
+
+    check(seg, LineSegment, (2,))
+    check(motor >> seg, LineSegment, (2,))
+    check(motor >> pnt, Point, ())
+    check(seg - seg, Trivector, (2,))
+    check(seg.grade(3), LineSegment, (2,))
+    check(seg[0], Point, ())
+    assert [(type(p), p.shape) for p in seg] == [(Point, ())] * 2
+    check(seg[0] & seg[1], Bivector, ())
+    check(stack([pnt, pnt]), LineSegment, (2,))
+    check(stack([pnt, pnt, pnt]), Point, (3,))
+
+    segs = alg.linesegment(np.random.rand(3, 2, 5))
+    check(segs, LineSegment, (2, 5))
+    check(motor >> segs, LineSegment, (2, 5))
+    check(segs[:, 0], LineSegment, (2,))
+    check(segs[0], Point, (5,))
+    check(einops.rearrange(segs, 'two n -> n two'), Point, (5, 2))
+    check(einops.pack([pnt, pnt], '*')[0], LineSegment, (2,))
+
+    layout = {'e023': ..., 'e013': ..., 'e012': ..., 'e123': 1}
+    alg = Algebra(3, 0, 1, types=[{'name': 'Pnt', 'layout': layout}, {'name': 'Seg', 'layout': layout, 'shape': (2,)}])
+    check(alg.evenmv(np.random.rand(8)) >> alg.seg(np.random.rand(3, 2)), alg.seg.func, (2,))
+    check(alg.seg(np.random.rand(3, 2))[0], alg.pnt.func, ())

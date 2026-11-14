@@ -50,7 +50,7 @@ class CompiledExpression(NamedTuple):
         )
 
 
-def resolve_layout(layouts: dict, res_layout: dict, MVType: type | None = None, default: type = MultiVector):
+def resolve_layout(layouts: dict, res_layout: dict, MVType: type | None = None, default: type = MultiVector, shape: tuple = ()):
     """
     Look up the best-matching MVType for a given result layout from a set of registered types.
 
@@ -61,6 +61,7 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type | None = None, 
     :param res_layout: the layout dict of the result whose type we are trying to
         identify, in the same ``{key: ... | number}`` form.
     :param MVType: optional class used to restrict the search to that type and its subclasses.
+    :param shape: the shape of the result. A type only matches if its own ``shape`` is a prefix of it.
     :return: ``(cls, layout)`` for the best match, or ``(None, None)`` if no
         registered type matches.
 
@@ -76,8 +77,8 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type | None = None, 
     When multiple types match, the most specific one wins: first minimising the
     number of free slots in the registered layout that coincide with fixed values
     in the result (tighter structural match), then minimising free slots that fall
-    outside the result entirely (smaller footprint). Ties are broken by
-    registration order in ``layouts``.
+    outside the result entirely (smaller footprint), then maximising the length of
+    the type's ``shape``. Ties are broken by registration order in ``layouts``.
     """
     res_free = {k for k, v in res_layout.items() if v is Ellipsis}
     res_fixed_keys = {k for k, v in res_layout.items() if v is not Ellipsis}
@@ -88,6 +89,9 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type | None = None, 
     for cls, L in layouts.items():
         if MVType is not None and not issubclass(cls, MVType):
             continue
+        type_shape = getattr(cls, 'shape', ())
+        if shape[:len(type_shape)] != type_shape:
+            continue
         free = {k for k, v in L.items() if v is Ellipsis}
         fixed_items = {(k, v) for k, v in L.items() if v is not Ellipsis}
         all_keys = list(L.keys())
@@ -97,10 +101,10 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type | None = None, 
             continue
         if not res_fixed_keys.issubset(all_keys):
             continue
-        cost = (len(free & res_fixed_keys), len(free - res_keys))
+        cost = (len(free & res_fixed_keys), len(free - res_keys), -len(type_shape))
         if best_cost is None or cost < best_cost:
             best_MVType, best_layout, best_cost = cls, L, cost
-            if cost == (0, 0):
+            if cost[:2] == (0, 0) and not shape:
                 break  # perfect fit; layouts are iterated in insertion order so this is optimal
 
     return best_MVType, best_layout
@@ -137,7 +141,10 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
         res_layout = {k: float(f) if is_number(f := str(v)) else ... for k, v in res.items()}
         # A zero coefficient carries no structural information: but full_layout could result in zeros.
         res_layout = {k: v for k, v in res_layout.items() if v != 0.0}
-        MVType, layout = resolve_layout(algebra._type_layouts, res_layout, default=algebra.mvtype)
+        # The generated code is elementwise, so its output has the shape of the types of its inputs, unless the inputs were unrolled along their shape.
+        unrolled = any(isinstance(mv, list) or mv.shape for mv in mvs)
+        shape = res.shape if unrolled else max((type(mv).shape for mv in mvs), key=len)
+        MVType, layout = resolve_layout(algebra._type_layouts, res_layout, default=algebra.mvtype, shape=tuple(shape))
 
         if layout:
             # In full_layout mode the result carries every free component of its type.
