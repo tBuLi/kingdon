@@ -73,6 +73,7 @@ Cite as
 
    installation
    usage
+   operators
 
 .. toctree::
    :caption: User guide

@@ -13,7 +13,7 @@ html:root {
   --code-block-background: #faf3e8;
 
   /* The desk, a faint tan like the paper around a page, and the page on it. */
-  --kd-desk: #ebe6dc;
+  --kd-desk: #e9e7e3;
   --kd-page: #ffffff;
   --kd-page-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), 0 8px 24px rgba(0, 0, 0, 0.08);
 
@@ -44,7 +44,7 @@ html:root {
   --sy-c-background: var(--kd-desk);
   --sy-c-foot-background: var(--kd-desk);
   --sy-c-foot-text: #888888;
-  --sy-c-background-dropback: #ebe6dccc;
+  --sy-c-background-dropback: #e9e7e3cc;
 
   --yue-c-link-1: var(--kd-link);
   --yue-c-link-2: var(--kd-link-hover);
@@ -209,9 +209,9 @@ pre.literal-block {
   color: var(--kd-text);
 }
 
-/* Names that sphinx-codeautolink links to the API reference: a faint dotted underline, solid on hover. */
+/* Names that sphinx-codeautolink links to the API reference are underlined only on hover. */
 .highlight a.sphinx-codeautolink-a {
-  text-decoration: underline dotted rgba(62, 67, 73, 0.45);
+  text-decoration: none;
   text-underline-offset: 3px;
 }
 
