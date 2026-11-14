@@ -9,7 +9,7 @@ html:root {
 }
 
 :root {
-  /* Code blocks are cream rather than Shibuya's accent tint, in both modes. */
+  /* Code blocks are cream rather than Shibuya's accent tint. */
   --code-block-background: #faf3e8;
 
   /* The desk, a faint tan like the paper around a page, and the page on it. */
@@ -57,6 +57,8 @@ html:root {
 /* The dark version of the same palette: a dim desk, a slate page, and alabaster's
    teal and brown lightened to keep their hue. */
 html.dark {
+  /* Dark-mode code uses the background of its own (github-dark) style. */
+  --code-block-background: var(--syntax-dark-background);
   --kd-desk: #16181b;
   --kd-page: #212429;
   --kd-page-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
@@ -219,8 +221,8 @@ pre.literal-block {
   text-decoration: underline solid var(--kd-link-hover);
 }
 
-/* Text pygments leaves untagged takes alabaster's text color in both modes, so it stays dark on the cream. */
-.highlight {
+/* In light mode, text pygments leaves untagged takes alabaster's text color, so it stays dark on the cream. */
+html:not(.dark) .highlight {
   --syntax-text: #3e4349;
 }
 

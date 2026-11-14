@@ -139,11 +139,8 @@ language = 'en'
 exclude_patterns = ['_build', 'build_docs', 'Thumbs.db', '.DS_Store', '**.ipynb_checkpoints']
 
 # The name of the Pygments (syntax highlighting) style to use.
-# alabaster's default, which Shibuya would otherwise swap for github-dark in dark mode.
-# Shibuya has no option for its dark style, so this sets it on its highlighter class.
+# alabaster's default, in light mode; in dark mode Shibuya uses its own github-dark style.
 pygments_style = 'sphinx'
-from shibuya._pygments import ShibuyaPygmentsBridge
-ShibuyaPygmentsBridge.dark_style_name = pygments_style
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = False
