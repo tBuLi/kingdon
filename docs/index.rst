@@ -32,18 +32,8 @@ Code Example
     >>> b * v
     -6 𝐞₂
 
-This example shows that only the :code:`e2` coefficient is calculated, despite the fact that there are
-6 bivector and 4 vector coefficients in 3DPGA. But by exploiting the sparseness of the input and by performing symbolic
-optimization, :code:`kingdon` knows that in this case only :code:`e2` can be non-zero.
-
-**And it's** *fast*\ **.** New GAmphetamine-style CSE, on by default for built-in operators and optional for custom operators using :meth:`@alg.add_operator(symbolic=True) <kingdon.algebra.Algebra.add_operator>`.
-3DPGA, counted in muls/adds — naive → CSE:
-``R >> p`` 72/30 → **21/18** · ``p @ P`` 21/15 → **6/6** · ``P >> p`` 33/13 →
-**9/7**. That's hand-optimized level, automatically generated.
-
 Teahouse Menu
 -------------
-If you are thirsty for some examples, please visit the `teahouse <https://tbuli.github.io/teahouse/>`_.
 A small selection of our items:
 
 .. include:: _gallery.rst.inc
