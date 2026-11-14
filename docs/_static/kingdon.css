@@ -1,0 +1,276 @@
+/* Shibuya, laid out as a sheet of paper on a grey desk, in the alabaster colors these docs used before. */
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;700;900&family=Lato:ital,wght@0,400;0,700;1,400&family=Roboto+Mono:wght@400;700&display=swap');
+
+/* html:root outranks the :root that Shibuya's inline webfont <style> sets after this file. */
+html:root {
+  --sy-f-text: "Lato", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Roboto Slab", Georgia, serif;
+  --sy-f-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+:root {
+  /* Code blocks take the pygments style's own background (pale green in light mode)
+     instead of Shibuya's accent tint. */
+  --code-block-background: var(--syntax-light-background);
+
+  /* The desk, and the page on it. */
+  --kd-desk: #e8e8e8;
+  --kd-page: #ffffff;
+  --kd-page-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), 0 8px 24px rgba(0, 0, 0, 0.08);
+
+  /* alabaster's palette */
+  --kd-text: #3e4349;
+  --kd-link: #004b6b;
+  --kd-link-hover: #6d4100;
+  --kd-rule: #b1b4b6;
+  --kd-faint-rule: #eeeeee;
+  --kd-code-bg: #ecf0f3;
+  --kd-code-text: #222222;
+  --kd-sidebar-text: #555555;
+  --kd-sidebar-link: #444444;
+  --kd-note-bg: #eeeeee;
+  --kd-note-border: #cccccc;
+  --kd-warn-bg: #ffcccc;
+  --kd-warn-border: #ffaaaa;
+
+  --sy-c-text: var(--kd-text);
+  --sy-c-heading: var(--kd-text);
+  --sy-c-bold: #000000;
+  --sy-c-light: var(--kd-sidebar-text);
+  --sy-c-link: var(--kd-link);
+  --sy-c-link-hover: var(--kd-link-hover);
+  --sy-c-background: var(--kd-desk);
+  --sy-c-foot-background: var(--kd-desk);
+  --sy-c-foot-text: #888888;
+  --sy-c-background-dropback: #e8e8e8cc;
+
+  --yue-c-link-1: var(--kd-link);
+  --yue-c-link-2: var(--kd-link-hover);
+  --yue-c-link-border: var(--kd-link);
+  --yue-c-code-text: var(--kd-code-text);
+  --yue-c-code-background: var(--kd-code-bg);
+  --yue-c-hr: var(--kd-rule);
+}
+
+/* The dark version of the same palette: a dim desk, a slate page, and alabaster's
+   teal and brown lightened to keep their hue. */
+html.dark {
+  --code-block-background: var(--syntax-dark-background);
+  --kd-desk: #16181b;
+  --kd-page: #212429;
+  --kd-page-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
+  --kd-text: #cfd3d8;
+  --kd-link: #6fbcdf;
+  --kd-link-hover: #e0a85e;
+  --kd-rule: #4a4f56;
+  --kd-faint-rule: #33373d;
+  --kd-code-bg: #2c3138;
+  --kd-code-text: #e6e8eb;
+  --kd-sidebar-text: #a3a9b0;
+  --kd-sidebar-link: #bfc4ca;
+  --kd-note-bg: #2a2e34;
+  --kd-note-border: #454a52;
+  --kd-warn-bg: #3d2526;
+  --kd-warn-border: #6b3a3b;
+
+  --sy-c-bold: #ffffff;
+  --sy-c-background-dropback: #16181bcc;
+}
+
+body {
+  background-color: var(--kd-desk);
+}
+
+/* The page */
+.sy-main {
+  background-color: var(--kd-page);
+  box-shadow: var(--kd-page-shadow);
+  border-radius: 8px;
+  margin: 1.5rem 0 4rem;
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .sy-main {
+    margin: 0.75rem 0 2rem;
+    border-radius: 6px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .sy-rside-inner {
+    padding-left: 1.75rem;
+  }
+}
+
+/* Sidebars sit on the desk, in alabaster's sidebar greys. */
+.sy-lside .globaltoc a,
+.sy-rside a {
+  color: var(--kd-sidebar-link);
+}
+
+.sy-lside .globaltoc a:hover,
+.sy-rside a:hover {
+  color: var(--kd-link-hover);
+}
+
+.sy-lside .globaltoc .caption {
+  font-family: var(--sy-f-heading);
+  color: var(--kd-text);
+}
+
+/* Headings */
+.yue h1,
+.yue h2,
+.yue h3,
+.yue h4 {
+  font-family: var(--sy-f-heading);
+}
+
+.yue h1 {
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  padding-bottom: 0.2em;
+  border-bottom: 3px solid currentColor;
+}
+
+.yue h2 {
+  padding-bottom: 0.2em;
+  border-bottom: 2px solid var(--kd-faint-rule);
+}
+
+/* alabaster underlines links with a dotted rule. */
+.yue a {
+  text-decoration-style: dotted;
+  font-weight: 400;
+}
+
+.yue a:hover {
+  color: var(--kd-link-hover);
+  text-decoration-color: var(--kd-link-hover);
+}
+
+.yue code {
+  font-weight: 400;
+}
+
+/* Admonitions, as alabaster drew them */
+.yue .admonition.note,
+.yue .admonition.seealso,
+.yue .admonition.tip,
+.yue .admonition.hint {
+  background-color: var(--kd-note-bg);
+  border-color: var(--kd-note-border);
+}
+
+.yue .admonition.warning,
+.yue .admonition.danger,
+.yue .admonition.caution,
+.yue .admonition.attention,
+.yue .admonition.error {
+  background-color: var(--kd-warn-bg);
+  border-color: var(--kd-warn-border);
+}
+
+/* Landing page */
+.yue .kd-tagline {
+  font-family: var(--sy-f-heading);
+  font-size: 1.35em;
+  margin-top: 0;
+}
+
+.yue .kd-links p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.yue .kd-links a {
+  display: inline-block;
+  padding: 0.4rem 1rem;
+  border: 1px solid var(--kd-link);
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.yue .kd-links a:first-child {
+  background-color: var(--kd-link);
+  color: var(--kd-page);
+}
+
+.yue .kd-links a:hover {
+  border-color: var(--kd-link-hover);
+}
+
+.yue .kd-links a:first-child:hover {
+  background-color: var(--kd-link-hover);
+  color: var(--kd-page);
+}
+
+.yue .kd-badges p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.yue .kd-badges img {
+  margin: 0;
+}
+
+/* The teahouse menu: the three-column list-table becomes a grid of cards. */
+.yue table.kd-gallery,
+.yue table.kd-gallery tbody {
+  display: block;
+  width: 100%;
+  border: 0;
+  font-size: 1em;
+}
+
+.yue table.kd-gallery tbody {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+  gap: 1rem;
+}
+
+.yue table.kd-gallery tr {
+  display: contents;
+}
+
+.yue table.kd-gallery td {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: 1px solid var(--kd-faint-rule);
+  border-radius: 6px;
+  overflow: hidden;
+  background: transparent;
+}
+
+.yue table.kd-gallery colgroup {
+  display: none;
+}
+
+.yue table.kd-gallery td a {
+  display: block;
+}
+
+.yue table.kd-gallery td img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  margin: 0;
+  transition: transform 0.2s ease;
+}
+
+.yue table.kd-gallery td:hover img {
+  transform: scale(1.03);
+}
+
+.yue table.kd-gallery td p {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-weight: 700;
+  font-size: 0.95em;
+}

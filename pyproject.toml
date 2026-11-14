@@ -36,7 +36,16 @@ test = ["pytest>=3", "einops", "array-api-compat"]
 # cupy is not listed because it needs a GPU; install it by hand with `pip install "cupy-cuda12x[ctk]"`, matching 12x/13x to your driver's CUDA version.
 # The [ctk] extra installs the CUDA libraries as wheels, which cuda-pathfinder prefers over a system-wide CUDA toolkit; a version mismatch with the latter is an access violation rather than an error.
 arrays = ["torch", "jax", "numba"]
-docs = ["sphinx", "einops", "nbsphinx", "ipykernel", "symfit", "matplotlib", "clifford"]
+docs = [
+    "sphinx",
+    "einops",
+    "nbsphinx",
+    "ipykernel",
+    "symfit",
+    "matplotlib",
+    "clifford",
+    "shibuya>=2026.7.12",
+]
 dev = [
     "ruff>=0.17.3",
 ]

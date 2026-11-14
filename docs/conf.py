@@ -101,6 +101,7 @@ language = 'en'
 exclude_patterns = ['_build', 'build_docs', 'Thumbs.db', '.DS_Store', '**.ipynb_checkpoints']
 
 # The name of the Pygments (syntax highlighting) style to use.
+# Shibuya uses it in light mode, and its own dark style in dark mode.
 pygments_style = 'sphinx'
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
@@ -112,18 +113,31 @@ todo_include_todos = False
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'alabaster'
+html_theme = 'shibuya'
+html_title = 'Kingdon'
 
 # Theme options are theme-specific and customize the look and feel of a
 # theme further.  For a list of options available for each theme, see the
 # documentation.
 #
-# html_theme_options = {}
+html_theme_options = {
+    'accent_color': 'cyan',
+    'github_url': 'https://github.com/tBuLi/kingdon',
+    'nav_links': [
+        {'title': 'Examples', 'url': 'examples/index'},
+        {'title': 'API', 'url': 'module_docs'},
+        {'title': 'Teahouse', 'url': 'https://tbuli.github.io/teahouse/', 'external': True},
+    ],
+    'globaltoc_expand_depth': 1,
+    'show_ai_links': False,
+}
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']  # '_static'
+# Frames each page like a sheet of paper, in the colors of the alabaster theme these docs used before.
+html_css_files = ['kingdon.css']
 
 
 # -- Options for HTMLHelp output ---------------------------------------

@@ -1,18 +1,28 @@
-Welcome to Kingdon's documentation!
-======================================
+=======
+Kingdon
+=======
 
-.. image:: https://img.shields.io/pypi/v/kingdon.svg
-        :target: https://pypi.python.org/pypi/kingdon
+.. rst-class:: kd-tagline
 
-.. image:: https://readthedocs.org/projects/kingdon/badge/?version=latest
-        :target: https://kingdon.readthedocs.io/en/latest/?version=latest
-        :alt: Documentation Status
+Pythonic Geometric Algebra Package
 
-.. image:: https://coveralls.io/repos/github/tBuLi/kingdon/badge.svg?branch=master
-        :target: https://coveralls.io/github/tBuLi/kingdon?branch=master
+.. rst-class:: kd-links
 
+:doc:`Get started <usage>` `✨ Try kingdon in your browser ✨ <https://tbuli.github.io/teahouse/>`_ `GitHub <https://github.com/tbuli/kingdon>`_
 
-`✨ Try kingdon in your browser ✨ <https://tbuli.github.io/teahouse/>`_
+.. rst-class:: kd-badges
+
+|pypi| |rtd| |coveralls|
+
+.. |pypi| image:: https://img.shields.io/pypi/v/kingdon.svg
+   :target: https://pypi.python.org/pypi/kingdon
+
+.. |rtd| image:: https://readthedocs.org/projects/kingdon/badge/?version=latest
+   :target: https://kingdon.readthedocs.io/en/latest/?version=latest
+   :alt: Documentation Status
+
+.. |coveralls| image:: https://coveralls.io/repos/github/tBuLi/kingdon/badge.svg?branch=master
+   :target: https://coveralls.io/github/tBuLi/kingdon?branch=master
 
 Features
 --------
@@ -23,8 +33,6 @@ It support both symbolic and numerical GA computations.
 Moreover, :code:`kingdon` uses `ganja.js <https://github.com/enkimute/ganja.js>`__ for visualization in notebooks,
 making it an extremely well rounded GA package.
 
-In bullet points:
-
 - Symbolically optimized code generation.
 - Leverage sparseness of input.
 - `ganja.js <https://github.com/enkimute/ganja.js>`__ enabled graphics in jupyter notebooks.
@@ -33,83 +41,76 @@ In bullet points:
 - Compatible with `einops <https://einops.rocks/>`__ if you :code:`import kingdon.einops_backend` before you do your einops magic.
 - Compatible with `numba <https://numba.pydata.org/>`__ and other JIT compilers to speed-up numerical computations.
 
+Code Example
+------------
+
+.. code-block:: python
+
+    >>> from kingdon import Algebra
+    >>> alg = Algebra(3, 0, 1)
+    >>> globals().update(alg.blades)
+    >>> b = 2 * e12
+    >>> v = 3 * e1
+    >>> b * v
+    -6 𝐞₂
+
+This example shows that only the :code:`e2` coefficient is calculated, despite the fact that there are
+6 bivector and 4 vector coefficients in 3DPGA. But by exploiting the sparseness of the input and by performing symbolic
+optimization, :code:`kingdon` knows that in this case only :code:`e2` can be non-zero.
+
+**And it's** *fast*\ **.** New GAmphetamine-style CSE, on by default for built-in operators and optional for custom operators using :meth:`@alg.add_operator(symbolic=True) <kingdon.algebra.Algebra.add_operator>`.
+3DPGA, counted in muls/adds — naive → CSE:
+``R >> p`` 72/30 → **21/18** · ``p @ P`` 21/15 → **6/6** · ``P >> p`` 33/13 →
+**9/7**. That's hand-optimized level, automatically generated.
+
 Teahouse Menu
-=============
+-------------
 If you are thirsty for some examples, please visit the `teahouse <https://tbuli.github.io/teahouse/>`_.
 A small selection of our items:
 
-.. list-table::
-   :widths: 33 33 33
-   :class: borderless
+.. include:: _gallery.rst.inc
 
-   * - .. image:: _static/pga2d_distances_and_angles.png
-          :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_distances_and_angles.ipynb
+Cite as
+-------
 
-       Land measurement 101
-     - .. image:: _static/pga2d_inverse_kinematics.png
-          :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_inverse_kinematics.ipynb
+.. code-block:: bibtex
 
-       Dimension agnostic IK
-     - .. image:: _static/pga2d_project_and_reject.png
-          :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_project_and_reject.ipynb
-
-       2D projection and intersection
-   * - .. image:: _static/pga3d_distances_and_angles.png
-          :target: https://tbuli.github.io/teahouse/lab/index.html?path=3DPGA%2Fex_3dpga_distances_and_angles.ipynb
-
-       Land measurement 420
-     - .. image:: _static/pga2d_hypercube_on_string.png
-          :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_hypercube_on_string.ipynb
-
-       Best-seller: Tesseract on a string!
-     - .. image:: _static/pga3d_points_and_lines.png
-          :target: https://tbuli.github.io/teahouse/lab/index.html?path=3DPGA%2Fex_3dpga_points_and_lines.ipynb
-
-       3D projection and intersection
-   * - .. image:: _static/exercise_spider6.png
-          :target: https://tbuli.github.io/teahouse/lab/index.html?path=exercises%2Fspider6.ipynb
-
-       Build-A-Spider Workshop!
-     - .. image:: _static/cga2d_points_and_circles.png
-          :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DCGA%2Fex_2dcga_points_and_circles.ipynb
-
-       Project and intersect, but round
-     - .. image:: _static/pga2d_fivebar.png
-          :target: https://tbuli.github.io/teahouse/lab/index.html?path=2DPGA%2Fex_2dpga_fivebar.ipynb
-
-       Fivebar mechanism
-   * - .. image:: _static/csga2d_opns.jpg
-          :target: https://tbuli.github.io/teahouse/lab/index.html?path=OPNS%2F2DCSGA.ipynb
-
-       2DCSGA!
-     - .. image:: _static/mga3d_points_and_lines.jpg
-          :target: https://tbuli.github.io/teahouse/lab/index.html?path=OPNS%2FMotherAlgebra.ipynb
-
-       Mother Algebra
-     - .. image:: _static/ccga3d_points_quadrics.jpg
-          :target: https://tbuli.github.io/teahouse/lab/index.html?path=OPNS%2F3DCCGA.ipynb
-
-       3DCCGA
-
+    @misc{roelfs2025willingkingdoncliffordalgebra,
+          title={The Willing Kingdon Clifford Algebra Library},
+          author={Martin Roelfs},
+          year={2025},
+          eprint={2503.10451},
+          archivePrefix={arXiv},
+          primaryClass={cs.MS},
+          url={https://arxiv.org/abs/2503.10451},
+    }
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
+   :caption: Getting started
    :hidden:
 
    installation
    usage
+
+.. toctree::
+   :caption: User guide
+   :hidden:
+
    arrays
    types
-   workings
    examples/index
-   contributing
-   authors
+
+.. toctree::
+   :caption: Reference
+   :hidden:
+
    module_docs
    history
 
-Indices and tables
-==================
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+.. toctree::
+   :caption: Development
+   :hidden:
+
+   workings
+   contributing
+   authors
