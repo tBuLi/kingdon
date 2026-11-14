@@ -36,6 +36,7 @@ extensions = [
     'sphinx.ext.intersphinx',
     'sphinx.ext.autosectionlabel',
     'sphinx.ext.autosummary',
+    'sphinx_codeautolink',
     'nbsphinx',
 ]
 
@@ -70,6 +71,10 @@ autodoc_mock_imports = ["sympy"]
 autosummary_generate = True
 # On a class page, list its members in the page's table of contents without repeating the class name.
 toc_object_entries_show_parents = 'hide'
+
+# Link the names in code examples to their API reference. Examples build on the blocks before them on the
+# same page, so each page is read as one session.
+codeautolink_concat_default = True
 # API pages share section names such as "Helpers", and their member pages short titles such as "scalar";
 # label clashes elsewhere should still fail the build.
 _api_dir = os.path.join(os.path.dirname(__file__), 'api')
@@ -152,10 +157,9 @@ html_theme_options = {
     'dark_logo': '_static/logo.png',
     'github_url': 'https://github.com/tBuLi/kingdon',
     'nav_links': [
-        {'title': 'Guides', 'url': 'index'},
+        {'title': 'Home', 'url': 'index'},
         {'title': 'Examples', 'url': 'examples/index'},
         {'title': 'API', 'url': 'api/index'},
-        {'title': 'Video', 'url': 'videos'},
         {'title': 'Teahouse', 'url': 'https://tbuli.github.io/teahouse/', 'external': True},
         {'title': 'GitHub', 'url': 'https://github.com/tBuLi/kingdon', 'external': True},
     ],

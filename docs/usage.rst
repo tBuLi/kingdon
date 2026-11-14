@@ -128,7 +128,8 @@ but with specific blades, we can do so by providing the :code:`keys` argument.
 .. code-block::
 
     >>> x = alg.multivector(name='x', keys=('e1', 'e12'))
-    >>> x1 𝐞₁ + x12 𝐞₁₂
+    >>> x
+    x1 𝐞₁ + x12 𝐞₁₂
 
 This can be done either by providing a tuple of strings which indicate which basis-vectors should be present,
 or by passing them as integers, i.e. :code:`keys=(0b01, 0b11)` is equivalent to the example above.
