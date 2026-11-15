@@ -1,3 +1,4 @@
+""" Operator dicts, which generate, cache and call the code for an operation on each combination of input types. """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
 
 
 class AlgebraError(Exception):
-    pass
+    """ Raised when an operation is not defined for its inputs. """
 
 
 def resolve_and_expand(func):
@@ -291,6 +292,7 @@ class UnaryOperatorDict(OperatorDict):
 
 
 class Registry(OperatorDict):
+    """ Operator dict for operators added with :meth:`Algebra.add_operator <kingdon.algebra.Algebra.add_operator>` without symbolic optimization. """
     def __getitem__(self, mvs: tuple[MultiVector]):
         types_in = tuple((type(mv), mv.keys()) for mv in mvs)
         shapes_in = tuple(mv.shape for mv in mvs)

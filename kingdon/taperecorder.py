@@ -1,3 +1,4 @@
+""" Used by :meth:`Algebra.add_operator <kingdon.algebra.Algebra.add_operator>` to generate code without symbolic optimization. """
 from typing import TYPE_CHECKING
 from dataclasses import dataclass, field
 from functools import cached_property, partialmethod

@@ -93,11 +93,11 @@ work:
  
 .. code-block:: python
  
-   v      = alg.point(vertices.T)                             # Point[(N,)]    the point cloud
-   facets = v[faces]                                          # Point[(M, 3)]  a point per face corner
-   planes = facets[..., 0] & facets[..., 1] & facets[..., 2]  # Vector[(M,)]   the face planes
-   area   = 0.5 * reduce(planes.norm(), 'm -> ', 'sum').e     # total surface area
-   volume = reduce(planes, 'm -> ', 'sum').e0 / 6             # signed volume of the mesh
+   v         = alg.upoint(vertices.T).dual()                              # Point[(N,)]    the point cloud
+   triangles = v[faces]                                                   # Point[(M, 3)]  a point per face corner
+   planes    = triangles[..., 0] & triangles[..., 1] & triangles[..., 2]  # Vector[(M,)]   the face planes
+   area      = 0.5 * reduce(planes.norm(), 'm -> ', 'sum').e              # total surface area
+   volume    = reduce(planes, 'm -> ', 'sum').e0 / 6                      # signed volume of the mesh
  
 Yes, the signed volume of the whole mesh is just the sum of the ``e0`` coefficients. 🤯
 
@@ -142,7 +142,7 @@ plain arrays mix freely:
  
 
 
-**And it's** *fast*\ **.** New GAmphetamine-style CSE, on by default for built-in operators and optional for custom operators using `@alg.add_operator(symbolic=True) <https://kingdon.readthedocs.io/en/stable/module_docs.html#kingdon.algebra.Algebra.add_operator>`_. 
+**And it's** *fast*\ **.** New GAmphetamine-style CSE, on by default for built-in operators and optional for custom operators using `@alg.add_operator(symbolic=True) <https://kingdon.readthedocs.io/en/stable/api/generated/kingdon.algebra.Algebra.html#kingdon.algebra.Algebra.add_operator>`_. 
 3DPGA, counted in muls/adds — naive → CSE:
 ``R >> p`` 72/30 → **21/18** · ``p @ P`` 21/15 → **6/6** · ``P >> p`` 33/13 →
 **9/7**. That's hand-optimized level, automatically generated.

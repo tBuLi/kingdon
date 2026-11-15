@@ -32,7 +32,7 @@ To get started with :code:`kingdon` on arrays types straight away, we highlight 
 
 :code:`np.asarray` expects all coefficients of a multivector to have the same shape, which is the common
 case and also the fastest option; it raises a :code:`ValueError` if they do not.
-See :ref:`Inhomogeneous output` for when and how to deal with such coefficients.
+See :ref:`arrays:Inhomogeneous output` for when and how to deal with such coefficients.
 The :code:`torch` version needs a guard because :code:`torch` has no object dtype: basis blades carry
 plain python numbers, which :code:`torch.stack` does not accept.
 Those are passed through as a list instead, which is what kingdon does by default anyway.
@@ -92,10 +92,10 @@ on which we can do operations:
     >>> v = (pga3d.blades.e0 + pga3d.evector(vertices.T)).dual()  # algebraic construction of PGA points.
     >>> v.shape
     Point[(N,)]
-    >>> facets = v[faces]
-    >>> facets.shape
+    >>> triangles = v[faces]
+    >>> triangles.shape
     Point[(M, 3)]
-    >>> planes = facets[..., 0] & facets[..., 1] & facets[..., 2]
+    >>> planes = triangles[..., 0] & triangles[..., 1] & triangles[..., 2]
     >>> planes.shape
     Vector[(M,)]
     >>> areas = 0.5 * planes.norm()  # The areas of the triangles is half that of the planes
@@ -283,8 +283,8 @@ This is now as simple as
 
 .. code-block::
 
-    >>> facets = v[faces]
-    >>> facets.shape
+    >>> triangles = v[faces]
+    >>> triangles.shape
     Point[(M, 3)]
 
 In order to compute the area and (signed) volume of the mesh we can use numpy's indexing
@@ -292,7 +292,7 @@ syntax to first create all planes,
 
 .. code-block::
 
-    >>> planes = facets[..., 0] & facets[..., 1] & facets[..., 2]
+    >>> planes = triangles[..., 0] & triangles[..., 1] & triangles[..., 2]
     >>> planes.shape
     Vector[(M,)]
 
@@ -327,9 +327,9 @@ Reconsider the example of the computation of all the planes of the mesh:
 
 .. code-block::
 
-    >>> type(facets.values())
+    >>> type(triangles.values())
     <class 'numpy.ndarray'>
-    >>> planes = facets[..., 0] & facets[..., 1] & facets[..., 2]
+    >>> planes = triangles[..., 0] & triangles[..., 1] & triangles[..., 2]
     >>> type(planes.values())
     <class 'list'>
     >>> type(planes.values()[0])

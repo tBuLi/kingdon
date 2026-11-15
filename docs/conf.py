@@ -35,6 +35,8 @@ extensions = [
     'sphinx.ext.viewcode',
     'sphinx.ext.intersphinx',
     'sphinx.ext.autosectionlabel',
+    'sphinx.ext.autosummary',
+    'sphinx_codeautolink',
     'nbsphinx',
 ]
 
@@ -58,9 +60,23 @@ nitpick_ignore = [
     ('py:class', 'kingdon.multivector.MultiVector.set'),
     # traitlets annotates with `import typing as t`, so the members GraphWidget inherits carry `t.Any` in their signatures, which resolves to nothing.
     ('py:class', 't.Any'),
+    # show-inheritance names these third-party bases, whose packages publish no intersphinx inventory.
+    ('py:class', 'anywidget.widget.AnyWidget'),
+    ('py:class', 'einops._backends.AbstractBackend'),
 ]
 
 autodoc_mock_imports = ["sympy"]
+
+# The API reference lists each module's members in autosummary tables, with a page per member in api/generated/.
+autosummary_generate = True
+# On a class page, list its members in the page's table of contents without repeating the class name.
+toc_object_entries_show_parents = 'hide'
+
+# Link the names in code examples to their API reference. Examples build on the blocks before them on the
+# same page, so each page is read as one session.
+codeautolink_concat_default = True
+# Prefixing labels with their document keeps same-named sections, such as each API page's "Functions", apart.
+autosectionlabel_prefix_document = True
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -101,6 +117,7 @@ language = 'en'
 exclude_patterns = ['_build', 'build_docs', 'Thumbs.db', '.DS_Store', '**.ipynb_checkpoints']
 
 # The name of the Pygments (syntax highlighting) style to use.
+# alabaster's default, in light mode; in dark mode Shibuya uses its own github-dark style.
 pygments_style = 'sphinx'
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
@@ -112,18 +129,40 @@ todo_include_todos = False
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'alabaster'
+html_theme = 'shibuya'
+html_title = 'Kingdon'
 
 # Theme options are theme-specific and customize the look and feel of a
 # theme further.  For a list of options available for each theme, see the
 # documentation.
 #
-# html_theme_options = {}
+html_theme_options = {
+    'accent_color': 'cyan',
+    'light_logo': '_static/logo.png',
+    'dark_logo': '_static/logo.png',
+    'github_url': 'https://github.com/tBuLi/kingdon',
+    'nav_links': [
+        {'title': 'Home', 'url': 'index'},
+        {'title': 'Examples', 'url': 'examples/index'},
+        {'title': 'API', 'url': 'api/index'},
+        {'title': 'Teahouse', 'url': 'https://tbuli.github.io/teahouse/', 'external': True},
+        {'title': 'GitHub', 'url': 'https://github.com/tBuLi/kingdon', 'external': True},
+    ],
+    # Only the pages the landing page lists; the API reference's modules are listed on its own page.
+    'toctree_maxdepth': 1,
+    'show_ai_links': False,
+}
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']  # '_static'
+# Pages copied as-is to the site root, such as the redirect from the old module_docs page.
+html_extra_path = ['_extra']
+# Frames each page like a sheet of paper, in the colors of the alabaster theme these docs used before.
+html_css_files = ['kingdon.css']
+# Opens links that leave the site in a new tab.
+html_js_files = ['kingdon.js']
 
 
 # -- Options for HTMLHelp output ---------------------------------------

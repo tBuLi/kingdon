@@ -35,6 +35,7 @@ def is_zero(v) -> bool:
 
 
 def dict_to_multivector(res: dict, algebra) -> "MultiVector":
+    """ Make a multivector out of a :code:`{key: value}` dict, dropping the values that are certainly zero. """
     # Drop zeros and put the remaining keys back in canon2bin order.
     nonzero = {k: v for k, v in res.items() if not is_zero(v)}
     items = [(k, nonzero[k]) for k in algebra.canon2bin.values() if k in nonzero]
@@ -43,6 +44,7 @@ def dict_to_multivector(res: dict, algebra) -> "MultiVector":
 
 
 def scalar(algebra, value) -> "MultiVector":
+    """ Scalar multivector of `algebra` with coefficient `value`. """
     return algebra.mvtype.fromkeysvalues(algebra, (0,), [value], raw=True)
 
 
@@ -255,6 +257,14 @@ Tuple representing a fraction.
 
 
 def inv(y: "MultiVector", symbolic: bool = False) -> "MultiVector":
+    r"""
+    Inverse of :code:`y`.
+
+    When :math:`y \widetilde{y}` is a scalar this is :math:`\widetilde{y} / (y \widetilde{y})`,
+    otherwise :func:`hitzer_inv` is used below 6D and :func:`shirokov_inv` above.
+
+    :param symbolic: if True, return the numerator and denominator as a :class:`Fraction` instead.
+    """
     alg = y.algebra
     # If y * ~y is a scalar, use the simple blade inverse ~y / (y * ~y).
     # This matches GAmphetamine's check: if (gradeOf(a*~a) == 0) return gp(reverse(a), inv(sq))
@@ -359,10 +369,16 @@ def div(x: "MultiVector", y: "MultiVector") -> "MultiVector":
 
 
 def normsq(x: "MultiVector") -> "MultiVector":
+    r""" Squared norm :math:`x \widetilde{x}`. """
     return gp(x, reverse(x))
 
 
 def outerexp(x: "MultiVector", asterms: bool = False) -> "MultiVector":
+    r"""
+    Outer exponential: :math:`1 + x + \tfrac{1}{2!} x \wedge x + \ldots`, which ends once the next term is zero.
+
+    :param asterms: if True, return the list of terms instead of their sum.
+    """
     alg = x.algebra
     if len(x.grades) != 1:
         warnings.warn('Outer exponential might not converge for mixed-grade multivectors.', RuntimeWarning)
@@ -387,18 +403,21 @@ def outerexp(x: "MultiVector", asterms: bool = False) -> "MultiVector":
 
 
 def outersin(x: "MultiVector") -> "MultiVector":
+    """ Outer sine: the odd terms of :func:`outerexp`. """
     odd_Ws = outerexp(x, asterms=True)[1::2]
     outersin = reduce(operator.add, odd_Ws)
     return outersin
 
 
 def outercos(x: "MultiVector") -> "MultiVector":
+    """ Outer cosine: the even terms of :func:`outerexp`. """
     even_Ws = outerexp(x, asterms=True)[0::2]
     outercos = reduce(operator.add, even_Ws)
     return outercos
 
 
 def outertan(x: "MultiVector") -> "MultiVector":
+    """ Outer tangent: :func:`outersin` divided by :func:`outercos`. """
     Ws = outerexp(x, asterms=True)
     even_Ws, odd_Ws = Ws[0::2], Ws[1::2]
     outercos = reduce(operator.add, even_Ws)
@@ -408,6 +427,7 @@ def outertan(x: "MultiVector") -> "MultiVector":
 
 
 def add(x: "MultiVector", y: "MultiVector") -> "MultiVector":
+    """ Sum :math:`x + y`. """
     vals = dict(x.items())
     for k, v in y.items():
         if k in vals:
@@ -418,6 +438,7 @@ def add(x: "MultiVector", y: "MultiVector") -> "MultiVector":
 
 
 def sub(x: "MultiVector", y: "MultiVector") -> "MultiVector":
+    """ Difference :math:`x - y`. """
     vals = dict(x.items())
     for k, v in y.items():
         if k in vals:
@@ -428,6 +449,7 @@ def sub(x: "MultiVector", y: "MultiVector") -> "MultiVector":
 
 
 def neg(x: "MultiVector") -> "MultiVector":
+    """ Negation :math:`-x`. """
     return dict_to_multivector({k: -v for k, v in x.items()}, x.algebra)
 
 
@@ -444,14 +466,17 @@ def involutions(x: "MultiVector", invert_grades: tuple[int, int] = (2, 3)) -> "M
 
 
 def reverse(x: "MultiVector") -> "MultiVector":
+    r""" Reversion :math:`\widetilde{x}`. """
     return involutions(x, invert_grades=(2, 3))
 
 
 def involute(x: "MultiVector") -> "MultiVector":
+    """ Main grade involution. """
     return involutions(x, invert_grades=(1, 3))
 
 
 def conjugate(x: "MultiVector") -> "MultiVector":
+    """ Clifford conjugation: involution and reversion combined. """
     return involutions(x, invert_grades=(1, 2))
 
 
@@ -479,6 +504,11 @@ def sqrt(x: "MultiVector") -> "MultiVector":
 
 
 def polarity(x: "MultiVector", undual: bool = False) -> "MultiVector":
+    """
+    Polarity dual: :code:`x` multiplied by the inverse pseudoscalar from the right.
+
+    :param undual: if True, compute the inverse operation, see :func:`unpolarity`.
+    """
     # The pseudoscalar, kept raw for the same reason as the constants in :func:`scalar`.
     pss = x.algebra.mvtype.fromkeysvalues(x.algebra, (len(x.algebra) - 1,), [1], raw=True)
     if undual:
@@ -491,10 +521,16 @@ def polarity(x: "MultiVector", undual: bool = False) -> "MultiVector":
 
 
 def unpolarity(x: "MultiVector") -> "MultiVector":
+    """ Inverse of :func:`polarity`. """
     return polarity(x, undual=True)
 
 
 def hodge(x: "MultiVector", undual: bool = False) -> "MultiVector":
+    """
+    Hodge dual: map each basis blade of :code:`x` to its complement.
+
+    :param undual: if True, compute the inverse operation, see :func:`unhodge`.
+    """
     if undual:
         res = {(key_dual := len(x.algebra) - 1 - eI): -v if x.algebra.signs[key_dual, eI] < 0 else v
                for eI, v in x.items()}
@@ -505,4 +541,5 @@ def hodge(x: "MultiVector", undual: bool = False) -> "MultiVector":
 
 
 def unhodge(x: "MultiVector") -> "MultiVector":
+    """ Inverse of :func:`hodge`. """
     return hodge(x, undual=True)

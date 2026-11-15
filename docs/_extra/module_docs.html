@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Redirecting to the API reference</title>
+<meta http-equiv="refresh" content="0; url=api/index.html">
+<script>
+  // Old anchors are object paths such as kingdon.algebra.Algebra.add_operator or module-kingdon.algebra;
+  // each module now has its own page, and each of its members a page in api/generated/.
+  const anchor = decodeURIComponent(location.hash.slice(1));
+  const [, module] = anchor.match(/^module-kingdon\.(\w+)$/) || [];
+  const parts = anchor.split(".");
+  let target = "api/index.html";
+  if (module) target = `api/${module}.html`;
+  else if (parts[0] === "kingdon" && parts.length >= 3) target = `api/generated/${parts.slice(0, 3).join(".")}.html${location.hash}`;
+  location.replace(target);
+</script>
+</head>
+<body>
+<p>The module documentation moved to the <a href="api/index.html">API reference</a>.</p>
+</body>
+</html>
