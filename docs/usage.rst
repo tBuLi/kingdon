@@ -53,7 +53,7 @@ The return type of :meth:`~kingdon.algebra.Algebra.multivector` is an instance o
     For example, the vectors above can also be created using :code:`u = alg.vector(name='u')`,
     a scalar by :code:`alg.scalar`, a bivector by :code:`alg.bivector`, a pseudoscalar by
     :code:`alg.pseudoscalar`, and so on.
-    More on :ref:`multivector types <Multivector Types>` will follow later.
+    More on :ref:`multivector types <usage:Multivector Types>` will follow later.
 
 :class:`~kingdon.multivector.MultiVector`'s support common math operators:
 
@@ -95,7 +95,7 @@ we see that the result is again a vector, as it should be.
     for the common scenario where :math:`u \in \text{Pin}(p,q,r)`.
     However, ensuring that :code:`u` is actually normalized is up to you.
     If you do not want to rely on this assumption, you can also define
-    your own :ref:`operators <Adding Operators>`.
+    your own :ref:`operators <usage:Adding Operators>`.
 
 These examples should show that the symbolic multivectors of :code:`kingdon`
 make it easy to do symbolic computations. Moreover, we can also use :mod:`sympy` expressions
@@ -140,7 +140,7 @@ Numerical Multivectors
 :code:`kingdon` makes no assumptions about the data structures that are passed into a multivector
 in order to support ducktyping and customization as much as possible.
 This also means it works really well with e.g. :code:`numpy` arrays or :code:`torch` tensors.
-(See the :ref:`array section <Array Syntax>` for more specific info.)
+(See the :ref:`array section <arrays:Array Syntax>` for more specific info.)
 
 For example, to repeat some of the examples above with numerical values, we could do
 
@@ -374,12 +374,12 @@ So for a mesh given by a :code:`vertices` array of shape :math:`(N, 3)` and an i
 
     >>> from kingdon.multivector import EVector, UPoint, Point, Translation
     >>> alg = Algebra(3, 0, 1, extra_types=[EVector, UPoint, Point, Translation])
-    >>> v = alg.upoint(vertices.T).dual()      # The point cloud.
-    >>> facets = v[faces]                      # A point per corner per face.
-    >>> facets.shape, v.shape
+    >>> v = alg.upoint(vertices.T).dual()  # The point cloud.
+    >>> triangles = v[faces]               # A point per corner per face.
+    >>> triangles.shape, v.shape
     (Point[(M, 3)], Point[(N,)])
     >>> alg.graph(
-    ...     0xEE8888, facets,
+    ...     0xEE8888, triangles,
     ...     0x000000, v,
     ...     pointRadius=0.2,
     ... )
@@ -400,7 +400,7 @@ Two things are worth keeping in mind when building the points:
 Everything that makes shaped multivectors convenient applies to the subjects as well: boolean
 masks and fancy indexing select what to draw, e.g. :code:`v[(plane & v).e > 0]` graphs only the
 points in front of a :code:`plane`, and operators act on the whole mesh at once, so
-:code:`facets[:, 0] & facets[:, 1] & facets[:, 2]` gives a :code:`Vector[(M,)]` of face planes
+:code:`triangles[:, 0] & triangles[:, 1] & triangles[:, 2]` gives a :code:`Vector[(M,)]` of face planes
 that can be graphed just as well. Since the mesh travels to :code:`ganja.js` as a single binary
 buffer, this is also much faster than graphing the elements individually.
 
@@ -520,7 +520,7 @@ the `large` option to :class:`~kingdon.algebra.Algebra` depending on your needs:
     >>> alg = Algebra(3, large=True)
     >>> alg = Algebra(8, large=False)
 
-A large algebra has no :ref:`multivector types <Multivector Types>`: every multivector is a
+A large algebra has no :ref:`multivector types <usage:Multivector Types>`: every multivector is a
 :class:`~kingdon.multivector.MultiVector`. The k-vector constructors such as
 :code:`alg.vector` and :code:`alg.pseudovector` are still there, they simply construct a
 :class:`~kingdon.multivector.MultiVector` of the requested grade.
@@ -589,7 +589,7 @@ when CSE is enabled vs not. Count columns use :code:`muls/adds`.
 
 .. note::
     These counts are reached by `kingdon`'s built-in operators, provided you use the
-    :ref:`multivector types <Multivector Types>` that carry the normalization: a :code:`bireflection`
+    :ref:`multivector types <usage:Multivector Types>` that carry the normalization: a :code:`bireflection`
     rather than a generic even multivector, a :code:`point` rather than a generic trivector.
     The :math:`\mathbf{e}_{032}` row is the exception, as it requires
     :func:`~kingdon.algebra.Algebra.compile` with the blade as a constant, since only then
@@ -660,7 +660,7 @@ We can enable numba just-in-time compilation by initiating an :class:`~kingdon.a
 which will apply numba's njit decorator to all of kingdon's generated functions.
 This comes with a significant cost the first time any operator is called, but subsequent calls to the same operator are
 significantly faster.
-However, it is worth mentioning that when dealing with :ref:`Numerical Multivectors` over e.g. numpy arrays,
+However, it is worth mentioning that when dealing with :ref:`usage:Numerical Multivectors` over e.g. numpy arrays,
 the benefit of using `numba` actually disappears rapidly as the numpy arrays become larger, since then most of the time
 is spend in numpy routines anyway.
 So you need to experiment carefully if numba is right for you.

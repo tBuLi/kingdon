@@ -22,15 +22,30 @@ symbolic simplification and just-in-time compilation to achieve high-performance
 Code Example
 ------------
 
+Multivectors over arrays index like arrays, so a whole mesh is handled without loops. Here a tetrahedron:
+
 .. code-block:: python
 
+    >>> import numpy as np
     >>> from kingdon import Algebra
-    >>> alg = Algebra(3, 0, 1)
-    >>> globals().update(alg.blades)
-    >>> b = 2 * e12
-    >>> v = 3 * e1
-    >>> b * v
-    -6 𝐞₂
+    >>> alg = Algebra.fromname("3DPGA")
+    >>> vertices = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    >>> faces = np.array([[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]])
+    >>> points = alg.upoint(vertices.T).dual()
+    >>> points.shape
+    Point[(4,)]
+    >>> triangles = points[faces]
+    >>> triangles.shape
+    Point[(4, 3)]
+    >>> planes = triangles[..., 0] & triangles[..., 1] & triangles[..., 2]
+    >>> planes.shape
+    Vector[(4,)]
+    >>> abs(planes).sum() / 2  # surface area
+    np.float64(2.3660254037844384)
+    >>> planes.e0.sum() / 6  # signed volume
+    np.float64(0.16666666666666666)
+
+See :doc:`arrays` for more.
 
 Teahouse Menu
 -------------

@@ -54,8 +54,8 @@ class Algebra:
         This will still be more sparse than computing with a full multivector, but not as sparse as possible.
         It does however, vastly reduce the number of possible expressions that have to be symbolically optimized.
     :param graded: Deprecated alias for :code:`full_layout`, which raises a :class:`FutureWarning` when given.
-    :param extra_types: multivector types to use in addition to the standard ones already provided by kingdon. See :ref:`multivector types <Multivector Types>`.
-    :param types: Complete list of multivector types to use. This will replace the standard ones. See :ref:`multivector types <Multivector Types>`.
+    :param extra_types: multivector types to use in addition to the standard ones already provided by kingdon. See :ref:`multivector types <usage:Multivector Types>`.
+    :param types: Complete list of multivector types to use. This will replace the standard ones. See :ref:`multivector types <usage:Multivector Types>`.
     :param simplify: If :code:`True` (default), we attempt to simplify as much as possible. Setting this to
         :code:`False` will reduce the number of calls to simplify. However, it seems that :code:`True` is still faster,
         because it keeps sympy expressions from growing too large, which makes both symbolic computations and
@@ -578,7 +578,7 @@ class Algebra:
         - :class:`~kingdon.multivector.MultiVector`: rendered according to its grade and the
           algebra's signature, e.g. as a point, line, plane, circle, sphere, etc.
           A multivector with array-valued coefficients (e.g. :code:`numpy` arrays) is unpacked
-          into the individual multivectors it represents, see :ref:`Meshes and point clouds`.
+          into the individual multivectors it represents, see :ref:`usage:Meshes and point clouds`.
         - :code:`int`: a hexadecimal color such as :code:`0x224488`, which sets the color of all
           subsequent subjects until the next color.
         - :code:`str`: a label, drawn at the position of the last drawn subject. Strings starting
@@ -610,8 +610,8 @@ class Algebra:
         .. code-block ::
 
             v = alg.upoint(vertices.T).dual()  # Point[(N,)]
-            facets = v[faces]                  # Point[(M, 3)]
-            alg.graph(0xEE8888, facets, 0x000000, v, pointRadius=0.2)
+            triangles = v[faces]               # Point[(M, 3)]
+            alg.graph(0xEE8888, triangles, 0x000000, v, pointRadius=0.2)
 
         Build the points as :code:`upoint(...).dual()` rather than :code:`point(vertices.T)`: the
         positional values of a type are its free coefficients in layout order, which for a

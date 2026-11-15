@@ -15,7 +15,6 @@
 # relative to the documentation root, use os.path.abspath to make it
 # absolute, like shown here.
 #
-import logging
 import os
 import sys
 sys.path.insert(0, os.path.abspath('..'))
@@ -76,29 +75,8 @@ toc_object_entries_show_parents = 'hide'
 # Link the names in code examples to their API reference. Examples build on the blocks before them on the
 # same page, so each page is read as one session.
 codeautolink_concat_default = True
-# API pages share section names such as "Helpers", and their member pages short titles such as "scalar";
-# label clashes elsewhere should still fail the build.
-_api_dir = os.path.join(os.path.dirname(__file__), 'api')
-_api_docs = []
-for _page in sorted(os.listdir(_api_dir)):
-    _module = _page.removesuffix('.rst')
-    if not _page.endswith('.rst') or _module == 'index':
-        continue
-    _api_docs.append(f'api/{_module}')
-    with open(os.path.join(_api_dir, _page)) as _f:
-        # The names listed under each autosummary directive, which become api/generated/ pages.
-        _api_docs += [f'api/generated/kingdon.{_module}.{line.strip()}' for line in _f
-                      if line.startswith('   ') and not line.strip().startswith(':') and line.strip()]
-suppress_warnings = [f'autosectionlabel.{doc}' for doc in _api_docs]
-
-
-class _SharedOperatorsLabel(logging.Filter):
-    """ The Operators page and Basic Usage's Operators section share a title, and so a label; nothing refers to it. """
-    def filter(self, record):
-        return 'duplicate label operators,' not in record.getMessage()
-
-
-logging.getLogger('sphinx.sphinx.ext.autosectionlabel').addFilter(_SharedOperatorsLabel())
+# Prefixing labels with their document keeps same-named sections, such as each API page's "Functions", apart.
+autosectionlabel_prefix_document = True
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -179,6 +157,8 @@ html_theme_options = {
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']  # '_static'
+# Pages copied as-is to the site root, such as the redirect from the old module_docs page.
+html_extra_path = ['_extra']
 # Frames each page like a sheet of paper, in the colors of the alabaster theme these docs used before.
 html_css_files = ['kingdon.css']
 # Opens links that leave the site in a new tab.
