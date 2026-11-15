@@ -5,6 +5,7 @@ from functools import partial, reduce, cached_property
 from collections import Counter
 from dataclasses import dataclass, field, fields, InitVar
 from collections.abc import Mapping, Callable
+from types import new_class
 import warnings
 
 import sympy
@@ -136,7 +137,7 @@ class Algebra:
     extra_types: InitVar[list | None] = None
     types: list = field(default_factory=list, repr=False, compare=False)
     _type_layouts: dict = field(default_factory=dict, init=False, repr=False, compare=False)
-    _type_shape_siblings: dict = field(default_factory=dict, init=False, repr=False, compare=False)  # Maps a type to the types sharing its layout, for layouts that are told apart by the shape of the type.
+    _type_shape_siblings: dict = field(default_factory=dict, init=False, repr=False, compare=False)
     mvtype: MultiVectorType = field(default=MultiVector, init=False, repr=False, compare=False)  # Multivector baseclass
 
     # Codegen & call customization.
@@ -246,7 +247,7 @@ class Algebra:
                 if self.d >= 2: self.types.extend([Bireflection])
                 if extra_types: self.types.extend(extra_types)
             # Dynamically generate classes for types if they are not already.
-            self.types = [type(t['name'], (self.mvtype,), {'layout': t['layout']}, shape=t.get('shape')) if isinstance(t, dict) else t
+            self.types = [new_class(t['name'], (self.mvtype[t.get('shape', ())],), exec_body=lambda ns, t=t: ns.update(layout=t['layout'])) if isinstance(t, dict) else t
                           for t in self.types]
             self._type_layouts = {cls: layout for cls in self.types
                                   if (layout := self._bind_layout(cls, name='x'))}  # an empty layout matches an empty result at zero cost in resolve_layout, and would beat every other type.

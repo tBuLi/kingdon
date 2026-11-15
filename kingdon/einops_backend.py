@@ -18,11 +18,11 @@ def _add_blade_axis(pattern: str, is_mv: tuple[bool, ...]) -> str:
     :code:`'a,ab->b'`. Since :code:`mv.shape` does not expose the blade axis, the
     values of a multivector have one axis more than its pattern accounts for.
     So we prepend an unused letter to every multivector operand and to the output,
-    turning :code:`'a,ab->b'` into :code:`'ca,ab->cb'`. The dimensions that are part of the
-    type of a multivector are hidden just the same, and get a letter each after the blade.
+    turning :code:`'a,ab->b'` into :code:`'ca,ab->cb'`. A type that is made of
+    several multivectors hides those dimensions as well, so they each get a letter too.
 
     :param pattern: compact einsum pattern, as produced by einops.
-    :param is_mv: for each operand, its number of hidden axes: zero unless it is a
+    :param is_mv: for each operand, how many axes it hides. This is zero unless it is a
         :class:`~kingdon.multivector.MultiVector`.
     """
     lefts, _, right = pattern.partition('->')
@@ -63,11 +63,12 @@ class KingdonBackend(AbstractBackend):
 
     def reshape(self, x: MultiVector, shape: tuple[int, ...]) -> MultiVector:
         values = x._values
+        type_shape = x._values_shape()[:len(x._type_shape)]
         if isinstance(values, (list, tuple)):
             backend = get_backend(values[0])
-            values = [backend.reshape(v, (*x._type_shape, *shape)) for v in values]
+            values = [backend.reshape(v, (*type_shape, *shape)) for v in values]
         else:
-            values = get_backend(values).reshape(values, (len(x._keys), *x._type_shape, *shape))
+            values = get_backend(values).reshape(values, (len(x._keys), *type_shape, *shape))
         return x.fromkeysvalues(x.algebra, x._keys, values)
 
     def transpose(self, x: MultiVector, axes: tuple[int, ...]) -> MultiVector:
