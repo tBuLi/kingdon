@@ -37,9 +37,6 @@ class MultiVectorType(type):
             if isinstance(base, Shape): cls._type_shape = tuple(base)
         return cls
 
-    def __getitem__(cls, item): 
-        return cls if item == () else Shape(item if isinstance(item, tuple) else (item,), cls)
-
 
 class Shape(tuple):
     """
@@ -100,6 +97,10 @@ class MultiVector(metaclass=MultiVectorType):
     __array_priority__: ClassVar[int] = 1
 
     _type_shape: ClassVar[tuple] = ()
+
+    # Type checkers accept a subscript on a class with __class_getitem__, but not one that comes from the metaclass.
+    def __class_getitem__(cls, item):
+        return cls if item == () else Shape(item if isinstance(item, tuple) else (item,), cls)
 
     def __copy__(self):
         return self.fromkeysvalues(self.algebra, self._keys, self._values, raw=True)

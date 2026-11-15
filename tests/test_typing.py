@@ -605,7 +605,7 @@ def test_type_shape():
     """
     np = pytest.importorskip('numpy')
     einops = pytest.importorskip('einops')
-    import kingdon.einops_backend
+    import kingdon.einops_backend  # noqa: F401  # registers KingdonBackend with einops.
 
     class LineSegment(Point[2]): pass
 
@@ -640,6 +640,9 @@ def test_type_shape():
     check(segs.grade(3), LineSegment, (5,))
 
     check(seg.asmvtype(Point), Point, (2,), (3, 2))
+    check(seg.asmvtype(Point).asmvtype(LineSegment), LineSegment, (), (3, 2))
+    with pytest.raises(ValueError):
+        pnt.asmvtype(LineSegment)
     assert repr(Point[2]) == repr(seg.asmvtype(Point).shape) == 'Point[(2,)]'
     assert Point[2] == Point[(2,)] == seg.asmvtype(Point).shape and Point[()] is Point
     start, end = seg.asmvtype(Point)
@@ -684,7 +687,7 @@ def test_type_shape():
     # None matches any size, but a type that names the size is preferred.
     class Polyline(Point[None]): pass
     alg3 = Algebra(3, 0, 1, extra_types=[Point, LineSegment, Polyline])
-    line = alg3.polyline(np.random.rand(3, 7, 5))
+    line = alg3.polyline(np.random.rand(3, 7, 5))  # Five polylines 7 points long.
     check(line, Polyline, (5,), (3, 7, 5))
     check(alg3.evenmv(np.random.rand(8)) >> line, Polyline, (5,), (3, 7, 5))
     check(alg3.evenmv(np.random.rand(8)) >> alg3.linesegment(np.random.rand(3, 2)), LineSegment, ())
