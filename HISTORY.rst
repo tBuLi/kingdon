@@ -152,3 +152,16 @@ Bugfix: width and height should be direct options to Algebra.graph
 3.1.1 (2026-11-04)
 ------------------
 * Added backpressure from python to javascript in the ``GraphWidget``, such that scenes that cannot keep up with the frame rate do not end up flooding the kernel, but rather cause the frame rate to drop.
+
+3.2.0 (2026-11-15)
+------------------
+**Features**
+
+* A type can now be made of several multivectors, by subscripting the type it is made of: ``class LineSegment(Point[2]): pass`` is a line segment made of two points, and ``class PolyLine(Point[None]): pass`` takes any number of them. Such a type keeps its identity through operators, so ``motor >> segment`` is a ``LineSegment`` again. The two points are not part of the shape of a line segment: a single one has shape ``()``. Use ``segment.asmvtype(Point)`` to get at the points, and ``points.asmvtype(LineSegment)`` to go back. See the "Types made of several multivectors" section of the docs.
+* A type and the types that are made of it share their generated code, so a ``LineSegment`` does not compile again what was already compiled for a ``Point``.
+* Subscripting a type, e.g. ``MultiVector[10]``, now gives a ``Shape`` instead of a ``(MultiVector, 10)`` tuple. This is the same object that ``mv.shape`` returns, and it serves both as typehint in ``Algebra.add_operator`` and as base class. Existing typehints keep working.
+* ``asmvtype`` can now cast between two types that have the same layout.
+
+**Documentation**
+
+* The docs have moved to the Shibuya theme, with a page per module in the API reference, a separate operators page, and a videos page (thanks @arsenovic).
