@@ -1,3 +1,4 @@
+""" Polynomials and rational polynomials, which :code:`kingdon` uses in place of :mod:`sympy` for fast symbolic code generation. """
 import itertools
 import math
 from collections import defaultdict
@@ -490,6 +491,7 @@ def poly_cse(expr, prot=None, iso=None):
 
 
 def compare(a, b):
+    """ Order two monomials, for sorting the terms of a :class:`Polynomial`. """
     if a is None: return 1
     if b is None: return -1
 
@@ -503,6 +505,7 @@ def compare(a, b):
 
 
 class Polynomial:
+    """ A polynomial, stored as a tuple of monomials, each a coefficient followed by its symbols. """
     __slots__ = ('args',)
 
     def __init__(self, coeff):
@@ -665,6 +668,7 @@ class Polynomial:
 
 
 class RationalPolynomial:
+    """ A ratio of two :class:`Polynomial`'s. """
     __slots__ = ('numer', 'denom')
 
     def __init__(self, numer, denom=None):

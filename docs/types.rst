@@ -6,9 +6,9 @@ Starting from kingdon v3, kingdon has a type system. The idea is simple: most mu
 compute with are not arbitrary. A normalized point in 3DPGA always has :code:`1` on
 :math:`\mathbf{e}_{123}`, a translation always has :code:`1` on the scalar. Kingdon does not store
 those values, and does not multiply, add or carry them around either, which is part of where the
-shorter code in :ref:`the CSE table <Performance Tips>` comes from.
+shorter code in :ref:`the CSE table <usage:Performance Tips>` comes from.
 
-Every algebra comes with a sensible set of :ref:`types <Multivector Types>` already. To add your
+Every algebra comes with a sensible set of :ref:`types <usage:Multivector Types>` already. To add your
 own, pass them to :class:`~kingdon.algebra.Algebra` as :code:`extra_types` (added to the standard
 list) or :code:`types` (replaces it). Each type gets a lowercase constructor on the algebra, and
 there are three ways to define one.

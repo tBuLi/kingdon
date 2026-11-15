@@ -1,0 +1,386 @@
+/* Shibuya, laid out as a sheet of paper on a grey desk, in the alabaster colors these docs used before. */
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;700;900&family=Lato:ital,wght@0,400;0,700;1,400&family=Roboto+Mono:wght@400;700&display=swap');
+
+/* html:root outranks the :root that Shibuya's inline webfont <style> sets after this file. */
+html:root {
+  --sy-f-text: "Lato", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Roboto Slab", Georgia, serif;
+  --sy-f-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+:root {
+  /* Code blocks are cream rather than Shibuya's accent tint. */
+  --code-block-background: #faf3e8;
+
+  /* The desk, a faint tan like the paper around a page, and the page on it. */
+  --kd-desk: #e9e7e3;
+  --kd-page: #ffffff;
+  --kd-page-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), 0 8px 24px rgba(0, 0, 0, 0.08);
+
+  /* alabaster's palette */
+  --kd-text: #3e4349;
+  --kd-link: #004b6b;
+  --kd-link-hover: #6d4100;
+  --kd-rule: #b1b4b6;
+  --kd-faint-rule: #eeeeee;
+  --kd-code-bg: #ecf0f3;
+  --kd-code-text: #222222;
+  --kd-sidebar-text: #555555;
+  --kd-sidebar-link: #444444;
+  --kd-note-bg: #eeeeee;
+  --kd-note-border: #cccccc;
+  --kd-warn-bg: #ffcccc;
+  --kd-warn-border: #ffaaaa;
+  --kd-nav-bg: #3e4349;
+  --kd-nav-text: #ffffff;
+  --kd-nav-hover: #b9dcec;
+
+  --sy-c-text: var(--kd-text);
+  --sy-c-heading: var(--kd-text);
+  --sy-c-bold: #000000;
+  --sy-c-light: var(--kd-sidebar-text);
+  --sy-c-link: var(--kd-link);
+  --sy-c-link-hover: var(--kd-link-hover);
+  --sy-c-background: var(--kd-desk);
+  --sy-c-foot-background: var(--kd-desk);
+  --sy-c-foot-text: #888888;
+  --sy-c-background-dropback: #e9e7e3cc;
+
+  --yue-c-link-1: var(--kd-link);
+  --yue-c-link-2: var(--kd-link-hover);
+  --yue-c-link-border: var(--kd-link);
+  --yue-c-code-text: var(--kd-code-text);
+  --yue-c-code-background: var(--kd-code-bg);
+  --yue-c-hr: var(--kd-rule);
+}
+
+/* The dark version of the same palette: a dim desk, a slate page, and alabaster's
+   teal and brown lightened to keep their hue. */
+html.dark {
+  /* Dark-mode code uses the background of its own (github-dark) style. */
+  --code-block-background: var(--syntax-dark-background);
+  --kd-desk: #16181b;
+  --kd-page: #212429;
+  --kd-page-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
+  --kd-text: #cfd3d8;
+  --kd-link: #6fbcdf;
+  --kd-link-hover: #e0a85e;
+  --kd-rule: #4a4f56;
+  --kd-faint-rule: #33373d;
+  --kd-code-bg: #2c3138;
+  --kd-code-text: #e6e8eb;
+  --kd-sidebar-text: #a3a9b0;
+  --kd-sidebar-link: #bfc4ca;
+  --kd-note-bg: #2a2e34;
+  --kd-note-border: #454a52;
+  --kd-warn-bg: #3d2526;
+  --kd-warn-border: #6b3a3b;
+  --kd-nav-bg: #0b0c0e;
+  --kd-nav-text: #e6e8eb;
+  --kd-nav-hover: #6fbcdf;
+
+  --sy-c-bold: #ffffff;
+  --sy-c-background-dropback: #16181bcc;
+}
+
+body {
+  background-color: var(--kd-desk);
+}
+
+/* The page */
+.sy-main {
+  background-color: var(--kd-page);
+  box-shadow: var(--kd-page-shadow);
+  border-radius: 8px;
+  margin: 1.5rem 0 4rem;
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .sy-main {
+    margin: 0.75rem 0 2rem;
+    border-radius: 6px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .sy-rside-inner {
+    padding-left: 1.75rem;
+  }
+}
+
+/* The navbar, in alabaster's charcoal text color. */
+.sy-head-blur {
+  background-color: var(--kd-nav-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.sy-head-brand,
+.sy-head-brand strong,
+.sy-head-actions button,
+.sy-head-socials a,
+.sy-head .theme-switch {
+  color: var(--kd-nav-text);
+}
+
+.sy-head .hamburger > span {
+  background-color: var(--kd-nav-text);
+}
+
+/* Below md the links and search fold into a dropdown that keeps the page colors, so only recolor them in the bar itself. */
+@media (min-width: 768px) {
+  .sy-head .searchbox input {
+    background-color: rgba(255, 255, 255, 0.12);
+    color: var(--kd-nav-text);
+  }
+
+  .sy-head .searchbox input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  .sy-head-links a,
+  .sy-head-links .link i.external-link {
+    color: var(--kd-nav-text);
+  }
+
+  .sy-head-links a:hover,
+  .sy-head-socials a:hover {
+    color: var(--kd-nav-hover);
+  }
+}
+
+/* The logo, as a round badge that keeps the engraving legible on the dark navbar. */
+.sy-head-brand img {
+  height: 36px;
+  width: 36px;
+  border-radius: 50%;
+  background-color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+
+/* Sidebars sit on the desk, in alabaster's sidebar greys. */
+.sy-lside .globaltoc a,
+.sy-rside a {
+  color: var(--kd-sidebar-link);
+}
+
+.sy-lside .globaltoc a:hover,
+.sy-rside a:hover {
+  color: var(--kd-link-hover);
+}
+
+/* The current page on the left (or the page it sits under), and the section in view on the right, are underlined. */
+.sy-lside .globaltoc a.current,
+.sy-lside .globaltoc li.current > a,
+.sy-rside .localtoc li.active > a {
+  color: var(--kd-link);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+.sy-lside .globaltoc .caption {
+  font-family: var(--sy-f-heading);
+  font-weight: 700;
+  color: var(--kd-link);
+}
+
+/* Entries sit further in than the section headings above them. */
+.sy-lside .globaltoc > ul {
+  padding-left: 1rem;
+}
+
+/* Code cells, as alabaster draws them. */
+.highlight > pre,
+pre.literal-block {
+  font-family: Consolas, Menlo, "DejaVu Sans Mono", "Bitstream Vera Sans Mono", monospace;
+  font-size: 0.9em;
+  line-height: 1.3em;
+  padding: 7px 30px;
+  border-radius: 0;
+}
+
+/* A code block's caption is a plain label above it, as in alabaster. */
+.yue .code-block-caption {
+  background: none;
+  padding: 0 0 0.3rem;
+  font-family: var(--sy-f-heading);
+  font-weight: 400;
+  color: var(--kd-text);
+}
+
+/* Names that sphinx-codeautolink links to the API reference are underlined only on hover. */
+.highlight a.sphinx-codeautolink-a {
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+
+.highlight a.sphinx-codeautolink-a:hover {
+  text-decoration: underline solid var(--kd-link-hover);
+}
+
+/* In light mode, text pygments leaves untagged takes alabaster's text color, so it stays dark on the cream. */
+html:not(.dark) .highlight {
+  --syntax-text: #3e4349;
+}
+
+/* Headings */
+.yue h1,
+.yue h2,
+.yue h3,
+.yue h4 {
+  font-family: var(--sy-f-heading);
+}
+
+.yue h1 {
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  padding-bottom: 0.2em;
+  border-bottom: 3px solid currentColor;
+}
+
+.yue h2 {
+  padding-bottom: 0.2em;
+  border-bottom: 2px solid var(--kd-faint-rule);
+}
+
+/* alabaster underlines links with a dotted rule. */
+.yue a {
+  text-decoration-style: dotted;
+  font-weight: 400;
+}
+
+.yue a:hover {
+  color: var(--kd-link-hover);
+  text-decoration-color: var(--kd-link-hover);
+}
+
+.yue code {
+  font-weight: 400;
+}
+
+/* Admonitions, as alabaster drew them */
+.yue .admonition.note,
+.yue .admonition.seealso,
+.yue .admonition.tip,
+.yue .admonition.hint {
+  background-color: var(--kd-note-bg);
+  border-color: var(--kd-note-border);
+}
+
+.yue .admonition.warning,
+.yue .admonition.danger,
+.yue .admonition.caution,
+.yue .admonition.attention,
+.yue .admonition.error {
+  background-color: var(--kd-warn-bg);
+  border-color: var(--kd-warn-border);
+}
+
+/* The API index lists its modules under small captions rather than section headings. */
+.yue .toctree-wrapper {
+  margin: 0;
+}
+
+.yue .toctree-wrapper p.caption {
+  margin: 0.9rem 0 0.1rem;
+  padding: 0;
+  border: 0;
+  font-family: var(--sy-f-heading);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--kd-link);
+}
+
+.yue .toctree-wrapper ul {
+  margin: 0;
+  padding-top: 0;
+  border: 0;
+}
+
+.yue .toctree-wrapper li {
+  margin: 0.15rem 0;
+}
+
+/* Landing page */
+.yue h1 em {
+  font-size: 0.55em;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+/* The teahouse menu: the three-column list-table becomes a grid of cards. */
+.yue table.kd-gallery,
+.yue table.kd-gallery tbody {
+  display: block;
+  width: 100%;
+  border: 0;
+  font-size: 1em;
+}
+
+.yue table.kd-gallery tbody {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+  gap: 1rem;
+}
+
+.yue table.kd-gallery tr {
+  display: contents;
+}
+
+.yue table.kd-gallery td {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: 1px solid var(--kd-faint-rule);
+  border-radius: 6px;
+  overflow: hidden;
+  background: transparent;
+}
+
+.yue table.kd-gallery colgroup {
+  display: none;
+}
+
+.yue table.kd-gallery td a {
+  display: block;
+}
+
+.yue table.kd-gallery td img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  margin: 0;
+  transition: transform 0.2s ease;
+}
+
+.yue table.kd-gallery td:hover img {
+  transform: scale(1.03);
+}
+
+.yue table.kd-gallery td p {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-weight: 700;
+  font-size: 0.95em;
+}
+
+/* Features: a compact two-column list. */
+.yue ul.kd-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+  column-gap: 2rem;
+  row-gap: 0;
+  margin-top: 0.75rem;
+}
+
+.yue ul.kd-features li,
+.yue ul.kd-features li > p {
+  margin: 0.15rem 0;
+}

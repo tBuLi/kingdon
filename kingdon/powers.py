@@ -1,3 +1,4 @@
+""" Raise multivectors to integer powers using as few multiplications as possible. """
 from __future__ import annotations
 
 import operator
@@ -8,6 +9,7 @@ from collections.abc import Callable
 
 @dataclass
 class AdditionChains:
+    """ Shortest addition chains for all integers up to `limit`, as used by :func:`power_supply`. """
     limit: int
 
     @cached_property

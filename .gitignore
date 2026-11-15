@@ -104,3 +104,6 @@ ENV/
 # IDE settings
 .vscode/
 .idea/
+
+# Stub pages autosummary generates for the API reference
+docs/api/generated/
