@@ -22,5 +22,7 @@ build:
 sphinx:
   configuration: docs/conf.py
 
-# Optionally build your docs in additional formats such as PDF and ePub
-formats: all
+# Shibuya cannot render the single-page HTML that the htmlzip format needs, so that format is left out.
+formats:
+  - pdf
+  - epub
