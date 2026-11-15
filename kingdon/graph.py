@@ -179,11 +179,11 @@ class GraphWidget(anywidget.AnyWidget):
             return []
         # Extract the draggable points.
         d = self.algebra.d
-        points = [s for s in self.pre_subjects if isinstance(s, MultiVector) and not s.shape]
+        points = [s for s in self.pre_subjects if isinstance(s, MultiVector) and not s._values_shape()]
         if self.algebra.r == 1 and (d == 3 or d == 4):  # PGA
-            points = [p for p in points if p.grades == (d - 1,) and not p.shape]
+            points = [p for p in points if p.grades == (d - 1,) and not p._values_shape()]
         elif self.options.get('conformal'):
-            points = [p for p in points if p.grades == (1,) and not p.shape]
+            points = [p for p in points if p.grades == (1,) and not p._values_shape()]
         return walker(encode(points, graded=self.graded))
 
     def _draggable_idxs(self):
@@ -195,11 +195,11 @@ class GraphWidget(anywidget.AnyWidget):
         # Extract the draggable points.
         d = self.algebra.d
         if self.algebra.r == 1 and (d == 3 or d == 4):  # PGA
-            filter_func = lambda s: isinstance(s, MultiVector) and s.grades == (d - 1,) and not s.shape
+            filter_func = lambda s: isinstance(s, MultiVector) and s.grades == (d - 1,) and not s._values_shape()
         elif self.options.get('conformal'):
-            filter_func = lambda s: isinstance(s, MultiVector) and s.grades == (1,) and not s.shape
+            filter_func = lambda s: isinstance(s, MultiVector) and s.grades == (1,) and not s._values_shape()
         else:
-            filter_func = lambda s: isinstance(s, MultiVector) and not s.shape
+            filter_func = lambda s: isinstance(s, MultiVector) and not s._values_shape()
         slot = 0
         for j, (pre_subject, subject) in enumerate(zip(self.pre_subjects, self.subjects)):
             if filter_func(pre_subject):

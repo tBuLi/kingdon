@@ -19,21 +19,23 @@ def _add_blade_axis(pattern: str, is_mv: tuple[bool, ...]) -> str:
     :code:`'a,ab->b'`. Since :code:`mv.shape` does not expose the blade axis, the
     values of a multivector have one axis more than its pattern accounts for.
     So we prepend an unused letter to every multivector operand and to the output,
-    turning :code:`'a,ab->b'` into :code:`'ca,ab->cb'`.
+    turning :code:`'a,ab->b'` into :code:`'ca,ab->cb'`. A type that is made of
+    several multivectors hides those dimensions as well, so they each get a letter too.
 
     :param pattern: compact einsum pattern, as produced by einops.
-    :param is_mv: for each operand, whether it is a :class:`~kingdon.multivector.MultiVector`.
+    :param is_mv: for each operand, how many axes it hides. This is zero unless it is a
+        :class:`~kingdon.multivector.MultiVector`.
     """
     lefts, _, right = pattern.partition('->')
     lefts = lefts.split(',')
     if len(lefts) != len(is_mv):
         raise ValueError(f'The pattern {pattern} does not match the number of operands.')
-    blade = next((letter for letter in string.ascii_letters if letter not in pattern), None)
-    if blade is None:
+    hidden = ''.join(letter for letter in string.ascii_letters if letter not in pattern)
+    if len(hidden) < max(is_mv):
         raise RuntimeError('Too many axes in einsum: no axis name left for the blade axis.')
 
-    lefts = [f'{blade}{left}' if mv else left for left, mv in zip(lefts, is_mv)]
-    return f"{','.join(lefts)}->{blade if any(is_mv) else ''}{right}"
+    lefts = [f'{hidden[:mv]}{left}' for left, mv in zip(lefts, is_mv)]
+    return f"{','.join(lefts)}->{hidden[:max(is_mv)]}{right}"
 
 
 def _zeros_like(x):
@@ -63,50 +65,55 @@ class KingdonBackend(AbstractBackend):
 
     def reshape(self, x: MultiVector, shape: tuple[int, ...]) -> MultiVector:
         values = x._values
+        type_shape = x._values_shape()[:len(x._type_shape)]
         if isinstance(values, (list, tuple)):
             backend = get_backend(values[0])
-            values = [backend.reshape(v, shape) for v in values]
+            values = [backend.reshape(v, (*type_shape, *shape)) for v in values]
         else:
-            values = get_backend(values).reshape(values, (len(x._keys), *shape))
+            values = get_backend(values).reshape(values, (len(x._keys), *type_shape, *shape))
         return x.fromkeysvalues(x.algebra, x._keys, values)
 
     def transpose(self, x: MultiVector, axes: tuple[int, ...]) -> MultiVector:
         values = x._values
+        k = len(x._type_shape)
         if isinstance(values, (list, tuple)):
             backend = get_backend(values[0])
-            values = [backend.transpose(v, axes) for v in values]
+            values = [backend.transpose(v, (*range(k), *(i + k for i in axes))) for v in values]
         else:
-            values = get_backend(values).transpose(values, (0, *(i + 1 for i in axes)))
+            values = get_backend(values).transpose(values, (*range(k + 1), *(i + k + 1 for i in axes)))
         return x.fromkeysvalues(x.algebra, x._keys, values)
 
     def reduce(self, x: MultiVector, operation: str, axes: tuple[int, ...]) -> MultiVector:
         values = x._values
+        k = len(x._type_shape)
         if isinstance(values, (list, tuple)):
             backend = get_backend(values[0])
-            values = [backend.reduce(v, operation, axes) for v in values]
+            values = [backend.reduce(v, operation, tuple(i + k for i in axes)) for v in values]
         else:
             # The axes have to be a tuple; numpy interprets a list as a single axis.
-            values = get_backend(values).reduce(values, operation, tuple(i + 1 for i in axes))
+            values = get_backend(values).reduce(values, operation, tuple(i + k + 1 for i in axes))
         return x.fromkeysvalues(x.algebra, x._keys, values)
 
     def add_axis(self, x: MultiVector, new_position: int) -> MultiVector:
         """ Insert an axis of length one at `new_position`, used by :func:`einops.repeat`. """
         values = x._values
+        k = len(x._type_shape)
         if isinstance(values, (list, tuple)):
             backend = get_backend(values[0])
-            values = [backend.add_axis(v, new_position) for v in values]
+            values = [backend.add_axis(v, new_position + k) for v in values]
         else:
-            values = get_backend(values).add_axis(values, new_position + 1)
+            values = get_backend(values).add_axis(values, new_position + k + 1)
         return x.fromkeysvalues(x.algebra, x._keys, values)
 
     def tile(self, x: MultiVector, repeats: tuple[int, ...]) -> MultiVector:
         """ Repeat `x` `repeats` times along each of its axes, used by :func:`einops.repeat`. """
         values = x._values
+        k = len(x._type_shape)
         if isinstance(values, (list, tuple)):
             backend = get_backend(values[0])
-            values = [backend.tile(v, repeats) for v in values]
+            values = [backend.tile(v, (*(1,) * k, *repeats)) for v in values]
         else:
-            values = get_backend(values).tile(values, (1, *repeats))
+            values = get_backend(values).tile(values, (*(1,) * (k + 1), *repeats))
         return x.fromkeysvalues(x.algebra, x._keys, values)
 
     def to_numpy(self, x: MultiVector) -> MultiVector:
@@ -138,6 +145,7 @@ class KingdonBackend(AbstractBackend):
         if len({type(mv) for mv in mvs}) != 1:
             raise TypeError('To concat all multivectors must have the same type.')
         keys = _union_keys(mvs)
+        axis += len(mvs[0]._type_shape)
         # The result holds its coefficients in a single array only if all the inputs do.
         asarray = all(not isinstance(mv._values, (list, tuple)) for mv in mvs)
 
@@ -166,14 +174,14 @@ class KingdonBackend(AbstractBackend):
         is_mv, values = [], []
         for op in operands:
             if not isinstance(op, MultiVector):
-                is_mv.append(False)
+                is_mv.append(0)
                 values.append(op)
             elif op._keys == keys:
-                is_mv.append(True)
+                is_mv.append(1 + len(op._type_shape))
                 values.append(self._as_tensor(op))
             elif op._keys == (0,):
                 # A scalar has no blade axis to speak of, so it enters as a plain tensor.
-                is_mv.append(False)
+                is_mv.append(0)
                 values.append(op._values[0])
             else:
                 raise TypeError('To einsum all multivectors must have the same keys (i.e. basis blades), '

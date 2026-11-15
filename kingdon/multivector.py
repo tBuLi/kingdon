@@ -22,11 +22,21 @@ if TYPE_CHECKING:
 class MultiVectorType(type):
     """
     MultiVector type allows typehinting for MultiVectors of a given shape.
-    For example, :code:`MultiVector[3]` is interpreted as a MultiVectors of shape (N, 3) by :code:`Algebra.compile`,
+    For example, :code:`MultiVector[3]` is interpreted as a MultiVector of shape (N, 3) by :code:`Algebra.compile`,
     where N is the number of blades in the multivector.
     An empty subscript adds no dimensions, so :code:`MultiVector[()] is MultiVector`.
+
+    A subscripted type can also be used as a base class, to make a type out of several multivectors.
+    For example, a line segment is two points: :code:`class LineSegment(Point[2]): pass`.
+    The two points are not part of the shape of a line segment, so a single line segment has shape :code:`()`.
+    To get at the points, cast the segment with :code:`segment.asmvtype(Point)`, which has shape :code:`(2,)`.
+    Use :code:`Point[None]` when the number of points is not fixed to represent an arbitrary polyline.
     """
-    def __getitem__(cls, item): return cls if item == () else (cls, item)
+    def __new__(mcs, name, bases, namespace, **kwargs):
+        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
+        for base in namespace.get('__orig_bases__', ()):
+            if isinstance(base, Shape): cls._type_shape = tuple(base)
+        return cls
 
 
 class Shape(tuple):
@@ -43,7 +53,8 @@ class Shape(tuple):
     Since this is a :class:`tuple` subclass a shape still compares equal to the plain tuple with
     the same entries.
 
-    The repr echoes the typehint syntax of :class:`MultiVectorType`.
+    Subscripting a type also makes a shape, e.g. :code:`Vector[5]`. It can be used as a typehint
+    or as a base class, see :class:`MultiVectorType`.
     """
     def __new__(cls, shape=(), mvtype=None):
         self = super().__new__(cls, shape)
@@ -55,6 +66,14 @@ class Shape(tuple):
 
     def __reduce__(self):
         return tuple, (tuple(self),)
+
+    def __mro_entries__(self, bases):
+        return (self.mvtype,)
+
+
+def fits_type_shape(type_shape: tuple, shape: tuple) -> bool:
+    """ Does `shape` start with `type_shape`? A :code:`None` in `type_shape` matches any size. """
+    return len(shape) >= len(type_shape) and all(t in (None, s) for t, s in zip(type_shape, shape))
 
 
 def to_shape_tuple(func):
@@ -77,6 +96,12 @@ class MultiVector(metaclass=MultiVectorType):
     # Make MultiVector "primary" operand in operations involving ndarray.
     # (forces reflected (swapped) operands operations, like __radd__)
     __array_priority__: ClassVar[int] = 1
+
+    _type_shape: ClassVar[tuple] = ()
+
+    # Type checkers accept a subscript on a class with __class_getitem__, but not one that comes from the metaclass.
+    def __class_getitem__(cls, item):
+        return cls if item == () else Shape(item if isinstance(item, tuple) else (item,), cls)
 
     def __copy__(self):
         return self.fromkeysvalues(self.algebra, self._keys, self._values, raw=True)
@@ -139,6 +164,8 @@ class MultiVector(metaclass=MultiVectorType):
         if len(keys) != len(values):
             raise TypeError('Length of `keys` and `values` have to match.')
         inst = cls.fromkeysvalues(algebra, keys, values, raw=cls._issymbolic(algebra, values))
+        if not fits_type_shape(cls._type_shape, shape := inst._values_shape()):
+            raise ValueError(f'The values of a {cls.__name__} need a shape that starts with {cls._type_shape}, but got {shape}.')
         return inst
 
     @classmethod
@@ -273,7 +300,11 @@ class MultiVector(metaclass=MultiVectorType):
     @cached_property
     @to_shape_tuple
     def shape(self) -> tuple:
-        """ Return the shape of the .values() attribute of this multivector. """
+        """ The shape of this multivector. This is the shape of its .values() without the blade axis, and without the dimensions that the type itself is made of. """
+        return self._values_shape()[len(self._type_shape):]
+
+    def _values_shape(self) -> tuple:
+        """ The shape of the .values() attribute of this multivector without the blade axis. """
         def _list_shape(v):
             if isinstance(v, (list, tuple)) and v and isinstance(v[0], (list, tuple)):
                 inner = _list_shape(v[0])
@@ -325,7 +356,7 @@ class MultiVector(metaclass=MultiVectorType):
         res_layout.update({k: ... for k in items})
         if res_layout:
             from .codegen import resolve_layout
-            MVType, _ = resolve_layout(self.algebra._type_layouts, res_layout, default=self.algebra.mvtype)
+            MVType, _ = resolve_layout(self.algebra._type_layouts, res_layout, default=self.algebra.mvtype, shape=self._type_shape)
         else:
             MVType = self.algebra.mvtype
         return MVType.fromkeysvalues(self.algebra, tuple(items.keys()), list(items.values()), raw=self.issymbolic)
@@ -481,12 +512,17 @@ class MultiVector(metaclass=MultiVectorType):
 
     def __getitem__(self, item):
         values = self.values()
+        type_dims = (slice(None),) * len(self._type_shape)
+        if type_dims and not isinstance(item, tuple):
+            item = (item,)
         if not isinstance(values, (tuple, list)):  # Assume it obeys the python array API
             if not isinstance(item, tuple):
                 item = (item,)
-            return_values = values[(slice(None), *item)]
+            return_values = values[(slice(None), *type_dims, *item)]
         elif values and all(iterable(value) for value in values):
-            if isinstance(values[0], (list, tuple)):  # These can only be sliced with integers.
+            if type_dims:
+                item = (*type_dims, *item)
+            elif isinstance(values[0], (list, tuple)):  # These can only be sliced with integers.
                 if isinstance(item, tuple) and len(item) == 1: item = item[0]
             return_values = values.__class__(value[item] for value in values)
         else:
@@ -501,6 +537,7 @@ class MultiVector(metaclass=MultiVectorType):
 
         if not isinstance(indices, tuple):
             indices = (indices,)
+        indices = (*(slice(None),) * len(self._type_shape), *indices)
 
         if isinstance(self.values(), (tuple, list)):
             for self_values, other_value in zip(self.values(), values):
@@ -617,7 +654,7 @@ class MultiVector(metaclass=MultiVectorType):
         MVType = MVType or self.algebra.mvtype
         if type(self) == MVType:
             return self
-        if layout := self.type_layout:
+        if (layout := self.type_layout) and layout != self.algebra._type_layouts.get(MVType):  # Types with the same layout hold the same values.
             # Sort the layout to canonical order, since a layout may be in whatever order its type likes.
             layout = {k: layout[k] for k in self.algebra.canon2bin.values() if k in layout}
             keysvalues = tuple((k, v if v != ... else getattr(self, self.algebra.bin2canon[k]))
@@ -1094,4 +1131,12 @@ def stack(mvs: list[MultiVector], stack_func=None) -> MultiVector[None]:
         stack_func = mvs[0].algebra.values_asarray
     keys = _union_keys(mvs)
     per_key = zip(*(_coefficients(mv, keys) for mv in mvs))
-    return type(mvs[0]).fromkeysvalues(mvs[0].algebra, keys, stack_func([stack_func(vals) for vals in per_key]))
+
+    def stack_after(vals, type_ndim):
+        """ Stack `vals` such that the new dimension comes after the first `type_ndim` dimensions. """
+        if not type_ndim:
+            return stack_func(vals)
+        return stack_func([stack_after([v[i] for v in vals], type_ndim - 1) for i in range(len(vals[0]))])
+
+    type_ndim = len(mvs[0]._type_shape)
+    return type(mvs[0]).fromkeysvalues(mvs[0].algebra, keys, stack_func([stack_after(vals, type_ndim) for vals in per_key]))

@@ -44,7 +44,7 @@ def test_codegen_weights(codegen_symbolcls):
             + w1*X0*Y1 + w4*X1*Y0 + w5*X1*Y2 + w8*X2*Y1 \
             + w2*X0*Y2 + w6*(X1^Y1) + w9*X2*Y0
 
-    assert weighted_gp.codegen_input_types == {'x': MultiVector, 'y': MultiVector, 'weights': (Scalar, 10)}
+    assert weighted_gp.codegen_input_types == {'x': MultiVector, 'y': MultiVector, 'weights': Scalar[10]}
     assert weighted_gp.codegen_output_type == MultiVector
     x = alg.multivector(name='x')
     y = alg.multivector(name='y')
@@ -64,8 +64,8 @@ def test_codegen_weights(codegen_symbolcls):
         weighted_gp_output = weighted_gp(x, y, weights)
         return stack([weighted_gp_output.map(lambda v: v.diff(wi)) for wi in weights.e])
 
-    assert weighted_gp_grad_weights.codegen_input_types == {'x': MultiVector, 'y': MultiVector, 'weights': (MultiVector, 10)}
-    assert weighted_gp_grad_weights.codegen_output_type == (MultiVector, 10)
+    assert weighted_gp_grad_weights.codegen_input_types == {'x': MultiVector, 'y': MultiVector, 'weights': MultiVector[10]}
+    assert weighted_gp_grad_weights.codegen_output_type == MultiVector[10]
     grad_weights = weighted_gp_grad_weights(x, y, weights)
     for wi, grad_w in zip(weights.e, grad_weights):
         assert grad_w == weighted_gp_output.map(lambda v: v.diff(wi))
@@ -77,8 +77,8 @@ def test_codegen_weights(codegen_symbolcls):
         go_wgp = go.sp(wgp_output)  # sp -> scalar product
         return stack([go_wgp.map(lambda v: v.diff(s)) for s in syms])
 
-    assert weighted_gp_grad.codegen_input_types == {'x': MultiVector, 'y': MultiVector, 'weights': (MultiVector, 10), 'go': MultiVector}
-    assert weighted_gp_grad.codegen_output_type == (MultiVector, 18)
+    assert weighted_gp_grad.codegen_input_types == {'x': MultiVector, 'y': MultiVector, 'weights': MultiVector[10], 'go': MultiVector}
+    assert weighted_gp_grad.codegen_output_type == MultiVector[18]
     go = alg.multivector(name='go')
     grads = weighted_gp_grad(x, y, weights, go)
     assert grads.keys() == (0,)  # scalar
@@ -95,7 +95,7 @@ def test_codegen_weights(codegen_symbolcls):
         mv1, mv2 = mvs
         return mv1*mv2
 
-    assert reduce_gp.codegen_input_types == {'mvs': (MultiVector, 2)}
+    assert reduce_gp.codegen_input_types == {'mvs': MultiVector[2]}
     assert reduce_gp.codegen_output_type == MultiVector
     x2 = alg2.multivector(name='x')
     y2 = alg2.multivector(name='y')
@@ -119,7 +119,7 @@ def test_wgp_list(codegen_symbolcls):
             + w1 * X0 * Y1 + w4 * X1 * Y0 + w5 * X1 * Y2 + w8 * X2 * Y1 \
             + w2 * X0 * Y2 + w6 * (X1 ^ Y1) + w9 * X2 * Y0
 
-    assert weighted_gp.codegen_input_types == {'x': MultiVector, 'y': MultiVector, 'weights': (MultiVector, 10)}
+    assert weighted_gp.codegen_input_types == {'x': MultiVector, 'y': MultiVector, 'weights': MultiVector[10]}
     assert weighted_gp.codegen_output_type == MultiVector
     x = alg.multivector(name='x')
     y = alg.multivector(name='y')
@@ -136,7 +136,7 @@ def test_wgp_list(codegen_symbolcls):
         weighted_gp_output = weighted_gp(x, y, weights)
         return [weighted_gp_output.map(lambda v: v.diff(wi)).filter() for wi in weights.e]
 
-    assert weighted_gp_grad_weights_list.codegen_input_types == {'x': MultiVector, 'y': MultiVector, 'weights': (MultiVector, 10)}
+    assert weighted_gp_grad_weights_list.codegen_input_types == {'x': MultiVector, 'y': MultiVector, 'weights': MultiVector[10]}
     assert weighted_gp_grad_weights_list.codegen_output_type == list[MultiVector]
     grad_weights_list = weighted_gp_grad_weights_list(x, y, weights)
     assert isinstance(grad_weights_list, list)
@@ -176,7 +176,7 @@ def test_codegen_wgp_generic(codegen_symbolcls):
         return tot
 
 
-    assert wgp.codegen_input_types == {'X': MultiVector, 'Y': MultiVector, 'weights': (MultiVector, None)}
+    assert wgp.codegen_input_types == {'X': MultiVector, 'Y': MultiVector, 'weights': MultiVector[None]}
     assert wgp.codegen_output_type == MultiVector
     # assert number_of_weights_wgp.codegen_input_types == {'X': MultiVector, 'Y': MultiVector}
     # assert number_of_weights_wgp.codegen_output_type == int

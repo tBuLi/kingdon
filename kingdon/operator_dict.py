@@ -9,6 +9,7 @@ import inspect
 
 
 from kingdon.multivector import MultiVector, Scalar, stack
+from kingdon.codegen import resolve_layout
 from kingdon.taperecorder import TapeRecorder
 if TYPE_CHECKING:
     from kingdon.algebra import Algebra
@@ -126,7 +127,7 @@ class OperatorDict(Mapping):
         return len(self.operator_dict)
 
     def _make_symbolic_mv(self, name, keys, shape, mvtype, mvtypehint) -> MultiVector:
-        depth = mvtypehint[1] if isinstance(mvtypehint, tuple) else 0  # Must come from the type-hint.
+        depth, = mvtypehint if isinstance(mvtypehint, tuple) else (0,)  # Codegen unpacks one dimension only.
         if depth is None: depth = shape[0]  # If the type hint was MultiVector[None] than the depth should be taken from the input
         # During codegen we need to ignore full_layout
         if not depth:
@@ -140,9 +141,31 @@ class OperatorDict(Mapping):
             for (name, MVTypeHint), (MVtype, keys), shape in zip(self.codegen_input_types.items(), types_in, shapes_in)
         )
 
+    def _from_unshaped(self, mvs: tuple[MultiVector]):
+        """
+        A line segment and a point run the same generated code, only the type of the output differs.
+        So take the code that was compiled for the plain types of `mvs`, and give it the output type that fits `mvs`.
+        Returns :code:`None` if `mvs` needs code of its own.
+        """
+        alg = self.algebra
+        types = [next((c for c in alg._type_shape_siblings.get(type(mv), ()) if not c._type_shape), type(mv)) for mv in mvs]
+        if all(cls is type(mv) for cls, mv in zip(types, mvs)) or any(isinstance(hint, tuple) for hint in self.codegen_input_types.values()):
+            return None
+        unshaped = tuple(cls.fromkeysvalues(alg, mv._keys, mv._values, raw=True) for cls, mv in zip(types, mvs))
+        compiled = self[unshaped[0] if isinstance(self, UnaryOperatorDict) else unshaped]
+        if compiled.res_layout is None:
+            return None
+        shape = max((type(mv)._type_shape for mv in mvs), key=len)
+        MVType, layout = resolve_layout(alg._type_layouts, compiled.res_layout, default=alg.mvtype, shape=shape)
+        if list(layout.items()) != list(alg._type_layouts.get(compiled.mvtype, {}).items()):
+            return None  # The code orders its output by the layout of its output type.
+        return compiled._replace(mvtype=MVType)
+
     def __getitem__(self, mvs: tuple[MultiVector]):
         types_in = tuple((type(mv), mv.keys()) for mv in mvs)
         shapes_in = tuple(mv.shape for mv in mvs)
+        if types_in not in self.operator_dict and (compiled := self._from_unshaped(mvs)):
+            self.operator_dict[types_in] = compiled
         if types_in not in self.operator_dict:
             # Make symbolic multivectors for each set of keys and generate the code.
             symbolic_mvs = self.make_symbolic_mvs(types_in, shapes_in)
@@ -244,6 +267,8 @@ class UnaryOperatorDict(OperatorDict):
 
     def __getitem__(self, mv: MultiVector):
         type_in = (type(mv), mv.keys())
+        if type_in not in self.operator_dict and (compiled := self._from_unshaped((mv,))):
+            self.operator_dict[type_in] = compiled
         if type_in not in self.operator_dict:
             symbolic_mv = self.make_symbolic_mvs((type_in,), (mv.shape,))[0]
             compiled = self.operator_dict[type_in] = self.algebra.compile(self.codegen, symbolic_mv, lambdifier=self.lambdifier, wrapper=self.wrapper, values_asarray=self.values_asarray, **self.lambdifier_kwargs)
@@ -298,7 +323,7 @@ class Registry(OperatorDict):
         return compiled_expr(*mvs)
 
     def _make_symbolic_mv(self, name, keys, shape, mvtype, mvtypehint) -> TapeRecorder:
-        depth = mvtypehint[1] if isinstance(mvtypehint, tuple) else 0  # Must come from the type-hint.
+        depth, = mvtypehint if isinstance(mvtypehint, tuple) else (0,)  # Codegen unpacks one dimension only.
         if depth is None: depth = shape[1]  # If the type hint was MultiVector[None] than the depth should be taken from the input
         if not depth:
             return TapeRecorder.fromname(self.algebra, name, keys, mvtype=mvtype)

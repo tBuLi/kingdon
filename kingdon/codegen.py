@@ -21,7 +21,7 @@ from sympy.printing.lambdarepr import LambdaPrinter
 from sympy import sympify
 
 from kingdon.polynomial import poly_cse, poly_format, Polynomial, RationalPolynomial
-from kingdon.multivector import MultiVector, MultiVectorType
+from kingdon.multivector import MultiVector, MultiVectorType, fits_type_shape
 if TYPE_CHECKING:
     from kingdon.algebra import Algebra
 
@@ -35,6 +35,7 @@ class CompiledExpression(NamedTuple):
         returns a tuple of :code:`len(keys_out)`.
     :param wrapped_func: decorated func if a wrapper was provided, else identical to func.
     :param mvtype: type of the output multivector. Defaults to :code:`MultiVector`.
+    :param res_layout: the layout of the output, before it was matched to `mvtype`.
     """
     algebra: Algebra
     keys_out: tuple[int]
@@ -43,6 +44,7 @@ class CompiledExpression(NamedTuple):
     output_mv_idx: int | None = None
     wrapped_func: Callable | None = None
     values_asarray: Callable | None = None
+    res_layout: dict | None = None
 
     def __call__(self, *mvs):
         issymbolic = any(mv.issymbolic for mv in mvs)
@@ -54,7 +56,7 @@ class CompiledExpression(NamedTuple):
         )
 
 
-def resolve_layout(layouts: dict, res_layout: dict, MVType: type | None = None, default: type = MultiVector):
+def resolve_layout(layouts: dict, res_layout: dict, MVType: type | None = None, default: type = MultiVector, shape: tuple = ()):
     """
     Look up the best-matching MVType for a given result layout from a set of registered types.
 
@@ -65,6 +67,7 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type | None = None, 
     :param res_layout: the layout dict of the result whose type we are trying to
         identify, in the same ``{key: ... | number}`` form.
     :param MVType: optional class used to restrict the search to that type and its subclasses.
+    :param shape: the shape a type is allowed to be made of. A type made of ``Point[2]`` can only match if this starts with 2.
     :return: ``(cls, layout)`` for the best match, or ``(None, None)`` if no
         registered type matches.
 
@@ -80,7 +83,8 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type | None = None, 
     When multiple types match, the most specific one wins: first minimising the
     number of free slots in the registered layout that coincide with fixed values
     in the result (tighter structural match), then minimising free slots that fall
-    outside the result entirely (smaller footprint). Ties are broken by
+    outside the result entirely (smaller footprint). After that a type made of a longer
+    shape wins, and then one that names more of its sizes. Ties are broken by
     registration order in ``layouts``.
     """
     res_free = {k for k, v in res_layout.items() if v is Ellipsis}
@@ -92,6 +96,9 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type | None = None, 
     for cls, L in layouts.items():
         if MVType is not None and not issubclass(cls, MVType):
             continue
+        type_shape = getattr(cls, '_type_shape', ())
+        if not fits_type_shape(type_shape, shape):
+            continue
         free = {k for k, v in L.items() if v is Ellipsis}
         fixed_items = {(k, v) for k, v in L.items() if v is not Ellipsis}
         all_keys = list(L.keys())
@@ -101,10 +108,10 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type | None = None, 
             continue
         if not res_fixed_keys.issubset(all_keys):
             continue
-        cost = (len(free & res_fixed_keys), len(free - res_keys))
+        cost = (len(free & res_fixed_keys), len(free - res_keys), -len(type_shape), type_shape.count(None))
         if best_cost is None or cost < best_cost:
             best_MVType, best_layout, best_cost = cls, L, cost
-            if cost == (0, 0):
+            if cost[:2] == (0, 0) and not shape:
                 break  # perfect fit; layouts are iterated in insertion order so this is optimal
 
     return best_MVType, best_layout
@@ -130,6 +137,7 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
 
     MVType = algebra.mvtype
     output_mv_idx = None  # If codegen modified one of the mvs using set, this will be the index of the modified mv.
+    res_layout = None
     if res is None:
         output_mv_idx = next(i for i, mv in enumerate(mvs) if mv != mvs_orig[i])
         res = mvs[output_mv_idx]
@@ -141,7 +149,10 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
         res_layout = {k: float(f) if is_number(f := str(v)) else ... for k, v in res.items()}
         # A zero coefficient carries no structural information: but full_layout could result in zeros.
         res_layout = {k: v for k, v in res_layout.items() if v != 0.0}
-        MVType, layout = resolve_layout(algebra._type_layouts, res_layout, default=algebra.mvtype)
+        # Code that was not unrolled treats every element alike, so the output is made of the same shape as the inputs.
+        unrolled = any(isinstance(mv, list) or mv.shape for mv in mvs)
+        shape = res.shape if unrolled else max((type(mv)._type_shape for mv in mvs), key=len)
+        MVType, layout = resolve_layout(algebra._type_layouts, res_layout, default=algebra.mvtype, shape=tuple(shape))
 
         if layout:
             # In full_layout mode the result carries every free component of its type.
@@ -160,7 +171,7 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
         args, exprs, funcname=funcname, cse=algebra.cse, output_mv_idx=output_mv_idx
     )
     return CompiledExpression(
-        algebra, keys, func, MVType or algebra.mvtype, output_mv_idx, wrapper(func) if wrapper else func, values_asarray=values_asarray
+        algebra, keys, func, MVType or algebra.mvtype, output_mv_idx, wrapper(func) if wrapper else func, values_asarray=values_asarray, res_layout=res_layout
     )
 
 def do_compile(codegen, *tapes, wrapper=None, values_asarray=None) -> CompiledExpression:
