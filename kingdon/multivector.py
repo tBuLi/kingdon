@@ -11,7 +11,7 @@ import re
 
 from sympy import Expr, Symbol, sympify, sin, cos, atan2, atanh, log, exp, Piecewise, Eq, S
 from sympy.utilities.iterables import iterable
-from numpy import broadcast_shapes
+from numpy import asarray, broadcast_shapes
 
 import kingdon.operators as ops
 from kingdon.polynomial import RationalPolynomial
@@ -103,6 +103,24 @@ class MultiVector(metaclass=MultiVectorType):
     # Type checkers accept a subscript on a class with __class_getitem__, but not one that comes from the metaclass.
     def __class_getitem__(cls, item):
         return cls if item == () else Shape(item if isinstance(item, tuple) else (item,), cls)
+
+    def __eq__(self, other):
+        """
+        Exact equality of the coefficients, reducing array coefficients to a single boolean.
+        A blade missing on one side is zero there, and the fixed values of a type count as coefficients, so multivectors of different types can be equal.
+        """
+        if not isinstance(other, MultiVector):
+            return NotImplemented
+        if self.algebra != other.algebra or self._values_shape() != other._values_shape():
+            return False
+
+        def equal(a, b):
+            a, b = (asarray(v) if isinstance(v, (list, tuple)) else v for v in (a, b))
+            result = a == b
+            return bool(result.all()) if hasattr(result, 'all') else bool(result)
+
+        mine, theirs = (dict(mv.asmvtype().items()) for mv in (self, other))
+        return all(equal(mine.get(k, 0), theirs.get(k, 0)) for k in mine.keys() | theirs.keys())
 
     def __copy__(self):
         return self.fromkeysvalues(self.algebra, self._keys, self._values, raw=True)

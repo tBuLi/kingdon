@@ -277,16 +277,15 @@ def test_lambdifier_sympy():
     # sympy did the codegen, not kingdon, which names its functions after the operation.
     assert alg.gp[u, v].func.__name__ == '_lambdifygenerated'
     assert ref.gp[ref_u, ref_v].func.__name__ == 'gp_6_x_6'
-    assert R.keys() == ref_R.keys()
-    assert R.values() == pytest.approx(ref_R.values())
+    assert R == ref_R
 
     # It reaches every operator of the algebra, not just the geometric product.
     assert alg.reverse[R].func.__name__ == '_lambdifygenerated'
-    assert (~R).values() == pytest.approx((~ref_R).values())
+    assert ~R == ~ref_R
 
     # And it can be given per added operator, together with kwargs for the lambdifier itself.
     @alg.add_operator(symbolic=True, lambdifier=sympy_lambdifier, modules='math')
     def normsq(x):
         return ops.gp(x, ops.reverse(x))
-    assert normsq(u).e == pytest.approx(5.)
+    assert normsq(u) == alg.scalar(e=5.)
     assert normsq[(u,)].func.__name__ == '_lambdifygenerated'
