@@ -126,9 +126,13 @@ def test_exp_mixed_squares(xp):
     )
     assert allclose((bivectors * bivectors).e, [1., -1., 0., 1.])
 
-    rotors = bivectors.exp()
-    assert_mv_allclose(rotors.log(), bivectors)
-    assert_mv_allclose((3 * rotors).log(), bivectors)
+    # A bivector with these blades is not always simple, which kingdon can not rule out without reading the coefficients.
+    with pytest.warns(UserWarning, match='simple'):
+        rotors = bivectors.exp()
+        assert_mv_allclose(rotors.log(), bivectors)
+        assert_mv_allclose((3 * rotors).log(), bivectors)
+    with pytest.warns(UserWarning, match='grades'):
+        assert_mv_allclose((rotors + algebra.multivector(e1234=0.)).log(), bivectors)
     assert rotors.shape == (4,)
     assert allclose(rotors.e, [math.cosh(1), math.cos(1), 1., math.cosh(1)])
     assert allclose(rotors.e15, [math.sinh(1), 0., 2., 0.])
@@ -138,24 +142,29 @@ def test_exp_mixed_squares(xp):
     assert all(xp.isdtype(v.dtype, 'real floating') for v in rotors.values())
 
 
-def test_batched_exp_rejects_non_simple_bivectors(xp):
-    """ exp and log refuse a batch containing a bivector that does not square to a scalar, rather than giving a wrong answer. """
-    algebra = Algebra(4)
-    angles = xp.asarray([0.1, 0.3])
-    with pytest.raises(NotImplementedError, match='simple'):
-        algebra.bivector(angles, keys=('e12', 'e34')).exp()
-    with pytest.raises(NotImplementedError, match='simple'):
-        (1 + algebra.bivector(angles, keys=('e12', 'e34'))).log()
+def test_exp_log_can_be_traced():
+    """ jax can compile exp and log, and map them over a batch. """
+    jax = pytest.importorskip('jax')
+    angles = jax.numpy.asarray([-0.8, 0., 0.4])
+    for algebra, key in ((Algebra(2), 'e12'), (Algebra(1, 1), 'e12'), (Algebra(1, 0, 1), 'e01')):
+        roundtrip = lambda x: getattr(algebra.bivector(**{key: x}).exp().log(), key)
+        assert allclose(jax.jit(roundtrip)(angles), angles)
+        assert allclose(jax.vmap(roundtrip)(angles), angles)
 
 
-def test_torch_exp_preserves_gradients_at_zero():
-    """ exp and log of torch tensors give finite values and the right gradients, also at a zero angle where the formulas divide by zero. """
+def test_torch_exp_log_gradients():
+    """
+    exp and log of torch tensors give the right gradients, also at a zero angle and at a large angle.
+    """
     torch = pytest.importorskip('torch')
-    angles = torch.tensor([-0.8, 0., 0.4], dtype=torch.float64, requires_grad=True)
+    angles = torch.tensor([-0.8, 0., 0.4, 800.], dtype=torch.float64, requires_grad=True)
     rotor = Algebra(2).bivector(angles[None, :]).exp()
-    torch.testing.assert_close(rotor.log().e12, angles)
     (rotor.e + rotor.e12).sum().backward()
     torch.testing.assert_close(angles.grad, torch.cos(angles) - torch.sin(angles))
+
+    angles = torch.tensor([-0.8, 0., 0.4], dtype=torch.float64, requires_grad=True)
+    Algebra(2).bivector(angles[None, :]).exp().log().e12.sum().backward()
+    torch.testing.assert_close(angles.grad, torch.ones_like(angles))
 
 
 def values_asarray(xp, values, broadcast=False):
@@ -191,10 +200,12 @@ def test_rearrangement(xp, pattern):
     y_gt = x.map(lambda v: rearrange(v, pattern.pattern, **pattern.axes_lengths))
 
     # einops should preserve type of .values() and match ground truth (gt)
+    assert type(y) is type(x) and y.keys() == x.keys()
     assert y == y_gt
     assert type(x.values()) == type(y.values())
 
     # So for the alt construction the types should be a list instead of an array
+    assert type(y_alt) is type(x_alt) and y_alt.keys() == x_alt.keys()
     assert y_alt == y_gt
     assert type(x_alt.values()) == type(y_alt.values())
 
@@ -248,6 +259,7 @@ def test_repeat(xp):
     y_gt = x.map(lambda v: repeat(v, 'a b -> a b c', c=5))
 
     assert y.shape == (3, 4, 5)
+    assert type(y) is type(x) and y.keys() == x.keys()
     assert y == y_gt
     assert type(x.values()) == type(y.values())
 

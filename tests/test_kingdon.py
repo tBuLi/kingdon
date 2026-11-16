@@ -1,12 +1,13 @@
 """Tests for `kingdon` package."""
 import copy
-import sys
 import itertools
 import operator
 from dataclasses import replace
 
 import pytest
 import numpy as np
+
+from fractions import Fraction
 
 from sympy import Symbol, expand, sympify, cos, sin, sqrt, atan, Piecewise, Eq
 from kingdon import (Algebra, MultiVector, Scalar, Vector, Bivector, Trivector, Quadvector,
@@ -1088,24 +1089,28 @@ def test_simple_exp():
     assert R == cos(l) + Piecewise((1, Eq(l**2, 0)), (sin(l) / l, True)) * B
     assert R.map(lambda v: v.subs(dict.fromkeys(B.free_symbols, 0))) == alg.scalar(e=1)  # The zero bivector exponentiates to exactly 1, not to sin(0)/0.
 
+    # Symbolically the logarithm undoes the exponential wherever that holds for every value of the symbols.
     t = Symbol('t', positive=True)
     u = Symbol('u', real=True, nonzero=True)
-    for B in (alg.bivector(e01=t, e02=1, e12=atan(t)), Algebra(1, 1).bivector(e12=u)):
+    for B in (alg.bivector(e01=t, e02=1, e12=atan(t)), Algebra(1, 1).bivector(e12=u), Algebra(2, 0, 1).bivector(e01=u, e02=t)):
         assert B.exp().log() == B
 
-def test_exp_log_with_given_functions_need_no_array_api_compat(monkeypatch):
-    """
-    When the user gives their own functions to exp and log, those are used and array_api_compat is not needed.
-    Without them, kingdon needs array_api_compat to choose the functions itself.
-    """
-    monkeypatch.setitem(sys.modules, 'array_api_compat', None)
+def test_exp_coefficient_types():
+    """ exp accepts the python number types, where a complex bivector gives the analytic continuation of the rotation. """
+    alg = Algebra(2)
+    for value in (1, 0.5, Fraction(1, 2), np.float32(0.5), 1 + 2j):
+        assert np.allclose(alg.bivector(e12=value).exp().values(), [np.cos(complex(value)), np.sin(complex(value))])
+    assert np.allclose(Algebra(1, 1).bivector(e12=Fraction(1, 2)).exp().values(), [np.cosh(0.5), np.sinh(0.5)])
+
+def test_exp_log_with_given_functions():
+    """ When the user gives their own functions to exp and log, those are used instead of the ones kingdon would choose. """
     B = Algebra(2).bivector(e12=np.array([0.3, -1.2]))
     R = B.exp(cosh=np.cos, sinhc=lambda l: np.sinc(l / np.pi), sqrt=lambda s: (-s) ** 0.5)
     assert np.allclose(R.e, np.cos(B.e12))
     L = R.log(atanh2c=lambda l, c: np.arctan2(l, c) / l, sqrt=lambda s: (-s) ** 0.5)
     assert np.allclose(L.e12, B.e12)
-    with pytest.raises(ImportError):
-        B.exp()
+    doubled = Algebra(2).bivector(e12=1.).exp(cosh=lambda l: 2 * np.cos(l), sinhc=lambda l: 2 * np.sinc(l / np.pi), sqrt=lambda s: (-s) ** 0.5)
+    assert np.allclose(doubled.values(), [2 * np.cos(1), 2 * np.sin(1)])
 
 def test_dual_numbers():
     alg = Algebra(r=1)

@@ -170,13 +170,13 @@ Unreleased
 ----------
 **Features**
 
-* ``exp`` works on batches of bivectors in any array library supported by ``array-api-compat`` (numpy, torch, jax, cupy). Each element gets the right formula, whether it squares to a negative number (rotation), a positive one (boost, dilation) or zero (translation), so one batch can mix them. The dtype is kept, and torch gradients are finite at zero.
-* New ``log`` method, the principal logarithm of a simple rotor, for python numbers, arrays and sympy expressions.
-* Like ``exp(cosh=, sinhc=, sqrt=)``, ``log(atanh2c=, sqrt=)`` takes user-provided functions. ``array-api-compat`` is only imported when kingdon has to choose these functions itself, so it remains an optional dependency.
+* ``exp`` works on batches of bivectors. Arrays that implement ``__array_namespace__`` of the array API standard need nothing else, for others the optional ``array-api-compat`` is asked for their functions. Each element gets the right formula, whether it squares to a negative number (rotation), a positive one (boost, dilation) or zero (translation), so one batch can mix them. The dtype is kept, and gradients are finite at zero and at large angles.
+* New ``log`` method, the principal logarithm of a simple rotor, for python numbers, arrays and sympy expressions. Like ``exp(cosh=, sinhc=, sqrt=)``, ``log(atanh2c=, sqrt=)`` takes user-provided functions.
+* ``exp`` and ``log`` never branch on the values of the coefficients, so array libraries can trace them to compile them or map them over a batch.
 * ``==`` works for multivectors with array coefficients and returns a single ``bool``. Multivectors are compared blade by blade: a blade missing on one side counts as zero, and the fixed values of a type count as coefficients, so multivectors of different types can be equal.
 
 **Changes**
 
 * An empty multivector now equals ``alg.scalar(e=0)``, and e.g. ``pga.multivector(e21=-1) == pga.blades.e12``.
 * The shape of a multivector broadcasts the shapes of its coefficients, so a python number next to arrays takes their shape. Coefficients with incompatible shapes raise a ``ValueError`` instead of giving the shape ``()``.
-* ``exp`` no longer claims support for complex coefficients.
+* ``exp`` no longer raises ``NotImplementedError`` for a bivector that does not square to a scalar, since that can only be seen from the values of the coefficients. It warns when a bivector with these blades can be non-simple, and ignores the other grades of the square.

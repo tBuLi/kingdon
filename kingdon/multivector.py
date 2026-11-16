@@ -4,14 +4,15 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import reduce, cached_property, wraps
+from numbers import Number
 from typing import ClassVar, TYPE_CHECKING
-from types import EllipsisType
+from types import EllipsisType, SimpleNamespace
 import re
+import warnings
 
-
+import numpy as np
 from sympy import Expr, Symbol, sympify, sin, cos, atan2, atanh, log, exp, Piecewise, Eq, S
 from sympy.utilities.iterables import iterable
-from numpy import asarray, broadcast_shapes
 
 import kingdon.operators as ops
 from kingdon.polynomial import RationalPolynomial
@@ -115,10 +116,12 @@ class MultiVector(metaclass=MultiVectorType):
             return False
 
         def equal(a, b):
-            a, b = (asarray(v) if isinstance(v, (list, tuple)) else v for v in (a, b))
+            a, b = (np.asarray(v) if isinstance(v, (list, tuple)) else v for v in (a, b))
             result = a == b
             return bool(result.all()) if hasattr(result, 'all') else bool(result)
 
+        if type(self) is type(other) and self._keys == other._keys:
+            return all(map(equal, self._values, other._values))
         mine, theirs = (dict(mv.asmvtype().items()) for mv in (self, other))
         return all(equal(mine.get(k, 0), theirs.get(k, 0)) for k in mine.keys() | theirs.keys())
 
@@ -331,7 +334,7 @@ class MultiVector(metaclass=MultiVectorType):
                 return (0,)
             shapes = {shape(v) for v in values}
             # Only broadcast when needed, since broadcast_shapes is slow compared to the common case of equal shapes.
-            return (len(values), *(shapes.pop() if len(shapes) == 1 else broadcast_shapes(*shapes)))
+            return (len(values), *(shapes.pop() if len(shapes) == 1 else np.broadcast_shapes(*shapes)))
 
         return shape(self._values)[1:]
 
@@ -809,10 +812,16 @@ class MultiVector(metaclass=MultiVectorType):
     def exp(self: "Bivector", cosh=None, sinhc=None, sqrt=None) -> "Bireflection":
         r"""
         Calculate the exponential of simple bivectors, meaning a bivector that squares to a scalar.
-        Works for python float and int dtypes, for arrays, and for symbolic expressions using sympy.
-        Real floating-point arrays retain their dtype and produce real rotors.
+        Works for python numbers, for symbolic expressions using sympy, and for arrays, by default.
         For more control, it is possible to explicitly provide a `cosh`, `sinhc`, and `sqrt` function.
-        If you provide one, you must provide all. Only the defaults for numbers and arrays need :mod:`array_api_compat`.
+        If you provide one, you must provide all.
+        
+        Arrays that implement :code:`__array_namespace__` of the array API standard need nothing else, for others :mod:`array_api_compat` is asked for their functions.
+        Each element of an array gets the formula that fits the sign of its square, and real arrays retain their dtype.
+        Whether the bivector is simple is not checked, since that depends on the values of the coefficients.
+        Instead a warning is given when a bivector with these blades can be non-simple.
+
+        
 
         The argument to `sqrt` is the scalar :math:`s = \langle x^2 \rangle_0`, while the input to the
         `cosh` and `sinhc` functions is the output of the sqrt function applied to :math:`s`.
@@ -829,34 +838,31 @@ class MultiVector(metaclass=MultiVectorType):
                 sqrt=lambda s: (-s)**0.5,
             )
         """
-        square = _square(self)
-        if square.grades and square.grades != (0,):
-            raise NotImplementedError(
-                'Currently only elements that square to a scalar (i.e. are simple) can be exponentiated.'
-            )
-
+        square = _simple_square(self)
         if sqrt is not None or cosh is not None or sinhc is not None:
-            length = sqrt(square.e)
+            length = sqrt(square)
             return self * sinhc(length) + cosh(length)
 
-        if not square.keys():  # Null case
+        if isinstance(square, Number) and square == 0:
+            # Adding the blade rather than the number 1 lets the algebra find the type of the result, e.g. a Translation.
             return self + self.algebra.blades.e
 
         if self.issymbolic:
-            length = (-square.e) ** S.Half
-            return self * Piecewise((1, Eq(square.e, 0)), (sin(length) / length, True)) + cos(length)
+            # sin(x)/x rather than sinc, which sympy can not simplify away when taking the logarithm of the result.
+            length = (-square) ** S.Half
+            return self * Piecewise((1, Eq(square, 0)), (sin(length) / length, True)) + cos(length)
 
-        xp, square = _arrays_like(self, square.e)
+        xp = _namespace(square)
         zero = square == 0
-        one = xp.ones_like(square)
-
-        # Substitute before taking roots and dividing, so zero entries
-        # remain finite even when the backend evaluates both where branches.
-        length = xp.sqrt(xp.where(zero, one, xp.abs(square)))
-        c = xp.where(square > 0, xp.cosh(length), xp.cos(length))
-        s = xp.where(square > 0, xp.sinh(length), xp.sin(length)) / length
-
-        return self * xp.where(zero, one, s) + xp.where(zero, one, c)
+        # True for positive reals only, without ordering complex numbers.
+        hyperbolic = square == xp.abs(square)
+        # Substitute before taking roots, dividing and calling cosh and sinh, so no entry can produce a nan or inf
+        # in a branch that is not selected. The backend evaluates both branches of where, and so does its gradient.
+        length = xp.sqrt(xp.where(zero, 1, xp.where(hyperbolic, square, -square)))
+        bounded = xp.where(hyperbolic, length, 0)
+        c = xp.where(hyperbolic, xp.cosh(bounded), xp.cos(length))
+        s = xp.where(hyperbolic, xp.sinh(bounded), xp.sin(length)) / length
+        return self * xp.where(zero, 1, s) + xp.where(zero, 1, c)
 
     def log(self: "Bireflection", atanh2c=None, sqrt=None) -> "Bivector":
         r"""
@@ -869,12 +875,12 @@ class MultiVector(metaclass=MultiVectorType):
         the result unchanged.
 
         Rotation logarithms have magnitude at most :math:`\pi`; whole windings
-        cannot be recovered. At exactly :math:`R=-1` the rotation plane is
-        undetermined. A negative scalar part with nonnegative :math:`V^2`
-        raises :class:`ValueError`.
+        cannot be recovered. For boosts, dilations and translations :math:`R` and :math:`-R`
+        have the same logarithm, and where :math:`V^2 > c^2` the result is :code:`nan`.
+        As for :meth:`exp`, simplicity is not checked but warned about, and so are grades other than 0 and 2, which are ignored.
 
-        As for :meth:`exp`, it is possible to explicitly provide an `atanh2c` and `sqrt` function.
-        If you provide one, you must provide both. Only the defaults for numbers and arrays need :mod:`array_api_compat`.
+        It is possible to explicitly provide an `atanh2c` and `sqrt` function.
+        If you provide one, you must provide both.
         The argument to `sqrt` is the scalar :math:`s = \langle V^2 \rangle_0`, and the logarithm is
         :code:`V * atanh2c(sqrt(s), c)`: `atanh2c` is a two-argument inverse like :code:`atan2`, divided by its first argument,
         just as `sinhc` is `sinh` divided by its argument.
@@ -893,41 +899,32 @@ class MultiVector(metaclass=MultiVectorType):
         See Graded Symmetry Groups: Plane and Simple, section 9.3:
         https://arxiv.org/html/2107.03771v1#S9.SS3
         """
+        if any(grade not in (0, 2) for grade in self.grades):
+            warnings.warn('The logarithm only uses the scalar and bivector part, the other grades are ignored.', stacklevel=2)
         bivector = self.grade(2)
-        square = _square(bivector)
-        if any(g not in (0, 2) for g in self.grades) or (square.grades and square.grades != (0,)):
-            raise NotImplementedError('Currently only simple rotors have a logarithm implementation.')
-
+        square, scalar = _simple_square(bivector), self.e
         if atanh2c is not None or sqrt is not None:
-            return bivector * atanh2c(sqrt(square.e), self.e)
+            return bivector * atanh2c(sqrt(square), scalar)
 
         if self.issymbolic:
-            square = sympify(square.e)
-            if sympify(self.e).is_negative and square.is_nonnegative:
-                raise ValueError('The real simple logarithm is undetermined without a rotation plane.')
+            square = sympify(square)
             if square == 0:
-                return bivector / self.e
+                return bivector / scalar
             length = abs(square) ** S.Half
-            factor = Piecewise((1 / self.e, Eq(square, 0)),
-                               (atanh(length / self.e).rewrite(log).rewrite(exp).simplify() / length, square > 0),
-                               (atan2(length, self.e) / length, True))
-            return bivector * factor
+            # Written as a logarithm of exponentials atanh simplifies, such that the logarithm of a symbolic boost gives back its bivector.
+            return bivector * Piecewise((1 / scalar, Eq(square, 0)),
+                                        (atanh(length / scalar).rewrite(log).rewrite(exp).simplify() / length, square > 0),
+                                        (atan2(length, scalar) / length, True))
 
-        xp, square, scalar = _arrays_like(self, square.e, self.e)
-        if xp.any((square >= 0) & (scalar < 0)):
-            raise ValueError('The real simple logarithm is undetermined without a rotation plane.')
-
-        if not bivector.keys() and self.shape:
-            # A batch of identities still needs a batch of zero bivectors.
-            key = next(self.algebra.indices_for_grade(2))
-            bivector = self.algebra.bivector(keys=(key,), values=[xp.zeros_like(scalar)])
-
-        zero, one = square == 0, xp.ones_like(square)
-        length = xp.sqrt(xp.where(zero, one, xp.abs(square)))
-        positive = square > 0
-        ratio = xp.where(positive, length, 0) / xp.where(positive, scalar, one)
-        angle = xp.where(positive, xp.atanh(ratio), xp.atan2(length, scalar))
-        return bivector * (xp.where(zero, one, angle / length) / xp.where(zero, scalar, one))
+        # Adding zero times the other gives a python number the shape, dtype and device of an array next to it.
+        square, scalar = square + 0 * scalar, scalar + 0 * square
+        xp = _namespace(square)
+        zero, hyperbolic = square == 0, square > 0
+        # Substitute before taking roots, dividing and calling atanh, as in exp.
+        length = xp.sqrt(xp.where(zero, 1, xp.abs(square)))
+        ratio = xp.where(hyperbolic, length, 0) / xp.where(hyperbolic, scalar, 1)
+        angle = xp.where(hyperbolic, xp.atanh(ratio), xp.atan2(length, scalar))
+        return bivector * (xp.where(zero, 1, angle / length) / xp.where(zero, scalar, 1))
 
     def polarity(self):
         """ Polarity dual, see :meth:`dual`. """
@@ -1136,37 +1133,32 @@ def _zeros_like(x):
     return x[None][:0].sum(axis=0)
 
 
-def _square(x):
-    """ The square of the simple bivector `x`, keeping only the blades with a nonzero coefficient somewhere in the batch. """
-    return x.square().filter(lambda v: v.any() if hasattr(v, 'any') else x.algebra.simp_func(v))
-
-
-def _arrays_like(x, *values):
+def _simple_square(x):
     """
-    The array namespace of the coefficients of `x`, or numpy for python numbers, followed by `values` as arrays of the batch shape of `x`.
-    Python numbers take the dtype and device of the coefficients, so they do not promote them.
+    The scalar that the simple element `x` squares to, warning when the square of `x` can have more than a scalar part.
+    This is decided from the blades of `x` and not from its coefficients, so that it also holds while an array library traces a function.
     """
-    # Imported here, so that array_api_compat is only needed when kingdon picks the functions to apply to numbers and arrays.
-    from array_api_compat import array_namespace, device, is_array_api_obj, numpy
+    square = x.square()
+    if square.grades not in ((), (0,)):
+        warnings.warn('Assuming a simple element, meaning one that squares to a scalar. The other grades of its square are ignored, so the result is only correct if they are zero.', stacklevel=3)
+    return square.e
 
-    def arrays(v):
-        if is_array_api_obj(v):
-            yield v
-        elif isinstance(v, (list, tuple)):
-            for w in v:
-                yield from arrays(w)
 
-    like = next(arrays(x.values()), None)
-    xp = numpy if like is None else array_namespace(*arrays(x.values()))
-
-    def asarray(v):
-        if isinstance(v, (list, tuple)):
-            return xp.stack(xp.broadcast_arrays(*map(asarray, v)))
-        if is_array_api_obj(v):
-            return v
-        return xp.asarray(v) if like is None else xp.asarray(v, dtype=like.dtype, device=device(like))
-
-    return xp, *(xp.broadcast_to(asarray(v), x.shape) for v in values)
+def _namespace(x):
+    """ The namespace with the array API functions for `x`. """
+    if isinstance(x, Number):
+        # Powers and numpy functions keep Fraction and complex working, and unlike the numpy namespace they do not turn numbers into arrays.
+        return SimpleNamespace(
+            where=lambda condition, a, b: a if condition else b, abs=abs, sqrt=lambda x: x ** 0.5,
+            cos=np.cos, sin=np.sin, cosh=np.cosh, sinh=np.sinh, atanh=np.arctanh, atan2=np.arctan2,
+        )
+    if hasattr(x, '__array_namespace__'):  # The array API standard, as implemented by e.g. numpy and jax.
+        return x.__array_namespace__()
+    try:
+        from array_api_compat import array_namespace
+    except ImportError as error:
+        raise ImportError(f'{type(x).__name__} does not implement __array_namespace__, so array_api_compat is needed to find its functions. Install it, or provide the functions.') from error
+    return array_namespace(x)
 
 
 def _union_keys(mvs: list[MultiVector]) -> tuple[int, ...]:
