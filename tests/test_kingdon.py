@@ -1,5 +1,6 @@
 """Tests for `kingdon` package."""
 import copy
+import sys
 import itertools
 import operator
 from dataclasses import replace
@@ -7,7 +8,7 @@ from dataclasses import replace
 import pytest
 import numpy as np
 
-from sympy import Symbol, expand, sympify, cos, sin, sinc
+from sympy import Symbol, expand, sympify, cos, sin, sqrt, atan, Piecewise, Eq
 from kingdon import (Algebra, MultiVector, Scalar, Vector, Bivector, Trivector, Quadvector,
                      Bireflection, Direction, EVector, UPoint, Point, Translation, symbols)
 from kingdon.operator_dict import UnaryOperatorDict
@@ -1072,36 +1073,56 @@ def test_map_filter(R4):
     assert xcoeffmul.values() == [0, 2, 4, 0]
 
 def test_simple_exp():
+    """
+    Exponentiating a simple bivector gives the expected translation or rotation, for numbers and for symbols,
+    and taking the logarithm of the result gives back the bivector.
+    """
     alg = Algebra(2, 0, 1, extra_types=[Translation])
     B = alg.bivector([1, 2, 0]).filter()
     assert isinstance(B, Bivector)
     T = B.exp()
+    assert np.allclose(T.log().values(), B.values())
     assert isinstance(T, Translation)
     assert not (T - (1 + B)).filter()
 
     B = alg.bivector([0, 0, 2]).filter()
     R = B.exp()
+    assert np.allclose(R.log().values(), B.values())
     assert isinstance(R, Bireflection)
     assert R == np.cos(2) + np.sin(2) * B.normalized()
 
     B = alg.bivector([0, 1, 2])
     R = B.exp()
+    assert np.allclose(R.log().values(), B.values())
     l = (-(B | B).e) ** 0.5
     assert isinstance(R, Bireflection)
     assert R == np.cos(l) + np.sin(l) * B / l
 
-    B = alg.bivector([0, 1 + 2j, 2 - 0.5j])
-    R = B.exp()
-    l = (-(B | B).e) ** 0.5
-    Rexpected = np.cos(l) + np.sin(l) * B / l
-    assert isinstance(Rexpected, Bireflection)
-    assert not (R - Rexpected).filter(lambda v: np.abs(v) > 1e-15)
-
     B = alg.bivector(name='B')
     R = B.exp()
-    l = (-(B | B).e) ** 0.5
+    l = sqrt(-(B | B).e)
     assert isinstance(R, Bireflection)
-    assert R == cos(l) + sinc(l) * B
+    assert R == cos(l) + Piecewise((1, Eq(l**2, 0)), (sin(l) / l, True)) * B
+    assert not (R.map(lambda v: v.subs(dict.fromkeys(B.free_symbols, 0))) - alg.blades.e).filter()  # The zero bivector exponentiates to exactly 1, not to sin(0)/0.
+
+    t = Symbol('t', positive=True)
+    u = Symbol('u', real=True, nonzero=True)
+    for B in (alg.bivector(e01=t, e02=1, e12=atan(t)), Algebra(1, 1).bivector(e12=u)):
+        assert B.exp().log() == B
+
+def test_exp_log_with_given_functions_need_no_array_api_compat(monkeypatch):
+    """
+    When the user gives their own functions to exp and log, those are used and array_api_compat is not needed.
+    Without them, kingdon needs array_api_compat to choose the functions itself.
+    """
+    monkeypatch.setitem(sys.modules, 'array_api_compat', None)
+    B = Algebra(2).bivector(e12=np.array([0.3, -1.2]))
+    R = B.exp(cosh=np.cos, sinhc=lambda l: np.sinc(l / np.pi), sqrt=lambda s: (-s) ** 0.5)
+    assert np.allclose(R.e, np.cos(B.e12))
+    L = R.log(atanh2c=lambda l, c: np.arctan2(l, c) / l, sqrt=lambda s: (-s) ** 0.5)
+    assert np.allclose(L.e12, B.e12)
+    with pytest.raises(ImportError):
+        B.exp()
 
 def test_dual_numbers():
     alg = Algebra(r=1)

@@ -46,6 +46,13 @@ def allclose(a, b):
     return np.allclose(to_numpy(a), to_numpy(b))
 
 
+def assert_mv_allclose(a, b, atol=1e-8):
+    """Compare coefficients after aligning blade layouts, including implicit constants."""
+    assert a.shape == b.shape
+    for value in (a - b).values():
+        np.testing.assert_allclose(to_numpy(value), 0, atol=atol)
+
+
 def randn(xp, *shape):
     """ A standard normal array. The array API has no randomness, so numpy makes the numbers. """
     return xp.asarray(np.random.randn(*shape))
@@ -54,6 +61,80 @@ def randn(xp, *shape):
 def rand(xp, *shape):
     """ A uniform [0, 1) array. """
     return xp.asarray(np.random.rand(*shape))
+
+
+@pytest.mark.parametrize('signature', [(2, 0, 0), (1, 1, 0), (1, 0, 1)])
+def test_batched_simple_exp(xp, signature):
+    """
+    A batch of bivectors that square to -1, +1 or 0 exponentiates to a batch of rotations, boosts or translations,
+    including a zero angle and the angles of plus and minus a half turn.
+    The logarithm gives the bivectors back, also after scaling the rotors.
+    """
+    algebra = Algebra(*signature)
+    angles = xp.asarray([-0.8, 0., 0.4, math.pi, -math.pi], dtype=xp.float64)
+    bivectors = algebra.bivector(angles[None, :])
+    rotors = bivectors.exp()
+    assert_mv_allclose(rotors.log(), bivectors)
+    assert_mv_allclose((3 * rotors).log(), bivectors)
+    assert rotors.shape == angles.shape
+    assert allclose((rotors * ~rotors).e, xp.ones_like(angles))
+    if signature[2]:
+        scalar, bivector = xp.ones_like(angles), angles
+    elif signature[1]:
+        scalar, bivector = xp.cosh(angles), xp.sinh(angles)
+    else:
+        scalar, bivector = xp.cos(angles), xp.sin(angles)
+        assert_mv_allclose(algebra.bivector([2 * math.pi]).exp(), algebra.blades.e)
+    assert allclose(rotors.e, scalar)
+    assert allclose(rotors.grade(2).values(), [bivector])
+
+
+def test_exp_mixed_squares(xp):
+    """
+    In CGA bivectors can square to positive, negative, or zero, generating rotations, translations, boosts, or dilations.
+    A single batch that mixes all of these exponentiates each element correctly, keeps a real dtype,
+    and the logarithm gives back every bivector.
+    """
+    algebra = Algebra(4, 1)
+    # e1 ^ (e4 + e5) squares to zero.
+    bivectors = algebra.bivector(
+        e15=xp.asarray([1., 0., 2., 0.]),
+        e12=xp.asarray([0., 1., 0., 0.]),
+        e14=xp.asarray([0., 0., 2., 0.]),
+        e45=xp.asarray([0., 0., 0., 1.]),  # Dilation generator; e45**2 = +1.
+    )
+    assert allclose((bivectors * bivectors).e, [1., -1., 0., 1.])
+
+    rotors = bivectors.exp()
+    assert allclose(rotors.log().values(), bivectors.values())
+    assert allclose((3 * rotors).log().values(), bivectors.values())
+    assert rotors.shape == (4,)
+    assert allclose(rotors.e, [math.cosh(1), math.cos(1), 1., math.cosh(1)])
+    assert allclose(rotors.e15, [math.sinh(1), 0., 2., 0.])
+    assert allclose(rotors.e12, [0., math.sin(1), 0., 0.])
+    assert allclose(rotors.e14, [0., 0., 2., 0.])
+    assert allclose(rotors.e45, [0., 0., 0., math.sinh(1)])
+    assert all(xp.isdtype(v.dtype, 'real floating') for v in rotors.values())
+
+
+def test_batched_exp_rejects_non_simple_bivectors(xp):
+    """ exp and log refuse a batch containing a bivector that does not square to a scalar, rather than giving a wrong answer. """
+    algebra = Algebra(4)
+    angles = xp.asarray([0.1, 0.3])
+    with pytest.raises(NotImplementedError, match='simple'):
+        algebra.bivector(angles, keys=('e12', 'e34')).exp()
+    with pytest.raises(NotImplementedError, match='simple'):
+        (1 + algebra.bivector(angles, keys=('e12', 'e34'))).log()
+
+
+def test_torch_exp_preserves_gradients_at_zero():
+    """ exp and log of torch tensors give finite values and the right gradients, also at a zero angle where the formulas divide by zero. """
+    torch = pytest.importorskip('torch')
+    angles = torch.tensor([-0.8, 0., 0.4], dtype=torch.float64, requires_grad=True)
+    rotor = Algebra(2).bivector(angles[None, :]).exp()
+    torch.testing.assert_close(rotor.log().e12, angles)
+    (rotor.e + rotor.e12).sum().backward()
+    torch.testing.assert_close(angles.grad, torch.cos(angles) - torch.sin(angles))
 
 
 def values_asarray(xp, values, broadcast=False):
