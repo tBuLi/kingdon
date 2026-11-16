@@ -32,6 +32,10 @@ STACK_ERRORS = (ValueError, RuntimeError)
 def xp(request):
     """ The array API namespace to run a test with, skipped when its library is not installed. """
     lib = pytest.importorskip(ARRAY_LIBS[request.param])
+    if request.param == 'jax':
+        # Without x64 mode jax silently turns float64 into float32, which is too coarse for the tests that ask for float64.
+        import jax
+        jax.config.update('jax_enable_x64', True)
     return array_namespace(lib.empty(0))
 
 
@@ -115,10 +119,10 @@ def test_exp_mixed_squares(xp):
     algebra = Algebra(4, 1)
     # e1 ^ (e4 + e5) squares to zero.
     bivectors = algebra.bivector(
-        e15=xp.asarray([1., 0., 2., 0.]),
-        e12=xp.asarray([0., 1., 0., 0.]),
-        e14=xp.asarray([0., 0., 2., 0.]),
-        e45=xp.asarray([0., 0., 0., 1.]),  # Dilation generator; e45**2 = +1.
+        e15=xp.asarray([1., 0., 2., 0.], dtype=xp.float64),
+        e12=xp.asarray([0., 1., 0., 0.], dtype=xp.float64),
+        e14=xp.asarray([0., 0., 2., 0.], dtype=xp.float64),
+        e45=xp.asarray([0., 0., 0., 1.], dtype=xp.float64),  # Dilation generator; e45**2 = +1.
     )
     assert allclose((bivectors * bivectors).e, [1., -1., 0., 1.])
 
