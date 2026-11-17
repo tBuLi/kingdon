@@ -32,6 +32,10 @@ STACK_ERRORS = (ValueError, RuntimeError)
 def xp(request):
     """ The array API namespace to run a test with, skipped when its library is not installed. """
     lib = pytest.importorskip(ARRAY_LIBS[request.param])
+    if request.param == 'jax':
+        # Without x64 mode jax silently turns float64 into float32, which is too coarse for the tests that ask for float64.
+        import jax
+        jax.config.update('jax_enable_x64', True)
     return array_namespace(lib.empty(0))
 
 
@@ -46,6 +50,21 @@ def allclose(a, b):
     return np.allclose(to_numpy(a), to_numpy(b))
 
 
+@pytest.fixture
+def xp_api(xp):
+    """ The array API namespace of a library whose arrays implement :code:`__array_namespace__`, which exp and log need unless they are given functions. """
+    if not hasattr(xp.empty(0), '__array_namespace__'):
+        pytest.skip('Arrays without __array_namespace__ need to be given functions.')
+    return xp
+
+
+def assert_mv_allclose(a, b, atol=1e-8):
+    """Compare coefficients after aligning blade layouts, including implicit constants."""
+    assert a.shape == b.shape
+    for value in (a - b).values():
+        np.testing.assert_allclose(to_numpy(value), 0, atol=atol)
+
+
 def randn(xp, *shape):
     """ A standard normal array. The array API has no randomness, so numpy makes the numbers. """
     return xp.asarray(np.random.randn(*shape))
@@ -54,6 +73,116 @@ def randn(xp, *shape):
 def rand(xp, *shape):
     """ A uniform [0, 1) array. """
     return xp.asarray(np.random.rand(*shape))
+
+
+def test_equality(xp):
+    """
+    Multivectors with array coefficients compare equal when every coefficient is exactly equal, giving a single bool.
+    Lists of arrays compare like the stacked array, a blade missing on one side counts as zero, and different shapes or algebras are unequal.
+    """
+    values = xp.asarray([[1., 2.], [3., 4.]], dtype=xp.float64)
+    x = alg.vector(values)
+    assert (x == alg.vector(values + 0)) is True
+    assert x == alg.vector(list(values))
+    assert x != alg.vector(values + 1e-10)
+    assert x != alg.vector(values[:, :1])
+    assert x != Algebra(1, 1).vector(values)
+    assert x != alg.vector(e1=values[0])
+    assert alg.vector(e1=values[0], e2=0 * values[1]) == alg.vector(e1=values[0])
+    assert x != 1
+
+
+@pytest.mark.parametrize('signature', [(2, 0, 0), (1, 1, 0), (1, 0, 1)])
+def test_batched_simple_exp(xp_api, signature):
+    """
+    A batch of bivectors that square to -1, +1 or 0 exponentiates to a batch of rotations, boosts or translations,
+    including a zero angle and the angles of plus and minus a half turn.
+    The logarithm gives the bivectors back, also after scaling the rotors.
+    """
+    xp = xp_api
+    algebra = Algebra(*signature)
+    angles = xp.asarray([-0.8, 0., 0.4, math.pi, -math.pi], dtype=xp.float64)
+    bivectors = algebra.bivector(angles[None, :])
+    rotors = bivectors.exp()
+    assert_mv_allclose(rotors.log(), bivectors)
+    assert_mv_allclose((3 * rotors).log(), bivectors)
+    assert rotors.shape == angles.shape
+    assert allclose((rotors * ~rotors).e, xp.ones_like(angles))
+    if signature[2]:
+        scalar, bivector = xp.ones_like(angles), angles
+    elif signature[1]:
+        scalar, bivector = xp.cosh(angles), xp.sinh(angles)
+    else:
+        scalar, bivector = xp.cos(angles), xp.sin(angles)
+        assert_mv_allclose(algebra.bivector([2 * math.pi]).exp(), algebra.blades.e)
+    assert allclose(rotors.e, scalar)
+    assert allclose(rotors.grade(2).values(), [bivector])
+
+
+def test_exp_mixed_squares(xp_api):
+    """
+    In CGA bivectors can square to positive, negative, or zero, generating rotations, translations, boosts, or dilations.
+    A single batch that mixes all of these exponentiates each element correctly, keeps a real dtype,
+    and the logarithm gives back every bivector.
+    """
+    xp = xp_api
+    algebra = Algebra(4, 1)
+    # e1 ^ (e4 + e5) squares to zero.
+    bivectors = algebra.bivector(
+        e15=xp.asarray([1., 0., 2., 0.], dtype=xp.float64),
+        e12=xp.asarray([0., 1., 0., 0.], dtype=xp.float64),
+        e14=xp.asarray([0., 0., 2., 0.], dtype=xp.float64),
+        e45=xp.asarray([0., 0., 0., 1.], dtype=xp.float64),  # Dilation generator; e45**2 = +1.
+    )
+    assert allclose((bivectors * bivectors).e, [1., -1., 0., 1.])
+
+    # A bivector with these blades is not always simple, but these are, and so is a rotor whose quadvector part is zero.
+    rotors = bivectors.exp()
+    assert_mv_allclose(rotors.log(), bivectors)
+    assert_mv_allclose((3 * rotors).log(), bivectors)
+    assert_mv_allclose((rotors + algebra.multivector(e1234=0.)).log(), bivectors)
+    with pytest.raises(NotImplementedError, match='simple'):
+        (bivectors + algebra.bivector(e23=xp.asarray([1., 0., 0., 0.], dtype=xp.float64))).exp()
+    with pytest.raises(NotImplementedError, match='scalar and a bivector'):
+        (rotors + algebra.multivector(e1234=1.)).log()
+    assert rotors.shape == (4,)
+    assert allclose(rotors.e, [math.cosh(1), math.cos(1), 1., math.cosh(1)])
+    assert allclose(rotors.e15, [math.sinh(1), 0., 2., 0.])
+    assert allclose(rotors.e12, [0., math.sin(1), 0., 0.])
+    assert allclose(rotors.e14, [0., 0., 2., 0.])
+    assert allclose(rotors.e45, [0., 0., 0., math.sinh(1)])
+    assert all(xp.isdtype(v.dtype, 'real floating') for v in rotors.values())
+
+
+def test_exp_log_can_be_traced():
+    """ jax can compile exp and log, and map them over a batch. """
+    jax = pytest.importorskip('jax')
+    angles = jax.numpy.asarray([-0.8, 0., 0.4])
+    for algebra, key in ((Algebra(2), 'e12'), (Algebra(1, 1), 'e12'), (Algebra(1, 0, 1), 'e01')):
+        roundtrip = lambda x: getattr(algebra.bivector(**{key: x}).exp().log(), key)
+        assert allclose(jax.jit(roundtrip)(angles), angles)
+        assert allclose(jax.vmap(roundtrip)(angles), angles)
+
+
+def test_exp_log_gradients():
+    """ exp and log give the right gradients, also at a zero angle and at a large angle. """
+    jax = pytest.importorskip('jax')
+    rotor = lambda angles: Algebra(2).bivector(angles[None, :]).exp()
+    angles = jax.numpy.asarray([-0.8, 0., 0.4, 800.])
+    assert allclose(jax.grad(lambda a: (rotor(a).e + rotor(a).e12).sum())(angles), jax.numpy.cos(angles) - jax.numpy.sin(angles))
+    angles = jax.numpy.asarray([-0.8, 0., 0.4, 3.])
+    assert allclose(jax.grad(lambda a: rotor(a).log().e12.sum())(angles), jax.numpy.ones_like(angles))
+
+
+def test_exp_without_array_namespace():
+    """ Arrays without __array_namespace__, such as torch tensors, need to be given the functions. """
+    torch = pytest.importorskip('torch')
+    angles = torch.tensor([-0.8, 0., 0.4], dtype=torch.float64)
+    bivectors = Algebra(2).bivector(angles[None, :])
+    with pytest.raises(TypeError, match='__array_namespace__'):
+        bivectors.exp()
+    rotors = bivectors.exp(cosh=torch.cos, sinhc=lambda l: torch.sinc(l / math.pi), sqrt=lambda s: (-s) ** 0.5)
+    assert allclose(rotors.e, torch.cos(angles))
 
 
 def values_asarray(xp, values, broadcast=False):
@@ -89,17 +218,13 @@ def test_rearrangement(xp, pattern):
     y_gt = x.map(lambda v: rearrange(v, pattern.pattern, **pattern.axes_lengths))
 
     # einops should preserve type of .values() and match ground truth (gt)
-    assert isinstance(y, MultiVector)
-    assert y.keys() == x.keys()
-    assert y.shape == y_gt.shape
-    assert allclose(y.values(), y_gt.values())
+    assert type(y) is type(x) and y.keys() == x.keys()
+    assert y == y_gt
     assert type(x.values()) == type(y.values())
 
     # So for the alt construction the types should be a list instead of an array
-    assert isinstance(y_alt, MultiVector)
-    assert y_alt.keys() == x_alt.keys()
-    assert y_alt.shape == y_gt.shape
-    assert allclose(y_alt.values(), y_gt.values())
+    assert type(y_alt) is type(x_alt) and y_alt.keys() == x_alt.keys()
+    assert y_alt == y_gt
     assert type(x_alt.values()) == type(y_alt.values())
 
 
@@ -151,20 +276,18 @@ def test_repeat(xp):
     y_alt = repeat(x_alt, 'a b -> a b c', c=5)
     y_gt = x.map(lambda v: repeat(v, 'a b -> a b c', c=5))
 
-    assert isinstance(y, MultiVector)
-    assert y.keys() == x.keys()
-    assert y.shape == (3, 4, 5) == y_gt.shape
-    assert allclose(y.values(), y_gt.values())
+    assert y.shape == (3, 4, 5)
+    assert type(y) is type(x) and y.keys() == x.keys()
+    assert y == y_gt
     assert type(x.values()) == type(y.values())
 
-    assert y_alt.shape == y_gt.shape
-    assert allclose(y_alt.values(), y_gt.values())
+    assert y_alt == y_gt
     assert type(x_alt.values()) == type(y_alt.values())
 
     # Repeating along an existing axis works just as well.
     z = repeat(x, 'a b -> (rep a) b', rep=2)
     assert z.shape == (6, 4)
-    assert allclose(z.values(), x.map(lambda v: repeat(v, 'a b -> (rep a) b', rep=2)).values())
+    assert z == x.map(lambda v: repeat(v, 'a b -> (rep a) b', rep=2))
 
     # The type of the multivector is preserved.
     vec = alg.vector(randn(xp, 2, 3))
@@ -201,7 +324,7 @@ def test_pack_unpack(xp):
     assert packed.shape == (3, 71, 5)
     assert is_array_api_obj(packed.values())
     inputs_unpacked = unpack(packed, ps, 'i * k')
-    assert [x.shape for x in inputs_unpacked] == [mv.shape for mv in mvs]
+    assert inputs_unpacked == mvs
 
 
 def test_pack_unpack_list_values(xp):
@@ -212,7 +335,7 @@ def test_pack_unpack_list_values(xp):
     assert packed.shape == (3, 8, 5)
     assert isinstance(packed.values(), list)
     unpacked = unpack(packed, ps, 'i * k')
-    assert [x.shape for x in unpacked] == [mv.shape for mv in mvs]
+    assert unpacked == mvs
 
 def test_pack_unpack_inhomogenous(xp):
     """ Pack should work for inhomogenous mvs so long as they are the same type. """
@@ -228,7 +351,7 @@ def test_pack_unpack_inhomogenous(xp):
     # comes back unharmed, and the blade the other one lacked is zero.
     assert type(packed) is type(mvs[0]) and packed.keys() == mvs[0].keys()
     assert all(x.keys() == packed.keys() for x in unpacked)
-    assert allclose(unpacked[0].values(), mvs[0].values())
+    assert unpacked[0] == mvs[0]
     assert allclose(unpacked[1].e1, mvs[1].e1) and not xp.any(unpacked[1].e2)
 
     # Those zeros are made from the coefficients of the mv that is missing a blade, so they
@@ -273,8 +396,8 @@ def test_einsum(xp):
 
     # Patterns which spell out the batch dimensions with an ellipsis keep working,
     # the ellipsis simply no longer has to swallow the blade axis.
-    assert allclose(einsum(vec, "... i i -> ...").values(), trace.values())
-    assert allclose(einsum(vec, weight, "... j, j k -> ... k").values(), matmul.values())
+    assert einsum(vec, "... i i -> ...") == trace
+    assert einsum(vec, weight, "... j, j k -> ... k") == matmul
 
 
 def test_einsum_types(xp):
@@ -288,8 +411,7 @@ def test_einsum_types(xp):
 
     vec_alt = vec.map(lambda v: v)  # values are a list of arrays instead of one array.
     matmul_alt = einsum(vec_alt, weight, "i, i j -> j")
-    assert matmul_alt.shape == (20,)
-    assert allclose(matmul_alt.values(), matmul.values())
+    assert matmul_alt == matmul
 
 
 def test_einsum_multiple_multivectors(xp):
@@ -307,7 +429,7 @@ def test_einsum_multiple_multivectors(xp):
     assert allclose(scaled.values(), x.values() * s.values())
 
     # Scalars are also fine as the leading operand.
-    assert allclose(einsum(s, x, "i, i -> i").values(), scaled.values())
+    assert einsum(s, x, "i, i -> i") == scaled
 
     with pytest.raises(TypeError):
         einsum(x, alg.bivector(randn(xp, 1, 10)), "i, i -> i")
@@ -328,10 +450,7 @@ def test_pack_unpack_list(xp, extra_shape, pattern, expected_shape):
     assert is_array_api_obj(packed.values())
     unpacked = unpack(packed, ps, pattern)
     assert isinstance(unpacked, list)
-    assert len(unpacked) == len(mvs)
-    for x, y in zip(unpacked, mvs):
-        assert x.shape == y.shape
-        assert allclose(x.values(), y.values())
+    assert unpacked == mvs
 
 test_stack_config = [
     # (are the coefficients arrays or plain python floats, dimensions beyond the blade axis, expected shape)
@@ -353,9 +472,7 @@ def test_stack(xp, asarray, extra_shape, expected_shape):
     assert stacked.shape == expected_shape
     assert isinstance(stacked, MultiVector)
     assert is_array_api_obj(stacked.values()) == asarray
-    assert allclose(stacked[0].values(), mvs[0].values())
-    assert allclose(stacked[1].values(), mvs[1].values())
-    assert allclose(stacked[2].values(), mvs[2].values())
+    assert list(stacked) == mvs
     different_mv = alg.evenmv(coefficients(2))
     with pytest.raises(TypeError, match='type'):
         stack([*mvs, different_mv])
@@ -429,7 +546,7 @@ def test_asarray_raw(xp):
     # Copies are exact replicas, so they keep the values as they are.
     assert copy.copy(x).values() is x.values()
     assert isinstance(copy.deepcopy(x).values(), list)
-    assert copy.deepcopy(x).values() == x.values()
+    assert copy.deepcopy(x) == x
 
     # Multivectors without any values are created without complaint.
     assert len(alg.vector([1., 2.]).filter(lambda v: False).values()) == 0
@@ -474,7 +591,7 @@ def test_newaxis_vs_stack(xp):
     lines = bivectors.normalized()
     # Check if the broadcasting results in the same as brute force.
     projected_points = points[:, None] @ lines[None, :]
-    assert not xp.any((projected_points - stack([p @ lines for p in points])).values())  # Not any value should be true-ish.
+    assert projected_points == stack([p @ lines for p in points])
     # Check if the values are just a view of the original arrays in case of numpy or torch.
     # In general the array API has no notion of a view.
     if is_numpy_namespace(xp):

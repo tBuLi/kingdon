@@ -165,3 +165,17 @@ Bugfix: width and height should be direct options to Algebra.graph
 **Documentation**
 
 * The docs have moved to the Shibuya theme, with a page per module in the API reference, a separate operators page, and a videos page (thanks @arsenovic).
+
+Unreleased
+----------
+**Features**
+
+* ``exp`` works on batches of bivectors whose arrays implement ``__array_namespace__`` of the array API standard, such as numpy and jax arrays; for others, such as torch tensors, provide the functions. Each element gets the right formula, whether it squares to a negative number (rotation), a positive one (boost, dilation) or zero (translation), so one batch can mix them. The dtype is kept, real or complex, and gradients are finite at zero and at large angles.
+* New ``log`` method, the principal logarithm of a simple rotor, for python numbers, arrays and sympy expressions. Like ``exp(cosh=, sinhc=, sqrt=)``, ``log(atanh=, sqrt=)`` takes user-provided functions.
+* ``exp`` and ``log`` never branch on the values of the coefficients, so array libraries can trace them to compile them or map them over a batch.
+* ``==`` works for multivectors with array coefficients and returns a single ``bool``. Multivectors are compared blade by blade: a blade missing on one side counts as zero, and the fixed values of a type count as coefficients, so multivectors of different types can be equal.
+
+**Changes**
+
+* An empty multivector now equals ``alg.scalar(e=0)``, and e.g. ``pga.multivector(e21=-1) == pga.blades.e12``.
+* The shape of a multivector broadcasts the shapes of its coefficients, so a python number next to arrays takes their shape. Coefficients with incompatible shapes raise a ``ValueError`` instead of giving the shape ``()``.

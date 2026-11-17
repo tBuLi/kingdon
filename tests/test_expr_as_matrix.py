@@ -49,21 +49,9 @@ def test_expr_as_matrix_numerical(alg301):
     assert A.shape == (4, 4)
 
 def test_matrixreps():
-    # 3DVGA test
-    alg = Algebra(3)
-    x = alg.multivector(name='x')
-    xmat = x.asmatrix()
-    xprime = MultiVector.frommatrix(alg, matrix=xmat)
-    assert np.all(x.values() == xprime.values())
-    assert x.keys() == xprime.keys()
-
-    # PTAP test
-    alg = Algebra(2, 1)
-    x = alg.multivector(name='x')
-    xmat = x.asmatrix()
-    xprime = MultiVector.frommatrix(alg, matrix=xmat)
-    assert np.all(x.values() == xprime.values())
-    assert x.keys() == xprime.keys()
+    for alg in (Algebra(3), Algebra(2, 1)):
+        x = alg.multivector(name='x')
+        assert MultiVector.frommatrix(alg, matrix=x.asmatrix()) == x
 
 
 def test_matrix_rep():

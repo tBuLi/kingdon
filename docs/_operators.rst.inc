@@ -81,6 +81,14 @@ Below is an overview:
      - :math:`\sqrt{a}`
      -
      - :code:`a.sqrt()`
+   * - Exponential of a simple bivector :code:`a`
+     - :math:`e^{a}`
+     -
+     - :code:`a.exp()`
+   * - Logarithm of a simple rotor :code:`a`
+     - :math:`\log a`
+     -
+     - :code:`a.log()`
    * - Dual of :code:`a`
      - :math:`a*`
      -

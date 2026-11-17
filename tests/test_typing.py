@@ -659,7 +659,7 @@ def test_type_shape():
     segs2 = alg.linesegment(np.zeros((3, 2, 5)))
     segs2[1] = seg
     segs2[3:] = segs[3:]
-    assert np.all(segs2[1].values() == seg.values()) and np.all(segs2[4].values() == segs[4].values()) and not np.any(segs2[0].values())
+    assert segs2[1] == seg and segs2[4] == segs[4] and not np.any(segs2[0].values())
 
     # The line segment must not be compiled a second time.
     assert alg.sw[motor, seg].func is alg.sw[motor, pnt].func

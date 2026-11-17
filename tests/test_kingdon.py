@@ -7,7 +7,9 @@ from dataclasses import replace
 import pytest
 import numpy as np
 
-from sympy import Symbol, expand, sympify, cos, sin, sinc
+from fractions import Fraction
+
+from sympy import Symbol, expand, sympify, cos, sin, sqrt, atan, Piecewise, Eq
 from kingdon import (Algebra, MultiVector, Scalar, Vector, Bivector, Trivector, Quadvector,
                      Bireflection, Direction, EVector, UPoint, Point, Translation, symbols)
 from kingdon.operator_dict import UnaryOperatorDict
@@ -733,20 +735,15 @@ def test_multidimensional_indexing(R4):
     ncolumns = 4
     shape = (len(tuple(R4.indices_for_grade(2))), nrows, ncolumns)
     bvals = np.random.random(shape)
-    B = R4.bivector(bvals)
-    np.testing.assert_allclose(B[2:4].e12, bvals[0, 2:4])
-    np.testing.assert_allclose(B[2].e12, bvals[0, 2])
-    np.testing.assert_allclose(B[:].e12, bvals[0, :])
-    np.testing.assert_allclose(B[0].values(), bvals[:, 0])
-    np.testing.assert_allclose(B[2:4, 0].e12, bvals[0, 2:4, 0])
-    # Same tests but without using a numpy array, instead use a tuple of sub np.ndarray.
-    B = R4.bivector(tuple(bvals))
-    np.testing.assert_allclose(B[2:4].e12, bvals[0, 2:4])
-    np.testing.assert_allclose(B[2].e12, bvals[0, 2])
-    np.testing.assert_allclose(B[:].e12, bvals[0, :])
-    np.testing.assert_allclose(B[0].values(), bvals[:, 0])
-    np.testing.assert_allclose(B[2:4, 0].e12, bvals[0, 2:4, 0])
-    np.testing.assert_allclose(B[0, 0].values(), bvals[:, 0, 0])
+    # Both with a numpy array, and with a tuple of sub np.ndarray.
+    for values in (bvals, tuple(bvals)):
+        B = R4.bivector(values)
+        assert B[2:4] == R4.bivector(bvals[:, 2:4])
+        assert B[2] == R4.bivector(bvals[:, 2])
+        assert B[:] == B
+        assert B[0] == R4.bivector(bvals[:, 0])
+        assert B[2:4, 0] == R4.bivector(bvals[:, 2:4, 0])
+        assert B[0, 0] == R4.bivector(bvals[:, 0, 0])
 
 
 def test_sqrt(alg301):
@@ -815,7 +812,7 @@ def test_iteration(R4):
     bvals = np.random.random(shape)
     B = R4.bivector(bvals)
     for i, b in enumerate(B):
-        np.testing.assert_allclose(b.values(), bvals[:, i])
+        assert b == R4.bivector(bvals[:, i])
     assert i + 1 == nrows
 
 
@@ -975,10 +972,7 @@ def test_value_31(vga2d):
     B = vga2d.bivector(name='B')
     res = 2 * (B ^ B)
     # res is not just zero, but an empty mv.
-    empty = vga2d.scalar()
-    assert res == empty
-    zero = vga2d.scalar(e=0)
-    assert res != zero
+    assert not res.keys() and res == vga2d.scalar() == vga2d.scalar(e=0)
 
 
 def test_reciprocal_frame():
@@ -995,21 +989,12 @@ def test_setitem(alg201):
     point_vals = np.zeros((alg201.d, l + 1))
     point_vals[0] = 1
     point_vals[1] = np.arange(l + 1) * d - 1.5
-    # Test with the 2d array first
-    lines = alg201.vector(point_vals)
-    lines[-1] = lines[-2]
-    assert lines[-1].keys() == lines[-2].keys()
-    assert np.allclose(lines[-1].values(), lines[-2].values())
-    lines[:3] = lines[4:]
-    assert np.allclose(lines[:3].values(), lines[4:].values())
-
     # Dualization turns the 2d array into a list of 1d arrays, so we need to test with that as well.
-    points = alg201.vector(point_vals).dual()
-    points[-1] = points[-2]
-    assert points[-1].keys() == points[-2].keys()
-    assert np.allclose(points[-1].values(), points[-2].values())
-    points[:3] = points[4:]
-    assert np.allclose(points[:3].values(), points[4:].values())
+    for mv in (alg201.vector(point_vals), alg201.vector(point_vals).dual()):
+        mv[-1] = mv[-2]
+        assert mv[-1] == mv[-2]
+        mv[:3] = mv[4:]
+        assert mv[:3] == mv[4:]
 
 def test_set_mv(alg201):
     x = alg201.multivector(name='x')
@@ -1072,36 +1057,82 @@ def test_map_filter(R4):
     assert xcoeffmul.values() == [0, 2, 4, 0]
 
 def test_simple_exp():
+    """
+    Exponentiating a simple bivector gives the expected translation or rotation, for numbers and for symbols,
+    and taking the logarithm of the result gives back the bivector.
+    """
     alg = Algebra(2, 0, 1, extra_types=[Translation])
     B = alg.bivector([1, 2, 0]).filter()
     assert isinstance(B, Bivector)
     T = B.exp()
+    assert np.allclose(T.log().values(), B.values())
     assert isinstance(T, Translation)
-    assert not (T - (1 + B)).filter()
+    assert T == 1 + B
 
     B = alg.bivector([0, 0, 2]).filter()
     R = B.exp()
+    assert np.allclose(R.log().values(), B.values())
     assert isinstance(R, Bireflection)
     assert R == np.cos(2) + np.sin(2) * B.normalized()
 
     B = alg.bivector([0, 1, 2])
     R = B.exp()
+    assert np.allclose(R.log().values(), B.values())
     l = (-(B | B).e) ** 0.5
     assert isinstance(R, Bireflection)
     assert R == np.cos(l) + np.sin(l) * B / l
 
-    B = alg.bivector([0, 1 + 2j, 2 - 0.5j])
-    R = B.exp()
-    l = (-(B | B).e) ** 0.5
-    Rexpected = np.cos(l) + np.sin(l) * B / l
-    assert isinstance(Rexpected, Bireflection)
-    assert not (R - Rexpected).filter(lambda v: np.abs(v) > 1e-15)
-
     B = alg.bivector(name='B')
     R = B.exp()
-    l = (-(B | B).e) ** 0.5
+    l = sqrt(-(B | B).e)
     assert isinstance(R, Bireflection)
-    assert R == cos(l) + sinc(l) * B
+    assert R == cos(l) + Piecewise((1, Eq(l**2, 0)), (sin(l) / l, True)) * B
+    assert R.map(lambda v: v.subs(dict.fromkeys(B.free_symbols, 0))) == alg.scalar(e=1)  # The zero bivector exponentiates to exactly 1, not to sin(0)/0.
+
+    # Symbolically the logarithm undoes the exponential wherever that holds for every value of the symbols.
+    t = Symbol('t', positive=True)
+    u = Symbol('u', real=True, nonzero=True)
+    for B in (alg.bivector(e01=t, e02=1, e12=atan(t)), Algebra(1, 1).bivector(e12=u), Algebra(2, 0, 1).bivector(e01=u, e02=t)):
+        assert B.exp().log() == B
+
+def test_exp_coefficient_types():
+    """ exp accepts the python number types, where a complex bivector gives the analytic continuation of the rotation. """
+    alg = Algebra(2)
+    for value in (1, 0.5, Fraction(1, 2), np.float32(0.5), 1 + 2j):
+        assert np.allclose(alg.bivector(e12=value).exp().values(), [np.cos(complex(value)), np.sin(complex(value))])
+    assert np.allclose(Algebra(1, 1).bivector(e12=Fraction(1, 2)).exp().values(), [np.cosh(0.5), np.sinh(0.5)])
+
+    # The logarithm of a complex rotor gives back its bivector, for python numbers and arrays alike.
+    for value in (0.5 + 0.3j, -2.5 + 0.3j, np.array([0.5 + 0.3j, -2.5 - 0.3j, 2.])):
+        for algebra in (Algebra(2), Algebra(1, 1)):
+            B = algebra.bivector(e12=value)
+            assert np.allclose(B.exp().log().e12, value)
+
+def test_exp_log_with_given_functions():
+    """ When the user gives their own functions to exp and log, those are used instead of the ones kingdon would choose. """
+    B = Algebra(2).bivector(e12=np.array([0.3, -1.2]))
+    R = B.exp(cosh=np.cos, sinhc=lambda l: np.sinc(l / np.pi), sqrt=lambda s: (-s) ** 0.5)
+    assert np.allclose(R.e, np.cos(B.e12))
+    L = R.log(atanh=np.arctan, sqrt=lambda s: (-s) ** 0.5)
+    assert np.allclose(L.e12, B.e12)
+    boost = Algebra(1, 1).bivector(e12=np.array([0.3, -1.2]))
+    assert np.allclose(boost.exp().log(atanh=np.arctanh, sqrt=np.sqrt).e12, boost.e12)
+    # Rotations beyond a quarter turn come back, and so do complex ones.
+    angles = np.array([2.5, -3., 0.5 + 0.3j])
+    assert np.allclose(Algebra(2).bivector(e12=angles).exp().log(atanh=np.arctan, sqrt=lambda s: (-s) ** 0.5).e12, angles)
+    doubled = Algebra(2).bivector(e12=1.).exp(cosh=lambda l: 2 * np.cos(l), sinhc=lambda l: 2 * np.sinc(l / np.pi), sqrt=lambda s: (-s) ** 0.5)
+    assert np.allclose(doubled.values(), [2 * np.cos(1), 2 * np.sin(1)])
+
+def test_exp_log_not_simple():
+    """ exp and log raise for elements that are not simple, unless the parts that make them so are zero. """
+    alg = Algebra(4)
+    with pytest.raises(NotImplementedError, match='simple'):
+        alg.bivector(e12=1., e34=2.).exp()
+    assert alg.bivector(e12=1., e34=0.).exp() == alg.bivector(e12=1.).exp()
+    with pytest.raises(NotImplementedError, match='simple'):
+        (1 + alg.bivector(e12=1., e34=2.)).log()
+    with pytest.raises(NotImplementedError, match='scalar and a bivector'):
+        (1 + alg.bivector(e12=1.) + alg.blades.e1234).log()
 
 def test_dual_numbers():
     alg = Algebra(r=1)
@@ -1197,8 +1228,8 @@ def test_custom_basis():
         assert e20 * e2 == - e0
 
         X = pga.multivector(e21=-1.0)
-        assert not (X - pga.blades.e12).filter()
-        assert not (X + pga.blades.e21).filter()
+        assert X == pga.blades.e12
+        assert X == -pga.blades.e21
         assert X.e21 == -1
         assert X.e12 == 1
 
@@ -1257,11 +1288,7 @@ def test_deep_copy_multivector(ga201):
 
     assert mv is not copied_mv
     assert mv == copied_mv
-
-    assert mv.keys() == copied_mv.keys()
-
     assert mv.values() is not copied_mv.values()
-    assert mv.values() == copied_mv.values()
 
     mv.e1.append(1)
     assert copied_mv.e1[1] == [1]
@@ -1329,10 +1356,8 @@ def test_87(ga201):
     u = ga201.vector(uvals)
     one = np.ones(2)
     expectedmv = ga201.scalar(e=one) + ga201.vector(uvals)
-    diff1 = (u + one) - expectedmv
-    diff2 = (one + u) - expectedmv
-    assert all(diff1.map(lambda v: np.allclose(v, 0.0)).values())
-    assert all(diff2.map(lambda v: np.allclose(v, 0.0)).values())
+    assert u + one == expectedmv
+    assert one + u == expectedmv
 
 def test_115_116(alg301):
     N = 500
