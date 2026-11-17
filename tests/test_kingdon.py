@@ -1102,15 +1102,37 @@ def test_exp_coefficient_types():
         assert np.allclose(alg.bivector(e12=value).exp().values(), [np.cos(complex(value)), np.sin(complex(value))])
     assert np.allclose(Algebra(1, 1).bivector(e12=Fraction(1, 2)).exp().values(), [np.cosh(0.5), np.sinh(0.5)])
 
+    # The logarithm of a complex rotor gives back its bivector, for python numbers and arrays alike.
+    for value in (0.5 + 0.3j, -2.5 + 0.3j, np.array([0.5 + 0.3j, -2.5 - 0.3j, 2.])):
+        for algebra in (Algebra(2), Algebra(1, 1)):
+            B = algebra.bivector(e12=value)
+            assert np.allclose(B.exp().log().e12, value)
+
 def test_exp_log_with_given_functions():
     """ When the user gives their own functions to exp and log, those are used instead of the ones kingdon would choose. """
     B = Algebra(2).bivector(e12=np.array([0.3, -1.2]))
     R = B.exp(cosh=np.cos, sinhc=lambda l: np.sinc(l / np.pi), sqrt=lambda s: (-s) ** 0.5)
     assert np.allclose(R.e, np.cos(B.e12))
-    L = R.log(atanh2c=lambda l, c: np.arctan2(l, c) / l, sqrt=lambda s: (-s) ** 0.5)
+    L = R.log(atanh=np.arctan, sqrt=lambda s: (-s) ** 0.5)
     assert np.allclose(L.e12, B.e12)
+    boost = Algebra(1, 1).bivector(e12=np.array([0.3, -1.2]))
+    assert np.allclose(boost.exp().log(atanh=np.arctanh, sqrt=np.sqrt).e12, boost.e12)
+    # Rotations beyond a quarter turn come back, and so do complex ones.
+    angles = np.array([2.5, -3., 0.5 + 0.3j])
+    assert np.allclose(Algebra(2).bivector(e12=angles).exp().log(atanh=np.arctan, sqrt=lambda s: (-s) ** 0.5).e12, angles)
     doubled = Algebra(2).bivector(e12=1.).exp(cosh=lambda l: 2 * np.cos(l), sinhc=lambda l: 2 * np.sinc(l / np.pi), sqrt=lambda s: (-s) ** 0.5)
     assert np.allclose(doubled.values(), [2 * np.cos(1), 2 * np.sin(1)])
+
+def test_exp_log_not_simple():
+    """ exp and log raise for elements that are not simple, unless the parts that make them so are zero. """
+    alg = Algebra(4)
+    with pytest.raises(NotImplementedError, match='simple'):
+        alg.bivector(e12=1., e34=2.).exp()
+    assert alg.bivector(e12=1., e34=0.).exp() == alg.bivector(e12=1.).exp()
+    with pytest.raises(NotImplementedError, match='simple'):
+        (1 + alg.bivector(e12=1., e34=2.)).log()
+    with pytest.raises(NotImplementedError, match='scalar and a bivector'):
+        (1 + alg.bivector(e12=1.) + alg.blades.e1234).log()
 
 def test_dual_numbers():
     alg = Algebra(r=1)

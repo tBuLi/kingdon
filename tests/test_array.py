@@ -50,6 +50,14 @@ def allclose(a, b):
     return np.allclose(to_numpy(a), to_numpy(b))
 
 
+@pytest.fixture
+def xp_api(xp):
+    """ The array API namespace of a library whose arrays implement :code:`__array_namespace__`, which exp and log need unless they are given functions. """
+    if not hasattr(xp.empty(0), '__array_namespace__'):
+        pytest.skip('Arrays without __array_namespace__ need to be given functions.')
+    return xp
+
+
 def assert_mv_allclose(a, b, atol=1e-8):
     """Compare coefficients after aligning blade layouts, including implicit constants."""
     assert a.shape == b.shape
@@ -85,12 +93,13 @@ def test_equality(xp):
 
 
 @pytest.mark.parametrize('signature', [(2, 0, 0), (1, 1, 0), (1, 0, 1)])
-def test_batched_simple_exp(xp, signature):
+def test_batched_simple_exp(xp_api, signature):
     """
     A batch of bivectors that square to -1, +1 or 0 exponentiates to a batch of rotations, boosts or translations,
     including a zero angle and the angles of plus and minus a half turn.
     The logarithm gives the bivectors back, also after scaling the rotors.
     """
+    xp = xp_api
     algebra = Algebra(*signature)
     angles = xp.asarray([-0.8, 0., 0.4, math.pi, -math.pi], dtype=xp.float64)
     bivectors = algebra.bivector(angles[None, :])
@@ -110,12 +119,13 @@ def test_batched_simple_exp(xp, signature):
     assert allclose(rotors.grade(2).values(), [bivector])
 
 
-def test_exp_mixed_squares(xp):
+def test_exp_mixed_squares(xp_api):
     """
     In CGA bivectors can square to positive, negative, or zero, generating rotations, translations, boosts, or dilations.
     A single batch that mixes all of these exponentiates each element correctly, keeps a real dtype,
     and the logarithm gives back every bivector.
     """
+    xp = xp_api
     algebra = Algebra(4, 1)
     # e1 ^ (e4 + e5) squares to zero.
     bivectors = algebra.bivector(
@@ -126,13 +136,15 @@ def test_exp_mixed_squares(xp):
     )
     assert allclose((bivectors * bivectors).e, [1., -1., 0., 1.])
 
-    # A bivector with these blades is not always simple, which kingdon can not rule out without reading the coefficients.
-    with pytest.warns(UserWarning, match='simple'):
-        rotors = bivectors.exp()
-        assert_mv_allclose(rotors.log(), bivectors)
-        assert_mv_allclose((3 * rotors).log(), bivectors)
-    with pytest.warns(UserWarning, match='grades'):
-        assert_mv_allclose((rotors + algebra.multivector(e1234=0.)).log(), bivectors)
+    # A bivector with these blades is not always simple, but these are, and so is a rotor whose quadvector part is zero.
+    rotors = bivectors.exp()
+    assert_mv_allclose(rotors.log(), bivectors)
+    assert_mv_allclose((3 * rotors).log(), bivectors)
+    assert_mv_allclose((rotors + algebra.multivector(e1234=0.)).log(), bivectors)
+    with pytest.raises(NotImplementedError, match='simple'):
+        (bivectors + algebra.bivector(e23=xp.asarray([1., 0., 0., 0.], dtype=xp.float64))).exp()
+    with pytest.raises(NotImplementedError, match='scalar and a bivector'):
+        (rotors + algebra.multivector(e1234=1.)).log()
     assert rotors.shape == (4,)
     assert allclose(rotors.e, [math.cosh(1), math.cos(1), 1., math.cosh(1)])
     assert allclose(rotors.e15, [math.sinh(1), 0., 2., 0.])
@@ -152,19 +164,25 @@ def test_exp_log_can_be_traced():
         assert allclose(jax.vmap(roundtrip)(angles), angles)
 
 
-def test_torch_exp_log_gradients():
-    """
-    exp and log of torch tensors give the right gradients, also at a zero angle and at a large angle.
-    """
-    torch = pytest.importorskip('torch')
-    angles = torch.tensor([-0.8, 0., 0.4, 800.], dtype=torch.float64, requires_grad=True)
-    rotor = Algebra(2).bivector(angles[None, :]).exp()
-    (rotor.e + rotor.e12).sum().backward()
-    torch.testing.assert_close(angles.grad, torch.cos(angles) - torch.sin(angles))
+def test_exp_log_gradients():
+    """ exp and log give the right gradients, also at a zero angle and at a large angle. """
+    jax = pytest.importorskip('jax')
+    rotor = lambda angles: Algebra(2).bivector(angles[None, :]).exp()
+    angles = jax.numpy.asarray([-0.8, 0., 0.4, 800.])
+    assert allclose(jax.grad(lambda a: (rotor(a).e + rotor(a).e12).sum())(angles), jax.numpy.cos(angles) - jax.numpy.sin(angles))
+    angles = jax.numpy.asarray([-0.8, 0., 0.4, 3.])
+    assert allclose(jax.grad(lambda a: rotor(a).log().e12.sum())(angles), jax.numpy.ones_like(angles))
 
-    angles = torch.tensor([-0.8, 0., 0.4], dtype=torch.float64, requires_grad=True)
-    Algebra(2).bivector(angles[None, :]).exp().log().e12.sum().backward()
-    torch.testing.assert_close(angles.grad, torch.ones_like(angles))
+
+def test_exp_without_array_namespace():
+    """ Arrays without __array_namespace__, such as torch tensors, need to be given the functions. """
+    torch = pytest.importorskip('torch')
+    angles = torch.tensor([-0.8, 0., 0.4], dtype=torch.float64)
+    bivectors = Algebra(2).bivector(angles[None, :])
+    with pytest.raises(TypeError, match='__array_namespace__'):
+        bivectors.exp()
+    rotors = bivectors.exp(cosh=torch.cos, sinhc=lambda l: torch.sinc(l / math.pi), sqrt=lambda s: (-s) ** 0.5)
+    assert allclose(rotors.e, torch.cos(angles))
 
 
 def values_asarray(xp, values, broadcast=False):
