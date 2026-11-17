@@ -722,12 +722,22 @@ def test_operator_overload():
     def _(x: LineSegment, y: MultiVector):
         return (x.points @ y).asmvtype(LineSegment)
 
+    @alg.ip.register
+    def _(x: Point, y: LineSegment):
+        """ The plane perpendicular to the line through the point of the segment closest to x: the plane through x, with its offset clipped to those of the planes through the end points. """
+        plane, before, after = [x, *y.points] | y.line
+        return plane + (np.clip(plane.e0, before.e0, after.e0) - plane.e0) * alg.blades.e0
+
+    @alg.gp.register
+    def _(x: Vector, y: LineSegment):
+        """ Where the plane x cuts the line of the segment. """
+        start, _ = y.points
+        return start @ x
+
     @alg.proj.register
     def _(x: Point, y: LineSegment):
-        """ The point of the segment closest to x: x is first moved into the slab between the planes through the end points perpendicular to the line, then projected onto the line. """
-        a, b = x & (planes := [*y.points] | y.line)
-        inside = np.where(a.e < 0, (x @ planes[0]).values(), np.where(b.e > 0, (x @ planes[1]).values(), x.values()))
-        return alg.point(inside) @ y.line
+        """ The point of the segment closest to x. """
+        return (x | y) * y
 
     @alg.proj.register
     def _(x: LineSegment, y: LineSegment):
