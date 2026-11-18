@@ -699,3 +699,83 @@ def test_type_shape():
     alg = Algebra(3, 0, 1, types=[{'name': 'Pnt', 'layout': layout}, {'name': 'Seg', 'layout': layout, 'shape': (2,)}])
     check(alg.evenmv(np.random.rand(8)) >> alg.seg(np.random.rand(3, 2)), alg.seg.func, ())
     check(alg.seg(np.random.rand(3, 2)).asmvtype(alg.pnt.func), alg.pnt.func, (2,))
+
+
+def test_operator_overload():
+    """ An overload registered on an operator is called as-is when its type hints are exactly the input types, with MultiVector as the fallback. All other inputs keep the generated code. """
+    np = pytest.importorskip('numpy')
+
+    class LineSegment(Point[2]):
+        @property
+        def points(self):
+            return self.asmvtype(Point)
+
+        @property
+        def line(self):
+            start, end = self.points
+            return (start & end).normalized()
+
+    alg = Algebra(3, 0, 1, extra_types=[UPoint, Point, LineSegment])
+    point = lambda xyz: alg.upoint(np.asarray(xyz, dtype=float).T).dual()
+
+    @alg.proj.register
+    def _(x: LineSegment, y: MultiVector):
+        return (x.points @ y).asmvtype(LineSegment)
+
+    @alg.ip.register
+    def _(x: Point, y: LineSegment):
+        """ The plane perpendicular to the line through the point of the segment closest to x: the plane through x, with its offset clipped to those of the planes through the end points. """
+        plane, before, after = [x, *y.points] | y.line
+        return plane + (np.clip(plane.e0, before.e0, after.e0) - plane.e0) * alg.blades.e0
+
+    @alg.gp.register
+    def _(x: Vector, y: LineSegment):
+        """ Where the plane x cuts the line of the segment. """
+        start, _ = y.points
+        return start @ x
+
+    @alg.proj.register
+    def _(x: Point, y: LineSegment):
+        """ The point of the segment closest to x. """
+        return (x | y) * y
+
+    @alg.proj.register
+    def _(x: LineSegment, y: LineSegment):
+        return (x.points @ y).asmvtype(LineSegment)
+
+    seg = point([[0, 0, 0], [2, 0, 0]]).asmvtype(LineSegment)
+    plane = alg.vector([0, 0, 0, 1])  # z = 0
+
+    res = point([[3, 1, 0], [1, 5, 2], [-1, 1, 0]]) @ seg
+    assert np.allclose(res.values(), point([[2, 0, 0], [1, 0, 0], [0, 0, 0]]).values())
+
+    res = point([[0, 0, 1], [1, 1, 3]]).asmvtype(LineSegment) @ plane
+    assert type(res) is LineSegment
+    assert np.allclose(res.points.values(), point([[0, 0, 0], [1, 1, 0]]).values())
+
+    res = point([[-1, 1, 1], [1, 2, 0]]).asmvtype(LineSegment) @ seg
+    assert type(res) is LineSegment
+    assert np.allclose(res.points.values(), point([[0, 0, 0], [1, 0, 0]]).values())
+
+    assert np.allclose((point([1, 2, 3]) @ plane).values(), point([1, 2, 0]).values())
+
+    def plain(x: Point, y: MultiVector): pass
+    with pytest.raises(TypeError):
+        alg.proj.register(plain)
+
+
+def test_operator_overload_foreign_type():
+    """ An overload can take a class that is not a multivector. """
+    class Mesh:
+        def __init__(self, vertices):
+            self.vertices = vertices
+
+    alg = Algebra(3, 0, 1)
+
+    @alg.sw.register
+    def _(R: MultiVector, x: Mesh):
+        return Mesh(R >> x.vertices)
+
+    R, v = alg.evenmv(list(range(8))), alg.vector(list(range(4)))
+    res = R >> Mesh(v)
+    assert type(res) is Mesh and res.vertices == R >> v
