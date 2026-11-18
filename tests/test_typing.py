@@ -702,7 +702,7 @@ def test_type_shape():
 
 
 def test_operator_overload():
-    """ An overload registered on an operator is called as-is when its type hints match the inputs. The most specific match wins, and all other inputs keep the generated code. """
+    """ An overload registered on an operator is called as-is when its type hints are exactly the input types, with MultiVector as the fallback. All other inputs keep the generated code. """
     np = pytest.importorskip('numpy')
 
     class LineSegment(Point[2]):

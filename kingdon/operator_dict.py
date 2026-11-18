@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from dataclasses import dataclass, field
 from collections.abc import Mapping, Callable
 from functools import wraps, cached_property
+from itertools import combinations
 import inspect
 
 
@@ -70,6 +71,35 @@ def resolve_and_expand(func):
     return wrapper
 
 
+def _hints(func: Callable) -> tuple[type]:
+    return tuple(MultiVector if p.annotation is inspect.Parameter.empty else p.annotation for p in inspect.signature(func).parameters.values())
+
+
+class OverloadDict(dict):
+    """
+    The cache of an operator: generated code keyed by tuples of :code:`(type, keys)` pairs, and overloads keyed by tuples of types.
+    Looking up a tuple of types with :code:`[]` that has no overload of its own falls back to overloads that take :class:`~kingdon.multivector.MultiVector` in place of multivector inputs:
+    first in one position, then in two, and so on. The outcome, an overload or :code:`None`, is remembered under the looked-up types.
+    Only :code:`[]` falls back; :code:`.get()` and :code:`in` do not.
+    """
+    def __missing__(self, key):
+        if not (isinstance(key, tuple) and all(isinstance(cls, type) for cls in key)):
+            raise KeyError(key)
+        positions = [i for i, cls in enumerate(key) if issubclass(cls, MultiVector) and cls is not MultiVector]
+        outcome = None
+        for n in range(1, len(positions) + 1):
+            candidates = (tuple(MultiVector if i in replaced else cls for i, cls in enumerate(key)) for replaced in combinations(positions, n))
+            # A remembered outcome is stored under input types too, and must not count as an overload registered for them.
+            found = [k for k in candidates if (func := self.get(k)) and _hints(func) == k]
+            if len(found) > 1:
+                raise TypeError(f"The overloads for {found} all match {key}. Register an overload for {key} itself.")
+            if found:
+                outcome = self[found[0]]
+                break
+        self[key] = outcome
+        return outcome
+
+
 def do_operation(*mvs, codegen, algebra, MVType=None) -> MultiVector:
     """
     This function just does the operation directly on the MV's, no codegen is performed.
@@ -105,12 +135,13 @@ class OperatorDict(Mapping):
     name: str
     codegen: Callable
     algebra: Algebra
-    operator_dict: dict = field(default_factory=dict, init=False)
+    operator_dict: dict = field(default_factory=OverloadDict, init=False)
     codegen_symbolcls: Callable = field(default=None, repr=False)
     lambdifier: Callable = field(default=None, repr=False)
     lambdifier_kwargs: dict = field(default_factory=dict, repr=False)
     wrapper: Callable = field(default=None, repr=False)
     values_asarray: Callable = field(default=None, repr=False)
+    overloaded: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self):
          # If the user forces a different codegen settings for this operator then give them what they want.
@@ -125,6 +156,20 @@ class OperatorDict(Mapping):
 
     def __len__(self):
         return len(self.operator_dict)
+
+    def register(self, func: Callable) -> Callable:
+        """
+        Register `func` as an overload of this operator: it is called as-is, instead of generating code, for inputs of exactly the types in the type hints of its parameters.
+        A type hint :class:`~kingdon.multivector.MultiVector`, or none, takes any multivector that has no overload of its own type, see :class:`OverloadDict`.
+        At least one type hint has to be a multivector type with a shape, or a class that is not a multivector.
+        Register all overloads before the operator is first called: the overload chosen for each combination of input types is remembered.
+        """
+        hints = _hints(func)
+        if all(issubclass(hint, MultiVector) and not hint._type_shape for hint in hints):
+            raise TypeError(f"An overload of {self.name} needs a multivector type with a shape or a class that is not a multivector among its type hints, but got {hints}.")
+        self.operator_dict[hints] = func
+        self.overloaded = True
+        return func
 
     def _make_symbolic_mv(self, name, keys, shape, mvtype, mvtypehint) -> MultiVector:
         depth, = mvtypehint if isinstance(mvtypehint, tuple) else (0,)  # Codegen unpacks one dimension only.
@@ -224,6 +269,8 @@ class OperatorDict(Mapping):
 
     @resolve_and_expand
     def __call__(self, *mvs):
+        if self.overloaded and (func := self.operator_dict[tuple(map(type, mvs))]):
+            return func(*mvs)
         mvs = self._sanitize_mvs(mvs)
         if len(mvs) == 2:
             return self._call_binary(*mvs)
@@ -277,6 +324,8 @@ class UnaryOperatorDict(OperatorDict):
 
     @resolve_and_expand
     def __call__(self, mv):
+        if self.overloaded and (func := self.operator_dict[type(mv),]):
+            return func(mv)
         mv = self._sanitize_mvs((mv,))[0]
         compiled_expr = self[mv]
         mv_out = compiled_expr(mv)
@@ -307,6 +356,8 @@ class Registry(OperatorDict):
 
     @resolve_and_expand
     def __call__(self, *mvs):
+        if self.overloaded and (func := self.operator_dict[tuple(map(type, mvs))]):
+            return func(*mvs)
         if all(isinstance(mv, TapeRecorder) for mv in mvs):
             types_in = tuple((mv.mvtype, mv.keys()) for mv in mvs)
             compiled_expr = self.operator_dict[types_in]
