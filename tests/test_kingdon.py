@@ -122,6 +122,12 @@ def test_getattr_setattr(ga101):
     with pytest.raises(TypeError):
         del X.e
 
+def test_pss_coefficient(ga101, pga3d):
+    assert ga101.multivector({0: 2, 'e12': 3}).pss == 3
+    assert ga101.vector([1, 2]).pss == 0
+    assert pga3d.multivector(e0123=5, e1=1).pss == 5
+    assert pga3d.multivector(e1023=5).pss == -5
+
 def test_gp_symbolic(vga2d):
     u = vga2d.vector(name='u')
     u1, u2 = u.e1, u.e2

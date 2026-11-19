@@ -173,6 +173,7 @@ Unreleased
 * ``exp`` works on batches of bivectors whose arrays implement ``__array_namespace__`` of the array API standard, such as numpy and jax arrays; for others, such as torch tensors, provide the functions. Each element gets the right formula, whether it squares to a negative number (rotation), a positive one (boost, dilation) or zero (translation), so one batch can mix them. The dtype is kept, real or complex, and gradients are finite at zero and at large angles.
 * New ``log`` method, the principal logarithm of a simple rotor, for python numbers, arrays and sympy expressions. Like ``exp(cosh=, sinhc=, sqrt=)``, ``log(atanh=, sqrt=)`` takes user-provided functions.
 * ``exp`` and ``log`` never branch on the values of the coefficients, so array libraries can trace them to compile them or map them over a batch.
+* ``x.pss`` gives the pseudoscalar coefficient of ``x`` in any dimension (#64).
 * ``==`` works for multivectors with array coefficients and returns a single ``bool``. Multivectors are compared blade by blade: a blade missing on one side counts as zero, and the fixed values of a type count as coefficients, so multivectors of different types can be equal.
 
 **Changes**
