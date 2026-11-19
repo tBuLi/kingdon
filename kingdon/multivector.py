@@ -309,6 +309,14 @@ class MultiVector(metaclass=MultiVectorType):
         return (self[i] for i in range(self.shape[0]))
 
     @property
+    def pss(self):
+        """
+        The coefficient of the pseudoscalar, whatever the dimension of the
+        algebra. E.g. :code:`x.pss` is :code:`x.e123` in 3DPGA.
+        """
+        return getattr(self, self.algebra.bin2canon[2 ** self.algebra.d - 1])
+
+    @property
     def ndim(self):
         """ Number of array dimensions of this multivector. """
         return len(self.shape)
