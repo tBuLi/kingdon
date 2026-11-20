@@ -179,3 +179,7 @@ Unreleased
 
 * An empty multivector now equals ``alg.scalar(e=0)``, and e.g. ``pga.multivector(e21=-1) == pga.blades.e12``.
 * The shape of a multivector broadcasts the shapes of its coefficients, so a python number next to arrays takes their shape. Coefficients with incompatible shapes raise a ``ValueError`` instead of giving the shape ``()``.
+
+**Bugfixes**
+
+* Multiplying two polynomials in codegen is no longer quadratic in the number of terms, so e.g. division in a 5D ``full_layout`` algebra compiles in seconds instead of running forever (#94).

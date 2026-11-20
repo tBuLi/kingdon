@@ -578,7 +578,7 @@ class Polynomial:
         if not isinstance(other, self.__class__):
             other = self.__class__(other)
 
-        res = Polynomial([])
+        res = []
         al = len(self)
         bl = len(other)
         for ai, bi in itertools.product(range(al), range(bl)):
@@ -599,8 +599,11 @@ class Polynomial:
                     if isinstance(eb, str): C.append(eb)
                     else: C[0] *= eb
                     j += 1
-            res = res + Polynomial([C])
-        return Polynomial(res)
+            res.append(Polynomial([C]))
+        # Merge pairwise rather than into one growing sum, which would be quadratic in the number of terms.
+        while len(res) > 1:
+            res = [sum(res[i:i + 2], 0) for i in range(0, len(res), 2)]
+        return res[0] if res else Polynomial([])
 
     __rmul__ = __mul__
 
