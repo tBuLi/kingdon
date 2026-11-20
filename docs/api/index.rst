@@ -16,7 +16,7 @@ API Reference
    :maxdepth: 1
 
    operators
-   powers
+   reductions
    matrixreps
 
 .. toctree::

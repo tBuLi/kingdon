@@ -180,3 +180,8 @@ Unreleased
 
 * An empty multivector now equals ``alg.scalar(e=0)``, and e.g. ``pga.multivector(e21=-1) == pga.blades.e12``.
 * The shape of a multivector broadcasts the shapes of its coefficients, so a python number next to arrays takes their shape. Coefficients with incompatible shapes raise a ``ValueError`` instead of giving the shape ``()``.
+* ``kingdon.powers`` is renamed to ``kingdon.reductions``, since it now also holds ``tree_sum``. Importing ``kingdon.powers`` still works, but raises a ``FutureWarning``.
+
+**Bugfixes**
+
+* Codegen no longer builds sums by adding terms one at a time to a growing total, which is quadratic in the number of terms, but pairwise with the new ``kingdon.reductions.tree_sum``. This applies to multiplying polynomials, to the products of multivectors and to common subexpression elimination, so e.g. division in a 5D ``full_layout`` algebra compiles in seconds instead of running forever (#94).

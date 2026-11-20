@@ -1404,3 +1404,15 @@ def test_numba_empty_multivectors():
     assert alg.multivector() + v == v
     assert v * alg.multivector() == empty
     assert 2 * alg.multivector() == empty
+
+
+def test_div_full_layout_5d():
+    """ Division in a 5D full_layout algebra must compile in reasonable time (#94). """
+    alg = Algebra(4, 1, full_layout=True)
+    e1, e4, e5 = alg.blades.e1, alg.blades.e4, alg.blades.e5
+    ni = e4 + e5
+    no = 0.5 * (e5 - e4)
+    x = 0.5 * e1
+    s = no + x + 0.5 * x * x * ni - 0.5 * ni
+    assert s.grades == (1, 3)
+    assert s / (-ni.lc(s)) == s

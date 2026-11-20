@@ -6,7 +6,7 @@ from fractions import Fraction
 
 from sympy import Mul, Add, Symbol
 
-from kingdon.powers import power_supply
+from kingdon.reductions import power_supply, tree_sum
 
 
 # ---------------------------------------------------------------------------
@@ -351,7 +351,7 @@ def _substitute_extracted(expr, sum_map):
             new_terms.append([coeff * offset_sign, *sorted(rest + [info['offset']])])
         if not changed:
             continue
-        simplified = sum((Polynomial([t]) for t in new_terms), Polynomial([]))
+        simplified = tree_sum((Polynomial([t]) for t in new_terms), Polynomial([]))
         if not simplified:
             e.clear()
         else:
@@ -366,7 +366,7 @@ def _detect_linear_deps(expr):
         if not isinstance(e, list):
             norm.append(e)
         else:
-            norm.append(sum((Polynomial([t]) for t in _walk_terms(e)), Polynomial([])))
+            norm.append(tree_sum((Polynomial([t]) for t in _walk_terms(e)), Polynomial([])))
 
     heaviest, max_weight = -1, 0
     for i, n in enumerate(norm):
@@ -578,7 +578,7 @@ class Polynomial:
         if not isinstance(other, self.__class__):
             other = self.__class__(other)
 
-        res = Polynomial([])
+        res = []
         al = len(self)
         bl = len(other)
         for ai, bi in itertools.product(range(al), range(bl)):
@@ -599,8 +599,8 @@ class Polynomial:
                     if isinstance(eb, str): C.append(eb)
                     else: C[0] *= eb
                     j += 1
-            res = res + Polynomial([C])
-        return Polynomial(res)
+            res.append(Polynomial([C]))
+        return tree_sum(res, Polynomial([]))
 
     __rmul__ = __mul__
 
@@ -655,7 +655,7 @@ class Polynomial:
         else:
             var_name = var
 
-        result = self.__class__([])
+        result = []
         for monomial in self.args:
             variables = monomial[1:]
             n = variables.count(var_name)
@@ -663,8 +663,8 @@ class Polynomial:
                 continue
             new_vars = list(variables)
             new_vars.remove(var_name)
-            result = result + self.__class__([[n * monomial[0]] + new_vars])
-        return result
+            result.append(self.__class__([[n * monomial[0]] + new_vars]))
+        return tree_sum(result, self.__class__([]))
 
 
 class RationalPolynomial:
