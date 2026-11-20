@@ -9,10 +9,9 @@ from collections import namedtuple
 import warnings
 import operator
 from collections.abc import Callable
-from functools import reduce
 from fractions import Fraction as PyFraction
 
-from kingdon.powers import power_supply
+from kingdon.powers import power_supply, tree_sum
 if TYPE_CHECKING:
     from kingdon.multivector import MultiVector
 
@@ -74,8 +73,8 @@ def product(
             key_out = keyout_func(kx, ky)
             if filter_func and not filter_func(kx, ky, key_out): continue
             termstr = vx * vy if sign > 0 else (- vx * vy)
-            res[key_out] = res[key_out] + termstr if key_out in res else termstr
-    return dict_to_multivector(res, x.algebra)
+            res.setdefault(key_out, []).append(termstr)
+    return dict_to_multivector({k: tree_sum(terms) for k, terms in res.items()}, x.algebra)
 
 
 def gp(x: "MultiVector", y: "MultiVector") -> "MultiVector":
@@ -399,20 +398,20 @@ def outerexp(x: "MultiVector", asterms: bool = False) -> "MultiVector":
 
     if asterms:
         return Ws
-    return reduce(operator.add, Ws)
+    return tree_sum(Ws)
 
 
 def outersin(x: "MultiVector") -> "MultiVector":
     """ Outer sine: the odd terms of :func:`outerexp`. """
     odd_Ws = outerexp(x, asterms=True)[1::2]
-    outersin = reduce(operator.add, odd_Ws)
+    outersin = tree_sum(odd_Ws)
     return outersin
 
 
 def outercos(x: "MultiVector") -> "MultiVector":
     """ Outer cosine: the even terms of :func:`outerexp`. """
     even_Ws = outerexp(x, asterms=True)[0::2]
-    outercos = reduce(operator.add, even_Ws)
+    outercos = tree_sum(even_Ws)
     return outercos
 
 
@@ -420,8 +419,8 @@ def outertan(x: "MultiVector") -> "MultiVector":
     """ Outer tangent: :func:`outersin` divided by :func:`outercos`. """
     Ws = outerexp(x, asterms=True)
     even_Ws, odd_Ws = Ws[0::2], Ws[1::2]
-    outercos = reduce(operator.add, even_Ws)
-    outersin = reduce(operator.add, odd_Ws)
+    outercos = tree_sum(even_Ws)
+    outersin = tree_sum(odd_Ws)
     outertan = div(outersin, outercos)
     return outertan
 

@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from kingdon.polynomial import Polynomial, RationalPolynomial, compare
+from kingdon.powers import tree_sum
 
 
 @pytest.mark.parametrize("a, b, res", [
@@ -168,3 +169,9 @@ def test_no_arrays(cls):
 
     # Numbers are still fine, including the numpy scalars that are float subclasses.
     assert cls(0.5) == cls(np.float64(0.5))
+
+
+@pytest.mark.parametrize("n", [0, 1, 2, 5, 8])
+def test_tree_sum(n):
+    terms = [Polynomial([[i + 1, f'x{i % 3}']]) for i in range(n)]
+    assert tree_sum(terms, Polynomial([])) == sum(terms, Polynomial([]))

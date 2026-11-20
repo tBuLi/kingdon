@@ -14,3 +14,12 @@ Powers
 
    power_supply
    AdditionChains
+
+Sums
+----
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+
+   tree_sum

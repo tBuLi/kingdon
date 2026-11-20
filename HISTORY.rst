@@ -182,4 +182,4 @@ Unreleased
 
 **Bugfixes**
 
-* Multiplying two polynomials in codegen is no longer quadratic in the number of terms, so e.g. division in a 5D ``full_layout`` algebra compiles in seconds instead of running forever (#94).
+* Codegen no longer builds sums by adding terms one at a time to a growing total, which is quadratic in the number of terms, but pairwise with the new ``kingdon.powers.tree_sum``. This applies to multiplying polynomials, to the products of multivectors and to common subexpression elimination, so e.g. division in a 5D ``full_layout`` algebra compiles in seconds instead of running forever (#94).

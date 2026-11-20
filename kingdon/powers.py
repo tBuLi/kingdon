@@ -1,4 +1,4 @@
-""" Raise multivectors to integer powers using as few multiplications as possible. """
+""" Raise multivectors to integer powers using as few multiplications as possible, and sum many terms using as little work as possible. """
 from __future__ import annotations
 
 import operator
@@ -63,3 +63,23 @@ def power_supply(x, exponents: tuple[int, ...], operation: Callable = operator.m
             powers[step] = operation(powers[chain[-2]], powers[step - chain[-2]])
 
         yield powers[step]
+
+
+def tree_sum(terms, start=0):
+    r"""
+    Sum :code:`terms` pairwise, like a knockout tournament, instead of
+    one at a time into a growing total.
+
+    Adding to a growing total re-walks the total at every step, which is
+    quadratic in the number of terms for polynomials, whose addition is a
+    merge of their sorted terms. Pairwise summation does every term in
+    :math:`\log_2 n` rounds of merges, without ever sorting.
+
+    :param terms: Iterable of objects that support :code:`+`.
+    :param start: Returned when :code:`terms` is empty.
+    """
+    terms = list(terms)
+    while len(terms) > 1:
+        pairs = [terms[i] + terms[i + 1] for i in range(0, len(terms) - 1, 2)]
+        terms = pairs + terms[2 * len(pairs):]
+    return terms[0] if terms else start
