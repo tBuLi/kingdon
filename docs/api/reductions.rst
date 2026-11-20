@@ -1,9 +1,9 @@
-kingdon.powers
-==============
+kingdon.reductions
+==================
 
-.. automodule:: kingdon.powers
+.. automodule:: kingdon.reductions
 
-.. currentmodule:: kingdon.powers
+.. currentmodule:: kingdon.reductions
 
 Powers
 ------

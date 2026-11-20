@@ -6,7 +6,7 @@ from fractions import Fraction
 
 from sympy import Mul, Add, Symbol
 
-from kingdon.powers import power_supply, tree_sum
+from kingdon.reductions import power_supply, tree_sum
 
 
 # ---------------------------------------------------------------------------

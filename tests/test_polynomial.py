@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 from kingdon.polynomial import Polynomial, RationalPolynomial, compare
-from kingdon.powers import tree_sum
+from kingdon.reductions import tree_sum
 
 
 @pytest.mark.parametrize("a, b, res", [
@@ -175,3 +175,12 @@ def test_no_arrays(cls):
 def test_tree_sum(n):
     terms = [Polynomial([[i + 1, f'x{i % 3}']]) for i in range(n)]
     assert tree_sum(terms, Polynomial([])) == sum(terms, Polynomial([]))
+
+
+def test_powers_deprecated():
+    import sys
+    sys.modules.pop('kingdon.powers', None)
+    with pytest.warns(FutureWarning):
+        from kingdon.powers import power_supply
+    from kingdon.reductions import power_supply as new
+    assert power_supply is new

@@ -11,7 +11,7 @@ import operator
 from collections.abc import Callable
 from fractions import Fraction as PyFraction
 
-from kingdon.powers import power_supply, tree_sum
+from kingdon.reductions import power_supply, tree_sum
 if TYPE_CHECKING:
     from kingdon.multivector import MultiVector
 
