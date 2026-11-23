@@ -174,6 +174,7 @@ Unreleased
 * New ``log`` method, the principal logarithm of a simple rotor, for python numbers, arrays and sympy expressions. Like ``exp(cosh=, sinhc=, sqrt=)``, ``log(atanh=, sqrt=)`` takes user-provided functions.
 * ``exp`` and ``log`` never branch on the values of the coefficients, so array libraries can trace them to compile them or map them over a batch.
 * ``x.pss`` gives the pseudoscalar coefficient of ``x`` in any dimension (#64).
+* ``float(x)`` gives the scalar coefficient of a multivector as a ``float``. The coefficients of the other blades, including the fixed values of a type, have to be zero, otherwise it raises a ``TypeError`` (#174).
 * ``==`` works for multivectors with array coefficients and returns a single ``bool``. Multivectors are compared blade by blade: a blade missing on one side counts as zero, and the fixed values of a type count as coefficients, so multivectors of different types can be equal.
 
 **Changes**

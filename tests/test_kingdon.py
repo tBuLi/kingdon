@@ -9,7 +9,7 @@ import numpy as np
 
 from fractions import Fraction
 
-from sympy import Symbol, expand, sympify, cos, sin, sqrt, atan, Piecewise, Eq
+from sympy import Symbol, SympifyError, expand, sympify, cos, sin, sqrt, atan, Piecewise, Eq
 from kingdon import (Algebra, MultiVector, Scalar, Vector, Bivector, Trivector, Quadvector,
                      Bireflection, Direction, EVector, UPoint, Point, Translation, symbols)
 from kingdon.operator_dict import UnaryOperatorDict
@@ -127,6 +127,31 @@ def test_pss_coefficient(ga101, pga3d):
     assert ga101.vector([1, 2]).pss == 0
     assert pga3d.multivector(e0123=5, e1=1).pss == 5
     assert pga3d.multivector(e1023=5).pss == -5
+
+def test_float(ga101, pga3d):
+    assert float(ga101.scalar(e=2)) == 2.0
+    assert type(float(ga101.scalar(e=2))) is float
+    assert float(ga101.vector([1, 2]) | ga101.vector([3, 4])) == 3.0
+    # Other blades are fine if their coefficients are zero. The fixed values of a type count as coefficients.
+    assert float(ga101.multivector(e=2.5, e1=0, e12=0)) == 2.5
+    assert float(ga101.multivector()) == 0.0
+    for x in [ga101.multivector(e=2, e12=3), ga101.vector([1, 0]), Point(pga3d, [0, 0, 0])]:
+        with pytest.raises(TypeError):
+            float(x)
+    # The scalar coefficient itself has to be convertible.
+    for x in [ga101.scalar(name='s'), ga101.scalar(e=np.array([1.0, 2.0]))]:
+        with pytest.raises(TypeError):
+            float(x)
+
+def test_sympy_operands(vga2d):
+    # sympify would turn a multivector with a __float__ into a number, see the comment on MultiVector.
+    x = Symbol('x')
+    assert isinstance(x * vga2d.scalar(e=2), Scalar)
+    assert (x * vga2d.scalar(e=2)).e == 2 * x
+    assert (x * vga2d.vector([1, 2])).e2 == 2 * x
+    assert (x + vga2d.vector([1, 2])).e == x
+    with pytest.raises(SympifyError):
+        sympify(vga2d.scalar(e=2))
 
 def test_gp_symbolic(vga2d):
     u = vga2d.vector(name='u')

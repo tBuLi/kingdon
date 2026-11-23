@@ -11,6 +11,7 @@ import re
 
 import numpy as np
 import sympy as sp
+from sympy.core.sympify import CantSympify
 from sympy.utilities.iterables import iterable
 
 import kingdon.operators as ops
@@ -88,8 +89,10 @@ def to_shape_tuple(func):
     return wrapper
 
 
+# CantSympify, because sympify turns any object with a __float__ into a number. Without it, Symbol('x') * mv
+# would raise the TypeError of __float__, or give a sympy expression for a scalar mv, instead of deferring to __rmul__.
 @dataclass(init=False)
-class MultiVector(metaclass=MultiVectorType):
+class MultiVector(CantSympify, metaclass=MultiVectorType):
     algebra: "Algebra"
     _values: list = field(default_factory=list)
     _keys: tuple[int] = field(default_factory=tuple)
@@ -611,6 +614,17 @@ class MultiVector(metaclass=MultiVectorType):
 
     def __bool__(self):
         return bool(self._keys) or any(v != ... and v for v in self.type_layout.values())
+
+    def __float__(self):
+        """
+        The scalar coefficient as a :class:`float`, e.g. :code:`float(alg.scalar(e=2))` is :code:`2.0`.
+        The coefficients of other blades, including the fixed values of a type, have to be zero,
+        otherwise a :class:`TypeError` is raised.
+        """
+        if any(grade != 0 for grade in self.grades) and self != self.grade(0):
+            raise TypeError(f'Only a scalar can be converted to float, but this {self.__class__.__name__} '
+                            'has non-zero coefficients outside of grade 0.')
+        return float(self.e)
 
     @cached_property
     def free_symbols(self) -> set:
