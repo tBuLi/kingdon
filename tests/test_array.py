@@ -1,7 +1,7 @@
 """ Tests for the array syntax of kingdon. """
 import copy
 import math
-from functools import lru_cache, partial
+from functools import partial
 
 import einops
 import numpy as np
@@ -109,15 +109,6 @@ def test_hash(xp):
 
     empty = alg.vector(xp.zeros((2, 0)))
     assert empty == alg.vector(e1=xp.zeros(0)) and hash(empty) == hash(alg.vector(e1=xp.zeros(0)))
-
-
-def test_hash_inplace():
-    """ The hash covers every element, so a cache does not return the result of a multivector that has since been modified. """
-    x = alg.vector(np.array([[1., 2.], [3., 4.]]))
-    total = lru_cache(lambda mv: mv.e1.sum())
-    assert total(x) == 3
-    x.e1[1] = 50
-    assert total(x) == 51
 
 
 def test_hash_types():

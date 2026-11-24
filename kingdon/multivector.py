@@ -126,8 +126,8 @@ class MultiVector(metaclass=MultiVectorType):
 
     def __hash__(self):
         """
-        Hash of the shape and the nonzero coefficients, equal for multivectors that are equal according to :meth:`__eq__`.
-        Multivectors are mutable, so do not modify one that is in a set or a key of a dictionary.
+        Hash of the shape and the nonzero coefficients, consistent with :meth:`__eq__` if the coefficients hash consistently with how they compare.
+        Multivectors are mutable, so do not modify one that is in a set, a key of a dictionary, or an argument of a cached function.
         """
         def freeze(v):
             if hasattr(v, 'tolist'): v = v.tolist()
