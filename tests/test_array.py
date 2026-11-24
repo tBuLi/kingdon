@@ -1,7 +1,7 @@
 """ Tests for the array syntax of kingdon. """
 import copy
 import math
-from functools import partial
+from functools import lru_cache, partial
 
 import einops
 import numpy as np
@@ -90,6 +90,48 @@ def test_equality(xp):
     assert x != alg.vector(e1=values[0])
     assert alg.vector(e1=values[0], e2=0 * values[1]) == alg.vector(e1=values[0])
     assert x != 1
+
+
+def test_hash(xp):
+    """ Multivectors that are equal hash equally: regardless of container, dtype, sign of zero, missing blades and broadcasting. """
+    values = xp.asarray([[1., 1.], [0., 0.]], dtype=xp.float64)
+    x = alg.vector(values)
+    equals = [alg.vector(list(values)), alg.vector(-1 * -values), alg.vector([[1., 1.], [0., 0.]]), alg.vector(xp.asarray(values, dtype=xp.float32)),
+              alg.vector(e1=values[0]), alg.multivector(e=0, e1=values[0]), alg.vector(e1=1, e2=values[1])]
+    for y in equals:
+        assert x == y
+        assert hash(x) == hash(y)
+    assert len({x, *equals, alg.vector(values + 1e-10)}) == 2
+
+    column = xp.asarray([[1.], [2.]])
+    x, y = alg.vector(e1=column, e2=xp.ones((2, 3))), alg.vector(e1=column * xp.ones((2, 3)), e2=1)
+    assert x == y and hash(x) == hash(y)
+
+    empty = alg.vector(xp.zeros((2, 0)))
+    assert empty == alg.vector(e1=xp.zeros(0)) and hash(empty) == hash(alg.vector(e1=xp.zeros(0)))
+
+
+def test_hash_inplace():
+    """ The hash covers every element, so a cache does not return the result of a multivector that has since been modified. """
+    x = alg.vector(np.array([[1., 2.], [3., 4.]]))
+    total = lru_cache(lambda mv: mv.e1.sum())
+    assert total(x) == 3
+    x.e1[1] = 50
+    assert total(x) == 51
+
+
+def test_hash_types():
+    """ The fixed values of a type are part of the hash, but the type itself is not. """
+    pga = Algebra.fromname('3DPGA')
+    origin = pga.blades.e0.dual()
+    assert origin == origin.asmvtype() and hash(origin) == hash(origin.asmvtype())
+    assert hash(pga.multivector()) == hash(pga.scalar(e=0))
+
+
+def test_hash_symbolic():
+    x, y = alg.vector(name='x'), alg.vector(name='x')
+    assert x == y and hash(x) == hash(y)
+    assert len({x, y, alg.vector(name='z')}) == 2
 
 
 @pytest.mark.parametrize('signature', [(2, 0, 0), (1, 1, 0), (1, 0, 1)])

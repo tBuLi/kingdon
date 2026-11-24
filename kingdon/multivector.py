@@ -124,6 +124,22 @@ class MultiVector(metaclass=MultiVectorType):
         mine, theirs = (dict(mv.asmvtype().items()) for mv in (self, other))
         return all(equal(mine.get(k, 0), theirs.get(k, 0)) for k in mine.keys() | theirs.keys())
 
+    def __hash__(self):
+        """
+        Hash of the shape and the nonzero coefficients, equal for multivectors that are equal according to :meth:`__eq__`.
+        Multivectors are mutable, so do not modify one that is in a set or a key of a dictionary.
+        """
+        def freeze(v):
+            if hasattr(v, 'tolist'): v = v.tolist()
+            if not isinstance(v, (list, tuple)): return v
+            v = tuple(map(freeze, v))
+            return v[0] if all(i == v[0] for i in v) else v  # Coefficients that broadcast to the same array are equal.
+
+        shape = self._values_shape()
+        if 0 in shape: return hash(shape)
+        coefficients = ((k, freeze(v)) for k, v in self.asmvtype().items())
+        return hash((shape, frozenset((k, v) for k, v in coefficients if v != 0)))
+
     def __copy__(self):
         return self.fromkeysvalues(self.algebra, self._keys, self._values, raw=True)
 
