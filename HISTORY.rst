@@ -166,11 +166,11 @@ Bugfix: width and height should be direct options to Algebra.graph
 
 * The docs have moved to the Shibuya theme, with a page per module in the API reference, a separate operators page, and a videos page (thanks @arsenovic).
 
-Unreleased
-----------
+3.3.0 (2026-11-24)
+------------------
 **Features**
 
-* ``exp`` works on batches of bivectors whose arrays implement ``__array_namespace__`` of the array API standard, such as numpy and jax arrays; for others, such as torch tensors, provide the functions. Each element gets the right formula, whether it squares to a negative number (rotation), a positive one (boost, dilation) or zero (translation), so one batch can mix them. The dtype is kept, real or complex, and gradients are finite at zero and at large angles.
+* ``exp`` works on bivectors over arrays whose arrays implement ``__array_namespace__`` of the array API standard, such as numpy and jax arrays; for others, such as torch tensors, provide the helper functions explicitely. Each element in the mv array gets the right formula, whether it squares to a negative number (rotation), a positive one (boost, dilation) or zero (translation), so one batch can mix them. The dtype is kept, real or complex, and gradients are finite at zero and at large angles.
 * New ``log`` method, the principal logarithm of a simple rotor, for python numbers, arrays and sympy expressions. Like ``exp(cosh=, sinhc=, sqrt=)``, ``log(atanh=, sqrt=)`` takes user-provided functions.
 * ``exp`` and ``log`` never branch on the values of the coefficients, so array libraries can trace them to compile them or map them over a batch.
 * ``x.pss`` gives the pseudoscalar coefficient of ``x`` in any dimension (#64).
