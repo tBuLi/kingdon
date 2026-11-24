@@ -9,7 +9,7 @@ import numpy as np
 
 from fractions import Fraction
 
-from sympy import Symbol, SympifyError, expand, sympify, cos, sin, sqrt, atan, Piecewise, Eq
+from sympy import Symbol, expand, sympify, cos, sin, sqrt, atan, Piecewise, Eq
 from kingdon import (Algebra, MultiVector, Scalar, Vector, Bivector, Trivector, Quadvector,
                      Bireflection, Direction, EVector, UPoint, Point, Translation, symbols)
 from kingdon.operator_dict import UnaryOperatorDict
@@ -144,14 +144,16 @@ def test_float(ga101, pga3d):
             float(x)
 
 def test_sympy_operands(vga2d):
-    # sympify would turn a multivector with a __float__ into a number, see the comment on MultiVector.
     x = Symbol('x')
-    assert isinstance(x * vga2d.scalar(e=2), Scalar)
-    assert (x * vga2d.scalar(e=2)).e == 2 * x
-    assert (x * vga2d.vector([1, 2])).e2 == 2 * x
-    assert (x + vga2d.vector([1, 2])).e == x
-    with pytest.raises(SympifyError):
-        sympify(vga2d.scalar(e=2))
+    scalar = vga2d.scalar(e=2)
+    vector = vga2d.vector([1, 2])
+    assert isinstance(x * scalar, Scalar)
+    assert (x * scalar).e == 2 * x
+    assert (x * vector).e2 == 2 * x
+    assert (x + vector).e == x
+    assert (x == scalar) is False
+    assert sympify(scalar) is scalar
+    assert sympify(vector) is vector
 
 def test_gp_symbolic(vga2d):
     u = vga2d.vector(name='u')

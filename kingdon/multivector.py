@@ -11,7 +11,6 @@ import re
 
 import numpy as np
 import sympy as sp
-from sympy.core.sympify import CantSympify
 from sympy.utilities.iterables import iterable
 
 import kingdon.operators as ops
@@ -89,13 +88,14 @@ def to_shape_tuple(func):
     return wrapper
 
 
-# CantSympify, because sympify turns any object with a __float__ into a number. Without it, Symbol('x') * mv
-# would raise the TypeError of __float__, or give a sympy expression for a scalar mv, instead of deferring to __rmul__.
 @dataclass(init=False)
-class MultiVector(CantSympify, metaclass=MultiVectorType):
+class MultiVector(metaclass=MultiVectorType):
     algebra: "Algebra"
     _values: list = field(default_factory=list)
     _keys: tuple[int] = field(default_factory=tuple)
+
+    # Keep SymPy's implicit coercion from routing multivector arithmetic through float().
+    __sympy__: ClassVar[bool] = False
 
     # Make MultiVector "primary" operand in operations involving ndarray.
     # (forces reflected (swapped) operands operations, like __radd__)
