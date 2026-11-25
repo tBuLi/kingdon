@@ -2,6 +2,13 @@
 History
 =======
 
+Unreleased
+----------
+
+**Bugfixes**
+
+* Fixed ``MultiVector.__setattr__`` writing to the wrong coefficient: it used the binary blade key as an index into ``_values`` instead of the position of that key in ``keys()``, so e.g. ``v.e1 = 10`` on ``alg.vector([1, 2, 3])`` overwrote ``e2``, and ``v.e3 = 10`` raised ``IndexError``. Permuted blades such as ``e21`` are now resolved to their canonical blade with the sign flipped, mirroring ``__getattr__`` (#180).
+
 0.1.0 (2023-08-12)
 ------------------
 
