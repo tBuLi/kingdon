@@ -122,6 +122,21 @@ def test_getattr_setattr(ga101):
     with pytest.raises(TypeError):
         del X.e
 
+def test_setattr_writes_to_the_right_coefficient(vga3d):
+    # Regression test for #180: __setattr__ used the binary blade key as an
+    # index into _values instead of the position of that key in keys().
+    v = vga3d.vector([1, 2, 3])  # v.keys() == (1, 2, 4)
+    v.e1 = 10
+    assert list(v.values()) == [10, 2, 3]
+    v.e3 = 10  # used to raise IndexError
+    assert list(v.values()) == [10, 2, 10]
+
+    # Permuted blades resolve to their canonical blade, with the sign flipped.
+    X = vga3d.multivector({'e12': 3})
+    X.e21 = 5
+    assert X.e12 == -5
+    assert X.e21 == 5
+
 def test_pss_coefficient(ga101, pga3d):
     assert ga101.multivector({0: 2, 'e12': 3}).pss == 3
     assert ga101.vector([1, 2]).pss == 0
