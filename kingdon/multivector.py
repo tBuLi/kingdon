@@ -94,6 +94,9 @@ class MultiVector(metaclass=MultiVectorType):
     _values: list = field(default_factory=list)
     _keys: tuple[int] = field(default_factory=tuple)
 
+    # Keep SymPy's implicit coercion from routing multivector arithmetic through float().
+    __sympy__: ClassVar[bool] = False
+
     # Make MultiVector "primary" operand in operations involving ndarray.
     # (forces reflected (swapped) operands operations, like __radd__)
     __array_priority__: ClassVar[int] = 1
@@ -633,6 +636,17 @@ class MultiVector(metaclass=MultiVectorType):
 
     def __bool__(self):
         return bool(self._keys) or any(v != ... and v for v in self.type_layout.values())
+
+    def __float__(self):
+        """
+        The scalar coefficient as a :class:`float`, e.g. :code:`float(alg.scalar(e=2))` is :code:`2.0`.
+        The coefficients of other blades, including the fixed values of a type, have to be zero,
+        otherwise a :class:`TypeError` is raised.
+        """
+        if any(grade != 0 for grade in self.grades) and self != self.grade(0):
+            raise TypeError(f'Only a scalar can be converted to float, but this {self.__class__.__name__} '
+                            'has non-zero coefficients outside of grade 0.')
+        return float(self.e)
 
     @cached_property
     def free_symbols(self) -> set:
