@@ -126,18 +126,24 @@ class MultiVector(metaclass=MultiVectorType):
 
     def __hash__(self):
         """
-        Hash of the shape and the nonzero coefficients, consistent with :meth:`__eq__` if the coefficients hash consistently with how they compare.
-        Multivectors are mutable, so do not modify one that is in a set, a key of a dictionary, or an argument of a cached function.
+        Hash a mutlivector. The hash of an object is assumed to never 
+        change over the lifetime of the object. But multivectors are mutable, 
+        so be careful not to modify one that is in a set, a key of a dictionary, 
+        or an argument of a cached function, as that would change the hash 
+        of the instance.
+
+        The hash is computed from the shape and the nonzero coefficients, 
+        where an array is represented by its first element. 
+        (Collisions are resolved by :code:`__eq__`.)
         """
-        def freeze(v):
-            if hasattr(v, 'tolist'): v = v.tolist()
-            if not isinstance(v, (list, tuple)): return v
-            v = tuple(map(freeze, v))
-            return v[0] if all(i == v[0] for i in v) else v  # Coefficients that broadcast to the same array are equal.
+        def first(v):
+            if isinstance(v, (list, tuple)): return first(v[0])
+            if hasattr(v, 'ndim'): v = v[(0,) * v.ndim]
+            return v.item() if hasattr(v, 'item') else v
 
         shape = self._values_shape()
         if 0 in shape: return hash(shape)
-        coefficients = ((k, freeze(v)) for k, v in self.asmvtype().items())
+        coefficients = ((k, first(v)) for k, v in self.asmvtype().items())
         return hash((shape, frozenset((k, v) for k, v in coefficients if v != 0)))
 
     def __copy__(self):
