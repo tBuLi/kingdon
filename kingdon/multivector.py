@@ -617,10 +617,11 @@ class MultiVector(metaclass=MultiVectorType):
     def __setattr__(self, basis_blade, value):
         if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
             return super().__setattr__(basis_blade, value)
-        if (key := self.algebra.canon2bin[basis_blade]) in self.keys():
-            self._values[key] = value
-        else:
+        basis_blade, swaps = self.algebra._blade2canon(basis_blade)
+        key = self.algebra.canon2bin.get(basis_blade)
+        if key not in self.keys():
             raise TypeError("The keys of a MultiVector are immutable, please create a new MultiVector.")
+        self._values[self.keys().index(key)] = -value if swaps % 2 else value
 
     def __delattr__(self, basis_blade, value):
         if not re.match(r'^e[0-9a-fA-Z]*$', basis_blade):
