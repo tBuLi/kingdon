@@ -13,6 +13,7 @@ from sympy import Symbol, expand, sympify, cos, sin, sqrt, atan, Piecewise, Eq
 from kingdon import (Algebra, MultiVector, Scalar, Vector, Bivector, Trivector, Quadvector,
                      Bireflection, Direction, EVector, UPoint, Point, Translation, symbols)
 from kingdon.operator_dict import UnaryOperatorDict
+from kingdon.numerical import exp as numerical_exp, is_close
 
 
 def test_MultiVector(ga101):
@@ -1139,6 +1140,19 @@ def test_exp_log_not_simple():
         (1 + alg.bivector(e12=1., e34=2.)).log()
     with pytest.raises(NotImplementedError, match='scalar and a bivector'):
         (1 + alg.bivector(e12=1.) + alg.blades.e1234).log()
+
+def test_numerical_exp_simple_bivector(sta):
+    """Test numerical.exp() on a simple bivector matches MultiVector.exp()"""
+    B = sta.bivector([1.0, 0, 0, 0, 0, 0])
+    mv_exp = B.exp()
+    num_exp = numerical_exp(B, n=20)
+    assert is_close(mv_exp, num_exp, tol=1e-10)
+
+def test_numerical_exp_non_simple_bivector(sta):
+    """Test numerical.exp() on a non-simple bivector doesn't raise an error"""
+    B = sta.bivector([1.0, 2.0, 0, 0, 0, 0])
+    result = numerical_exp(B, n=20)
+    assert result is not None
 
 def test_dual_numbers():
     alg = Algebra(r=1)
