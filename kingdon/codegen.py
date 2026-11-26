@@ -119,6 +119,11 @@ def resolve_layout(layouts: dict, res_layout: dict, MVType: type | None = None, 
 
 def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asarray=None, lambdifier_kwargs: dict | None = None) -> CompiledExpression:
     """
+    Compile a function from symbolic multivectors for Kingdon's compiler.
+
+    Use :meth:`~kingdon.algebra.Algebra.compile` to compile a function for
+    specific symbolic multivectors.
+
     :param codegen: callable that performs codegen for the given :code:`mvs`. This can be any callable
         that returns a :class:`~kingdon.multivector.MultiVector`.
     :param mvs: Any remaining positional arguments are taken to be symbolic :class:`~kingdon.multivector.MultiVector`'s.
@@ -175,7 +180,11 @@ def do_compile_symbolic(codegen, *mvs, lambdifier=None, wrapper=None, values_asa
     )
 
 def do_compile(codegen, *tapes, wrapper=None, values_asarray=None) -> CompiledExpression:
-    """ Non-symbolic compile. """
+    """
+    Compile recorded multivector operations for Kingdon's compiler.
+
+    Use :meth:`~kingdon.algebra.Algebra.add_operator` to add a custom operator.
+    """
     algebra = tapes[0].algebra
     namespace = algebra.numspace
 
@@ -367,44 +376,48 @@ def lambdify(
         output_mv_idx: int | None = None,
     ):
     """
-    Function that turns symbolic expressions into Python functions. Heavily inspired by
-    :mod:`sympy`'s function by the same name, but adapted for the needs of :code:`kingdon`.
-
-    Particularly, this version gives us more control over the names of the function and its
-    arguments, and is more performant, particularly when the given expressions are strings.
-
-    Example usage:
-
-    .. code-block ::
-
-        alg = Algebra(2)
-        a = alg.multivector(name='a')
-        b = alg.multivector(name='b')
-        args = {'A': a.values(), 'B': b.values()}
-        exprs = tuple(ops.cp(a, b).values())
-        func = lambdify(args, exprs, funcname='cp', cse=False)
-
-    This will produce the following code:
-
-    .. code-block ::
-
-        def cp(A, B):
-            [a, a1, a2, a12] = A
-            [b, b1, b2, b12] = B
-            return (+a1*b2-a2*b1,)
+    Generate a Python function from symbolic expressions for Kingdon's compiler.
 
     .. note::
-        As a `kingdon` end user, you should probably not need to call this functon directly,
-        be sure to check out :meth:`~kingdon.algebra.Algebra.register` first.
-        And even for experienced users or `kingdon` developers it is recommended
-        to use :func:`~kingdon.codegen.do_compile_symbolic` which provides a clean API around this function.
+        Use :meth:`~kingdon.algebra.Algebra.add_operator` to compile a custom
+        multivector operator. Pass ``symbolic=True`` to optimize the expression
+        symbolically.
+
+        .. code-block:: pycon
+
+            >>> from kingdon import Algebra
+            >>> alg = Algebra(2)
+            >>> @alg.add_operator(symbolic=True)
+            ... def square(v):
+            ...     return v * v
+            ...
+            >>> square(alg.vector(e1=3, e2=4)) == alg.scalar(e=25)
+            True
+
+    This helper is based on :mod:`sympy`'s function of the same name and gives
+    Kingdon control over the names of the generated function and its arguments.
+
+    This internal example generates the commutator product of two vectors.
+
+    .. code-block:: pycon
+
+        >>> from kingdon import Algebra, operators as ops
+        >>> from kingdon.codegen import lambdify
+        >>> alg = Algebra(2)
+        >>> a = alg.vector(name='a')
+        >>> b = alg.vector(name='b')
+        >>> args = {'A': a.values(), 'B': b.values()}
+        >>> exprs = tuple(ops.cp(a, b).values())
+        >>> func = lambdify(args, exprs, funcname='cp', cse=False)
+        >>> func([2, 0], [0, 3])
+        [6]
 
     :param args: dictionary of type dict[str | Symbol, tuple[Symbol]].
     :param exprs: tuple[Expr]
     :param funcname: string to be used as the bases for the name of the function.
     :param printer: Instance of the sympy style printer used to print individual sympy expressions.
     :param func_printer: Instance of the sympy style printer used to generate functions using the `printer`.
-    :param cse: If :code:`True` (default), CSE is applied to the expressions.
+    :param cse: If :code:`True`, CSE is applied to the expressions. Defaults to :code:`False`.
         This typically greatly improves performance and reduces numba's initialization time.
     :param output_mv_idx: Index of the multivector that stores the result returned by the codegen function.
         If :code:`None`, the generated function will return the values of the multivector.
